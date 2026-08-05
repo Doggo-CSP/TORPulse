@@ -1,0 +1,39 @@
+{
+  "name": "doggo",
+  "version": "1.0.0",
+  "main": "src/server.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/Doggo-CSP/doggo.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Doggo-CSP/doggo/issues"
+  },
+  "homepage": "https://github.com/Doggo-CSP/doggo#readme",
+  "description": "",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mongodb": "7.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.2",
+    "dotenv": "^17.4.2",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.7",
+    "typescript": "^7.0.2"
+  }
+}
