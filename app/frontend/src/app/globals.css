@@ -1,26 +1,132 @@
 @import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@import "tw-animate-css";
 
 @theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui;
+  --font-sans: "IBM Plex Sans Thai Looped", "IBM Plex Sans", ui-sans-serif, system-ui;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --radius: 0.9rem;
+
+  /* Warm cream page background */
+  --background: oklch(0.975 0.018 85);
+  --foreground: oklch(0.28 0.02 70);
+
+  /* White-ish surfaces (stat card, search bar) */
+  --surface: oklch(0.995 0.004 90);
+  --surface-2: oklch(0.955 0.02 85);
+  --card: oklch(0.995 0.004 90);
+  --card-foreground: oklch(0.28 0.02 70);
+  --popover: oklch(0.995 0.004 90);
+  --popover-foreground: oklch(0.28 0.02 70);
+
+  /* Sage green — primary CTA buttons, index numbers, "TR" badge */
+  --primary: oklch(0.62 0.085 155);
+  --primary-foreground: oklch(0.99 0.008 150);
+
+  /* Tan/beige pill (e.g. active nav pill "หน้าแรก", filter chip) */
+  --secondary: oklch(0.93 0.03 80);
+  --secondary-foreground: oklch(0.35 0.03 75);
+
+  --muted: oklch(0.94 0.02 85);
+  --muted-foreground: oklch(0.52 0.02 75);
+
+  /* Warm tan accent (budget ฿ figure) */
+  --accent: oklch(0.78 0.08 65);
+  --accent-foreground: oklch(0.32 0.05 60);
+
+  --destructive: oklch(0.64 0.13 25);
+  --destructive-foreground: oklch(0.99 0.01 60);
+
+  --success: oklch(0.62 0.085 155);
+  --warning: oklch(0.75 0.11 65);
+
+  /* Light tan borders / dividers */
+  --border: oklch(0.9 0.02 80);
+  --input: oklch(0.88 0.02 80);
+  --ring: oklch(0.62 0.085 155);
+
+  --chart-1: oklch(0.62 0.085 155);
+  --chart-2: oklch(0.78 0.08 65);
+  --chart-3: oklch(0.75 0.05 240);
+  --chart-4: oklch(0.78 0.06 320);
+  --chart-5: oklch(0.72 0.09 90);
+
+  --gradient-ink: linear-gradient(
+    170deg,
+    oklch(0.985 0.014 90) 0%,
+    oklch(0.975 0.02 85) 45%,
+    oklch(0.96 0.025 80) 100%
+  );
+  --shadow-panel: 0 18px 40px -28px oklch(0.4 0.04 80 / 0.35);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    background-image: var(--gradient-ink);
+    background-attachment: fixed;
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@utility panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-panel);
+}
+
+@utility label-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
 }
