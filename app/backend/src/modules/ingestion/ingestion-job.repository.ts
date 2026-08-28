@@ -98,3 +98,30 @@ export async function completeJob(
     },
   )
 }
+
+export async function stopJob(
+  jobId: Types.ObjectId,
+  workerId: string,
+  status: 'rejected' | 'review_required',
+  reason: string,
+): Promise<void> {
+  await IngestionJobModel.updateOne(
+    {
+      _id: jobId,
+      lockedBy: workerId,
+    },
+    {
+      $set: {
+        status,
+        lockedBy: null,
+        lockedUntil: null,
+        nextRetryAt: null,
+        lastError: {
+          code: status.toUpperCase(),
+          message: reason,
+          occurredAt: new Date(),
+        },
+      },
+    },
+  )
+}
