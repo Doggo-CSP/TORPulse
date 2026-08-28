@@ -1,137 +1,154 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, useMemo, useState } from "react";
 import { SiteNav } from "@/app/components/site_nav";
+import {
+  type Tor,
+  tors,
+  categorySplit,
+  totalBudgetAmount,
+  totalProjectCount,
+  homeStats,
+  priceComparisonData,
+  priceChartSeries,
+  isLoggedIn,
+  recommended,
+} from "./mockData";
 
-// Note: Move metadata to app/homepage/layout.tsx (Server Component) if needed.
-// "use client" and `export const metadata` cannot coexist in the same file.
-
-
-/* ---------------------------------------------------------------------- */
-/* Mock data (inlined for now — replace with real data/hooks later)        */
-/* ---------------------------------------------------------------------- */
-
-type Tor = {
-  id: string;
-  title: string;
-  agency: string;
-  source: string;
-  publishedAt: string;
-  closesAt: string;
-  category: string;
-  budget: number;
-  match: number;
-  tech: string[];
-};
-
-const tors: Tor[] = [
-  {
-    id: "กทม.-2569-0142",
-    title: "จ้างพัฒนาระบบบริหารจัดการงานทะเบียนราษฎรออนไลน์",
-    agency: "สำนักงานเขตบางรัก",
-    source: "e-GP",
-    publishedAt: "20 ส.ค. 69",
-    closesAt: "10 ก.ย. 69",
-    category: "Web Application",
-    budget: 18_500_000,
-    match: 82,
-    tech: ["React", "Node.js", "PostgreSQL"],
-  },
-  {
-    id: "กทม.-2569-0139",
-    title: "จ้างเหมาพัฒนาแดชบอร์ดวิเคราะห์ข้อมูลจราจรอัจฉริยะ",
-    agency: "สำนักการจราจรและขนส่ง",
-    source: "ระบบจัดซื้อจัดจ้าง กทม.",
-    publishedAt: "18 ส.ค. 69",
-    closesAt: "5 ก.ย. 69",
-    category: "Data / BI",
-    budget: 24_900_000,
-    match: 74,
-    tech: ["Python", "Power BI", "Airflow"],
-  },
-  {
-    id: "กทม.-2569-0131",
-    title: "พัฒนาแอปพลิเคชันมือถือสำหรับแจ้งปัญหาสาธารณะ",
-    agency: "สำนักยุทธศาสตร์และประเมินผล",
-    source: "e-GP",
-    publishedAt: "15 ส.ค. 69",
-    closesAt: "2 ก.ย. 69",
-    category: "Mobile App",
-    budget: 12_300_000,
-    match: 65,
-    tech: ["Flutter", "Firebase"],
-  },
-  {
-    id: "กทม.-2569-0125",
-    title: "จัดหาระบบ ERP สำหรับบริหารงบประมาณและพัสดุ",
-    agency: "สำนักการคลัง",
-    source: "ข้อมูลเปิด DGA",
-    publishedAt: "10 ส.ค. 69",
-    closesAt: "28 ส.ค. 69",
-    category: "Enterprise System",
-    budget: 42_000_000,
-    match: 58,
-    tech: [".NET", "SQL Server", "SAP"],
-  },
-];
-
-const categorySplit = [
-  { label: "Web Application", pct: 34 },
-  { label: "Data / BI", pct: 22 },
-  { label: "Mobile App", pct: 18 },
-  { label: "Enterprise System", pct: 26 },
-];
-
-const topTech = [
-  { label: "React", count: 41 },
-  { label: "Node.js", count: 33 },
-  { label: "Python", count: 29 },
-  { label: ".NET", count: 24 },
-  { label: "Flutter", count: 17 },
-];
-
-const homeStats = {
-  avgMid: 21_400_000,
-  avgAwarded: 18_900_000,
-  avgDiscountPct: 11.7,
-};
-
-const homeBars = [
-  { label: "Q1", value: 15_200_000 },
-  { label: "Q2", value: 19_800_000 },
-  { label: "Q3", value: 22_100_000 },
-  { label: "Q4", value: 24_600_000 },
-];
-
-const isLoggedIn = false;
-
-const recommended: Array<Tor & { interestScore: number; reason: string }> = [];
+// recharts measures container size, so render client-side only — disable SSR for it.
+const PriceComparisonChart = dynamic(
+  () =>
+    import("recharts").then((recharts) => {
+      const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } = recharts;
+      return function ChartComponent({
+        data,
+        series,
+      }: {
+        data: Array<{ category: string; [key: string]: string | number }>;
+        series: Array<{ key: string; label: string; color: string }>;
+      }) {
+        return (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.3} />
+              <XAxis
+                dataKey="category"
+                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v: number) => `฿${v}`}
+              />
+              <Tooltip
+                content={({ active, payload, label }) => {
+                  if (!active || !payload || !payload.length) return null;
+                  return (
+                    <div className="rounded-xl border border-border bg-background px-4 py-3 shadow-lg">
+                      <p className="text-sm font-medium">{label}</p>
+                      <div className="mt-1.5 space-y-0.5">
+                        {payload.map((entry, i) => (
+                          <p
+                            key={entry.name ?? i}
+                            className="text-xs font-medium"
+                            style={{ color: entry.color }}
+                          >
+                            {entry.name} : ฿{Number(entry.value).toFixed(1)} ล้านบาท
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }}
+              />
+              {series.map((s) => (
+                <Bar key={s.key} dataKey={s.key} name={s.label} fill={s.color} radius={[4, 4, 0, 0]} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        );
+      };
+    }),
+  { ssr: false },
+);
 
 /* ---------------------------------------------------------------------- */
 
 const baht = (n: number) => "฿" + (n / 1_000_000).toFixed(1) + " ล้าน";
 const toMillion = (n: number) => (n / 1_000_000).toFixed(1);
 
-const filters = ["ทั้งหมด", "Web Application", "Data / BI", "Mobile App", "Enterprise System"];
+const categories = ["ทั้งหมด", "Web Application", "Data / BI", "Mobile App", "Enterprise System"];
+const trackingGroups = ["ทั้งหมด", "งานพัฒนาเว็บไซต์", "งานข้อมูลและวิเคราะห์", "งานแอปพลิเคชันมือถือ", "งานระบบองค์กร"];
+const budgetYears = ["ทั้งหมด", "2569", "2568", "2567"];
+const budgetTypes = ["ทั้งหมด", "งบประมาณรายจ่ายประจำปี", "เงินนอกงบประมาณ", "เงินอุดหนุน"];
+const statuses = ["ทั้งหมด", "เปิดรับสมัคร", "ใกล้ปิดรับ", "ปิดรับสมัครแล้ว"];
+const agencies = ["ทั้งหมด", ...Array.from(new Set(tors.map((t) => t.agency)))];
+
+const ITEMS_PER_PAGE = 4;
 
 export default function HomePage() {
-  const [query, setQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(true);
+
+  const [name, setName] = useState("");
+  const [trackingGroup, setTrackingGroup] = useState("ทั้งหมด");
+  const [budgetYear, setBudgetYear] = useState("ทั้งหมด");
+  const [budgetType, setBudgetType] = useState("ทั้งหมด");
+  const [budgetMin, setBudgetMin] = useState("");
+  const [budgetMax, setBudgetMax] = useState("");
+  const [agency, setAgency] = useState("ทั้งหมด");
+  const [status, setStatus] = useState("ทั้งหมด");
+  const [egpOnly, setEgpOnly] = useState(false);
   const [cat, setCat] = useState("ทั้งหมด");
+
+  const [currentPage, setCurrentPage] = useState(1);
 
   const results = useMemo(
     () =>
-      tors.filter(
-        (t) =>
-          (cat === "ทั้งหมด" || t.category === cat) &&
+      tors.filter((t) => {
+        const matchesName =
           (t.title + t.agency + t.tech.join(" ") + t.id)
             .toLowerCase()
-            .includes(query.toLowerCase()),
-      ),
-    [query, cat],
+            .includes(name.toLowerCase());
+        const matchesCat = cat === "ทั้งหมด" || t.category === cat;
+        const matchesAgency = agency === "ทั้งหมด" || t.agency === agency;
+        const matchesStatus = status === "ทั้งหมด" || t.status === status;
+        const matchesEgp = !egpOnly || t.source === "e-GP";
+        const min = budgetMin ? Number(budgetMin) * 1_000_000 : -Infinity;
+        const max = budgetMax ? Number(budgetMax) * 1_000_000 : Infinity;
+        const matchesBudget = t.budget >= min && t.budget <= max;
+        return matchesName && matchesCat && matchesAgency && matchesStatus && matchesEgp && matchesBudget;
+      }),
+    [name, cat, agency, status, egpOnly, budgetMin, budgetMax],
   );
 
-  const maxBar = Math.max(...homeBars.map((b) => b.value));
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [name, cat, agency, status, egpOnly, budgetMin, budgetMax, trackingGroup, budgetYear, budgetType]);
+
+  const totalPages = Math.max(1, Math.ceil(results.length / ITEMS_PER_PAGE));
+  const pagedResults = results.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE,
+  );
+
+  const clearFilters = () => {
+    setName("");
+    setTrackingGroup("ทั้งหมด");
+    setBudgetYear("ทั้งหมด");
+    setBudgetType("ทั้งหมด");
+    setBudgetMin("");
+    setBudgetMax("");
+    setAgency("ทั้งหมด");
+    setStatus("ทั้งหมด");
+    setEgpOnly(false);
+    setCat("ทั้งหมด");
+  };
+
 
   return (
     <div className="min-h-screen">
@@ -185,47 +202,184 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Search + list */}
-        <section className="panel p-6 md:p-8">
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="ค้นหา TOR จากชื่อโครงการ หน่วยงาน เทคโนโลยี หรือเลขที่ประกาศ…"
-              className="min-w-[240px] flex-1 rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
-            />
-            <select className="rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground">
-              <option>ประกาศ: 30 วันล่าสุด</option>
-              <option>7 วันล่าสุด</option>
-              <option>ปีนี้</option>
-            </select>
-            <select className="rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground">
-              <option>งบประมาณ: ทั้งหมด</option>
-              <option>ต่ำกว่า ฿10 ล้าน</option>
-              <option>฿10 – ฿30 ล้าน</option>
-              <option>มากกว่า ฿30 ล้าน</option>
-            </select>
+        {/* Search + filter panel */}
+        <section className="panel overflow-hidden">
+          <div className="flex items-center justify-between bg-[#F8FAF7] px-6 py-4">
+            <h2 className="text-lg font-semibold">ค้นหารายการ</h2>
+            <button
+              onClick={() => setFiltersOpen((v) => !v)}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-1.5 text-xs font-medium text-primary-foreground"
+            >
+              เงื่อนไข
+              <span className={`transition-transform ${filtersOpen ? "" : "rotate-180"}`}>▲</span>
+            </button>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {filters.map((f) => (
-              <button
-                key={f}
-                onClick={() => setCat(f)}
-                className={
-                  "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
-                  (cat === f
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border text-muted-foreground hover:text-foreground")
-                }
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+          {filtersOpen && (
+            <div className="p-6 md:p-8">
+              <div className="grid gap-5 md:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    ชื่อรายการ
+                  </label>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="ระบุชื่อรายการ"
+                    className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
+                  />
+                </div>
 
-          <ul className="mt-6 divide-y divide-border">
-            {results.map((t) => (
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    กลุ่มติดตาม
+                  </label>
+                  <select
+                    value={trackingGroup}
+                    onChange={(e) => setTrackingGroup(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
+                  >
+                    {trackingGroups.map((g) => (
+                      <option key={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    ปีงบประมาณ
+                  </label>
+                  <select
+                    value={budgetYear}
+                    onChange={(e) => setBudgetYear(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
+                  >
+                    {budgetYears.map((y) => (
+                      <option key={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    ประเภทงบประมาณ
+                  </label>
+                  <select
+                    value={budgetType}
+                    onChange={(e) => setBudgetType(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
+                  >
+                    {budgetTypes.map((b) => (
+                      <option key={b}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    งบประมาณ (ล้านบาท)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={budgetMin}
+                      onChange={(e) => setBudgetMin(e.target.value)}
+                      placeholder="Min"
+                      type="number"
+                      className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
+                    />
+                    <span className="text-muted-foreground">-</span>
+                    <input
+                      value={budgetMax}
+                      onChange={(e) => setBudgetMax(e.target.value)}
+                      placeholder="Max"
+                      type="number"
+                      className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    หน่วยงาน
+                  </label>
+                  <select
+                    value={agency}
+                    onChange={(e) => setAgency(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
+                  >
+                    {agencies.map((a) => (
+                      <option key={a}>{a}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    สถานะการดำเนินการ
+                  </label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
+                  >
+                    {statuses.map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={egpOnly}
+                      onChange={(e) => setEgpOnly(e.target.checked)}
+                      className="h-4 w-4 rounded border-input"
+                    />
+                    เฉพาะรายการที่มีใน EGP
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-5 border-t border-border pt-5">
+                <p className="label-eyebrow">หมวดงาน</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {categories.map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setCat(f)}
+                      className={
+                        "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
+                        (cat === f
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground hover:text-foreground")
+                      }
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-3">
+                <button
+                  onClick={clearFilters}
+                  className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  ล้างค่า
+                </button>
+                <button className="rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground">
+                  ค้นหา
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Results */}
+        <section className="panel mt-6 p-6 md:p-8">
+          <ul className="divide-y divide-border">
+            {pagedResults.map((t) => (
               <li key={t.id}>
                 <Link
                   href={`/tor/${t.id}`}
@@ -275,6 +429,53 @@ export default function HomePage() {
               </li>
             )}
           </ul>
+        </section>
+
+        {/* Pagination */}
+        <section className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
+          <p className="text-sm text-muted-foreground">
+            แสดง <span className="font-semibold text-foreground">{ITEMS_PER_PAGE}</span> รายการ/หน้า
+          </p>
+
+          <div className="flex items-center gap-5 text-sm">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              ‹ ก่อนหน้า
+            </button>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              หน้าถัดไป ›
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="rounded-md border border-border px-2 py-1 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="หน้าก่อนหน้า"
+            >
+              ‹
+            </button>
+            <span className="flex items-center gap-1.5 rounded-md border border-primary px-3 py-1 text-sm">
+              <span className="font-mono font-semibold text-primary">{currentPage}</span>
+              <span className="text-muted-foreground">of {totalPages}</span>
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="rounded-md border border-border px-2 py-1 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="หน้าถัดไป"
+            >
+              ›
+            </button>
+          </div>
         </section>
 
         {/* คำแนะนำเฉพาะบุคคล */}
@@ -366,19 +567,20 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Simple inline bar chart (no external chart component) */}
-            <div className="mt-5 flex h-[220px] items-end gap-4 border-b border-border pb-2">
-              {homeBars.map((b) => (
-                <div key={b.label} className="flex flex-1 flex-col items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    ฿{toMillion(b.value)}ล.
-                  </span>
-                  <div
-                    className="w-full rounded-t-md bg-primary/80"
-                    style={{ height: `${(b.value / maxBar) * 160}px` }}
+            {/* Grouped bar chart via recharts, comparing ราคากลาง vs ราคาที่ชนะการประมูล by category */}
+            <div className="mt-5" style={{ height: 280 }}>
+              <PriceComparisonChart data={priceComparisonData} series={priceChartSeries} />
+            </div>
+
+            <div className="mt-3 flex items-center justify-center gap-6">
+              {priceChartSeries.map((s) => (
+                <span key={s.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span
+                    className="h-2.5 w-2.5 rounded-sm"
+                    style={{ backgroundColor: s.color }}
                   />
-                  <span className="text-xs font-medium">{b.label}</span>
-                </div>
+                  {s.label}
+                </span>
               ))}
             </div>
 
@@ -408,17 +610,33 @@ export default function HomePage() {
                 </li>
               ))}
             </ul>
-            <div className="mt-6 border-t border-border pt-5">
-              <p className="label-eyebrow">เทคโนโลยีที่พบบ่อย</p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {topTech.map((t) => (
-                  <span
-                    key={t.label}
-                    className="rounded border border-border px-2 py-1 font-mono text-[11px]"
-                  >
-                    {t.label} <span className="text-muted-foreground">{t.count}</span>
-                  </span>
-                ))}
+            <div className="mt-6 space-y-3 border-t border-border pt-5">
+              <div className="overflow-hidden rounded-xl border border-border">
+                <div className="bg-primary px-4 py-2.5">
+                  <p className="text-xs font-medium text-primary-foreground">
+                    งบประมาณในการจัดซื้อจัดจ้างรวมงบประมาณปี 2569
+                  </p>
+                </div>
+                <div className="px-4 py-4">
+                  <p className="font-display text-2xl font-semibold text-primary">
+                    {totalBudgetAmount.toLocaleString("th-TH")}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">บาท</p>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-xl border border-border">
+                <div className="bg-primary px-4 py-2.5">
+                  <p className="text-xs font-medium text-primary-foreground">
+                    จำนวนโครงการทั้งหมด ปีงบประมาณ 2569
+                  </p>
+                </div>
+                <div className="px-4 py-4">
+                  <p className="font-display text-2xl font-semibold text-primary">
+                    {totalProjectCount.toLocaleString("th-TH")}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">โครงการ</p>
+                </div>
               </div>
             </div>
           </div>
