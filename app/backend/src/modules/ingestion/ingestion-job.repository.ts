@@ -49,3 +49,22 @@ export async function claimNextJob(workerId: string) {
     },
   ).exec()
 }
+
+export async function updateJobState(
+  jobId: Types.ObjectId,
+  workerId: string,
+  stage: string,
+): Promise<void> {
+  const result = await IngestionJobModel.updateOne(
+    {
+      _id: jobId,
+      status: 'processing',
+      lockedBy: workerId,
+    },
+    {
+      $set: {
+        currentStage: stage,
+      },
+    },
+  )
+}
