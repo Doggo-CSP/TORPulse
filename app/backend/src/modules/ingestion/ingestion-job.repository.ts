@@ -125,3 +125,39 @@ export async function stopJob(
     },
   )
 }
+
+export async function failJob(
+  jobId: Types.ObjectId,
+  workerId: string,
+  attempCount: number,
+  error: unknown,
+): Promise<void> {
+  const message = error instanceof Error ? error.message : 'Unknow error'
+
+  const hasAttempsRemaining = attempCount < MAX_ATTEMPS
+
+  // 1 minute, 5 minutes, 25 minutes, then capped.
+  const retryDelayMs = Math.min(60_000 * 5 ** Math.max(attempCount - 1, 0), 2 * 60 * 60_000)
+
+  await IngestionJobModel.updateOne(
+    {
+      _id: Types.ObjectId,
+      lockedBy: workerId,
+    },
+    {
+      $set: {
+        status: 'failed',
+        lockedBy: null,
+        lockedUntil: null,
+
+        nextRetryAt: hasAttempsRemaining ? new Date(Date.now() + retryDelayMs) : null,
+
+        lastError: {
+          code: 'PROCESSING_FAILED',
+          message,
+          occurredAt: new Date(),
+        },
+      },
+    },
+  )
+}
