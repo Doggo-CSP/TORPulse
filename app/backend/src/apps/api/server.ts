@@ -1,6 +1,6 @@
 import app from './app.js'
-import { env } from './config/env.js'
-import { database } from './config/mongoose.js'
+import { env } from '../../config/env.js'
+import { database } from '../../config/mongoose.js'
 
 const startServer = async (): Promise<void> => {
   await database.connect()
