@@ -13,19 +13,19 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/Doggo-CSP/doggo.git"
+    "url": "git+ssh://git@github.com/Doggo-CSP/TORPulse.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Doggo-CSP/doggo/issues"
+    "url": "https://github.com/Doggo-CSP/TORPulse/issues"
   },
-  "homepage": "https://github.com/Doggo-CSP/doggo#readme",
+  "homepage": "https://github.com/Doggo-CSP/TORPulse#readme",
   "description": "",
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "mongodb": "7.5",
+    "mongoose": "^9.9.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {

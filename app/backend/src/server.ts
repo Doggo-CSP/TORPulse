@@ -1,9 +1,9 @@
 import app from './app.js'
 import { env } from './config/env.js'
-import { mongodb } from './config/mongodb.js'
+import { database } from './config/mongoose.js'
 
 const startServer = async (): Promise<void> => {
-  await mongodb.connect()
+  await database.connect()
 
   const server = app.listen(env.PORT, '0.0.0.0', () => {
     console.log(`App started at http://localhost:${env.PORT}`)
@@ -19,7 +19,7 @@ const startServer = async (): Promise<void> => {
       }
 
       try {
-        await mongodb.disconnect()
+        await database.disconnect()
         process.exit(0)
       } catch (disconnectError) {
         console.error('MongoDB shutdown failed:', disconnectError)
