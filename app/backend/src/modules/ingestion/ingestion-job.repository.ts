@@ -67,4 +67,34 @@ export async function updateJobState(
       },
     },
   )
+
+  if (result.modifiedCount !== 1) {
+    throw new Error(`Worker lost lease for job ${jobId}`)
+  }
+}
+
+export async function completeJob(
+  jobId: Types.ObjectId,
+  workerId: string,
+  torId: Types.ObjectId,
+): Promise<void> {
+  await IngestionJobModel.updateOne(
+    {
+      _id: jobId,
+      lockedBy: workerId,
+    },
+    {
+      $set: {
+        status: 'completed',
+        currentStage: 'completed',
+        torId,
+        lockedBy: null,
+        lockedUntil: null,
+        nextRetryAt: null,
+      },
+      $unset: {
+        lastError: 1,
+      },
+    },
+  )
 }
