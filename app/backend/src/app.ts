@@ -1,6 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import r from './routes/index.js'
+import r from './r.route.js'
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js'
 
 const app = express()
