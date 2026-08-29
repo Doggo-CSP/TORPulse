@@ -50,7 +50,7 @@ export async function claimNextJob(workerId: string) {
   ).exec()
 }
 
-export async function updateJobState(
+export async function updateJobStage(
   jobId: Types.ObjectId,
   workerId: string,
   stage: string,
