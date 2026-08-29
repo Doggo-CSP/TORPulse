@@ -125,6 +125,9 @@ export default function LoginPage() {
           <button
             id="login-google"
             type="button"
+            onClick={() => {
+              window.location.href = `http://localhost:8000/auth/google`;
+            }}
             className="w-full flex items-center justify-center gap-3 rounded-xl border border-[#ddd5c8] bg-white py-3 text-sm font-medium text-[#2d2d2d] hover:bg-[#faf7f2] active:scale-[0.98] transition-all duration-150 shadow-sm"
           >
             {/* Google "G" SVG logo */}
