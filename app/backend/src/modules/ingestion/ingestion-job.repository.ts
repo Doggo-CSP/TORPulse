@@ -42,7 +42,7 @@ export async function claimNextJob(workerId: string) {
     {
       sort: {
         nextRetryAt: 1,
-        createAt: 1,
+        createdAt: 1,
       },
       returnDocument: 'after',
       runValidators: true,
@@ -141,7 +141,7 @@ export async function failJob(
 
   await IngestionJobModel.updateOne(
     {
-      _id: Types.ObjectId,
+      _id: jobId,
       lockedBy: workerId,
     },
     {

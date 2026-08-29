@@ -3,7 +3,11 @@ import { Types } from 'mongoose'
 import type { IngestionJob } from './ingestion-job.model.js'
 import type { ProcurementSourceAdapter } from './adapters/procurement-source.adapter.js'
 import { CentralEgpAdapter } from './adapters/central-egp.adapters.js'
-import { title } from 'node:process'
+import { analyzeTorWithDeepSeek } from './extraction/deepseek-tor-extractor.js'
+import {
+  extractDocumentsToMarkdown,
+  OcrRequiredError,
+} from './extraction/opendataloader-text-extractor.js'
 
 export type IngestionResult =
   | {
@@ -26,7 +30,7 @@ export async function processIngestionJob(
   if (!adapter) {
     return {
       type: 'review_required',
-      reason: `Unknow source adapter: ${job.sourceAdapter}`,
+      reason: `Unknown source adapter: ${job.sourceAdapter}`,
     }
   }
 
@@ -44,60 +48,43 @@ export async function processIngestionJob(
   }
 
   await updateStage('extracting_text')
+  let extractedText: string
 
-  // TODO: Implement PDF => TEXT Servince
-  const extractedText = ''
+  try {
+    extractedText = await extractDocumentsToMarkdown(documents)
+  } catch (error) {
+    if (error instanceof OcrRequiredError) {
+      return { type: 'review_required', reason: error.message }
+    }
+
+    throw error
+  }
 
   await updateStage('classifying')
+  const extractedTor = await analyzeTorWithDeepSeek(extractedText, project)
 
-  // TODO: Implement classifier
-  const isSoftwareRelated: boolean = containsSoftwareKeywords(`${project.title}\n${extractedText}`)
-
-  if (!isSoftwareRelated) {
+  if (!extractedTor.isSoftwareRelated) {
     return {
       type: 'rejected',
-      reason: 'Document is not software-related',
+      reason: extractedTor.classificationReason,
     }
   }
 
   await updateStage('extracting_fields')
-
-  // TODO: extract data from text to field
-
-  const extractedTor = {
-    externalId: project.externalId,
-    title: project.title,
-    detailUrl: project.detailUrl,
-  }
 
   await updateStage('storing')
 
   // TODO: Make Tor upsert
   const torId = new Types.ObjectId()
 
-  console.log('TOR ready to save', extractedTor)
+  console.log('TOR ready to save', {
+    externalId: project.externalId,
+    detailUrl: project.detailUrl,
+    extractedTor,
+  })
 
   return {
     type: 'completed',
     torId,
   }
-}
-
-function containsSoftwareKeywords(text: string): boolean {
-  const normalizedText = text.toLowerCase()
-
-  const keywords = [
-    'ซอฟต์แวร์',
-    'พัฒนาระบบ',
-    'ระบบสารสนเทศ',
-    'แอปพลิเคชัน',
-    'ฐานข้อมูล',
-    'software',
-    'application',
-    'database',
-    'cloud',
-    'cybersecurity',
-  ]
-
-  return keywords.some((keyword) => normalizedText.includes(keyword))
 }

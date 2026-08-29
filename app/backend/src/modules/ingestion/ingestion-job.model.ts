@@ -1,5 +1,4 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
-import { number } from 'zod'
 
 const ingestionJobSchema = new Schema(
   {
@@ -30,7 +29,7 @@ const ingestionJobSchema = new Schema(
     status: {
       type: String,
       required: true,
-      enum: ['queued', 'processing', 'completed', 'failed', 'rejected', 'review_requested'],
+      enum: ['queued', 'processing', 'completed', 'failed', 'rejected', 'review_required'],
       default: 'queued',
     },
 
