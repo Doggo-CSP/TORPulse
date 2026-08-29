@@ -160,14 +160,14 @@ export default function HomePage() {
           <div>
             <p className="label-eyebrow">TOR · แพลตฟอร์มค้นหางานประมูลซอฟต์แวร์</p>
             <h1 className="mt-4 text-4xl leading-[1.18] font-semibold md:text-[3rem]">
-              ทุก TOR งานซอฟต์แวร์ของ กทม.
+              เว็บไซต์รวบรวมทุก TOR งานซอฟต์แวร์ของ กทม.
               <br />
               <span className="text-primary">รวมไว้ในเรดาร์เดียว</span>
             </h1>
             <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-              TOR กระจายอยู่ตามเว็บไซต์จัดซื้อจัดจ้างหลายแห่งและถูกซ่อนอยู่ในไฟล์ PDF
-              เราดึงข้อมูลมาให้อัตโนมัติ สกัดงบประมาณ ขอบเขตงาน เทคโนโลยี และเกณฑ์การประเมินด้วย AI
-              แล้วบอกคุณว่าโครงการไหนที่ทีมของคุณมีคุณสมบัติผ่านจริง
+              ไม่ต้องเสียเวลาตามหา TOR จากหลายเว็บไซต์
+              TOR Pulse รวบรวม TOR จากแหล่งจัดซื้อจัดจ้างไว้ในที่เดียว
+              ค้นหา เปรียบเทียบ และค้นพบโครงการที่ตรงกับความสามารถของทีมคุณ
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <button className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground">

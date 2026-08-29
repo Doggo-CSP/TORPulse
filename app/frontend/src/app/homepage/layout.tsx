@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "TOR — รวม TOR งานซอฟต์แวร์ กทม. ไว้ที่เดียว",
+  title: "TOR — เว็บไซต์รวบรวม TOR ที่เกี่ยวข้องกับงานซอฟต์แวร์ทางกทม.",
   description:
     "รวบรวม ค้นหา และวิเคราะห์เอกสาร TOR งานซอฟต์แวร์จากแหล่งจัดซื้อจัดจ้างของกรุงเทพมหานคร พร้อมเทียบราคาโครงการที่ประมูลเสร็จแล้ว",
   openGraph: {
