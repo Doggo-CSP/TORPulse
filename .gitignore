@@ -1,22 +1,40 @@
-# dependencies
+# Dependencies
 node_modules/
+.bun/
+.pnp
+.pnp.js
 
-# Next.js
+# Next.js & Build Outputs
 .next/
 out/
+dist/
+build/
+*.tsbuildinfo
 
-# Environment variables
+# Environment variables (keep .env.example tracked)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 
-# Debug logs
+# Debug & Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
+yarn-error.log*
 pnpm-debug.log*
 
-# OS
+# Testing & Caches
+coverage/
+.turbo/
+.vercel/
+.cache/
+
+# OS & IDE files
 .DS_Store
+.DS_Store?
 Thumbs.db
+ehthumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
