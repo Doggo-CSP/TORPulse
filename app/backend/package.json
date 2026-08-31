@@ -8,9 +8,12 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev:ingestion": "tsx watch src/apps/ingestion-worker/main.ts",
-    "start:ingestion": "node dist/apps/ingestion-worker/main.ts",
+    "start:ingestion": "node dist/apps/ingestion-worker/main.js",
+    "dev:producer": "tsx watch src/apps/queue-producer/main.ts",
+    "start:producer": "node dist/apps/queue-producer/main.js",
     "test:queue-upsert": "tsx src/scripts/test-ingestion-queue.ts",
     "test:central-egp": "tsx --test src/modules/ingestion/adapters/central-egp.adapters.test.ts",
+    "test:producer": "tsx --test src/modules/ingestion/adapters/govspending-discovery.adapter.test.ts src/apps/queue-producer/queue-producer.test.ts",
     "type-check": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

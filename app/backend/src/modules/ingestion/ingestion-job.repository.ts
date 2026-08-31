@@ -1,9 +1,53 @@
 import { Types } from 'mongoose'
 
 import { IngestionJobModel } from './ingestion-job.model.js'
+import type { DiscoveredProcurementProject } from './adapters/govspending-discovery.adapter.js'
 
-const MAX_ATTEMPS = 5
+const MAX_ATTEMPTS = 2
 const LEASE_DURATION_MS = 5 * 60_000
+
+export async function enqueueDiscoveredProjects(
+  dataSourceId: Types.ObjectId,
+  projects: DiscoveredProcurementProject[],
+): Promise<{ queued: number; existing: number }> {
+  const uniqueProjects = [
+    ...new Map(projects.map((project) => [project.externalId, project])).values(),
+  ]
+
+  if (uniqueProjects.length === 0) {
+    return { queued: 0, existing: 0 }
+  }
+
+  const result = await IngestionJobModel.bulkWrite(
+    uniqueProjects.map((project) => ({
+      updateOne: {
+        filter: {
+          dataSourceId,
+          externalId: project.externalId,
+          sourceVersion: 'initial',
+        },
+        update: {
+          $setOnInsert: {
+            sourceAdapter: 'central_egp',
+            status: 'queued',
+            currentStage: 'queued',
+            attempCount: 0,
+            nextRetryAt: new Date(),
+            lockedBy: null,
+            lockedUntil: null,
+          },
+        },
+        upsert: true,
+      },
+    })),
+    { ordered: false },
+  )
+
+  return {
+    queued: result.upsertedCount,
+    existing: uniqueProjects.length - result.upsertedCount,
+  }
+}
 
 export async function claimNextJob(workerId: string) {
   const now = new Date()
@@ -12,7 +56,7 @@ export async function claimNextJob(workerId: string) {
   return IngestionJobModel.findOneAndUpdate(
     {
       attempCount: {
-        $lt: MAX_ATTEMPS, // finding less than max attemp items
+        $lt: MAX_ATTEMPTS, // Only claim jobs that still have attempts remaining.
       },
 
       $and: [
@@ -134,7 +178,7 @@ export async function failJob(
 ): Promise<void> {
   const message = error instanceof Error ? error.message : 'Unknow error'
 
-  const hasAttempsRemaining = attempCount < MAX_ATTEMPS
+  const hasAttemptsRemaining = attempCount < MAX_ATTEMPTS
 
   // 1 minute, 5 minutes, 25 minutes, then capped.
   const retryDelayMs = Math.min(60_000 * 5 ** Math.max(attempCount - 1, 0), 2 * 60 * 60_000)
@@ -150,7 +194,7 @@ export async function failJob(
         lockedBy: null,
         lockedUntil: null,
 
-        nextRetryAt: hasAttempsRemaining ? new Date(Date.now() + retryDelayMs) : null,
+        nextRetryAt: hasAttemptsRemaining ? new Date(Date.now() + retryDelayMs) : null,
 
         lastError: {
           code: 'PROCESSING_FAILED',

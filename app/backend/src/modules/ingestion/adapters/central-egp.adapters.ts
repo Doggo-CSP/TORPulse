@@ -60,8 +60,9 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
     if (!response.ok) {
       throw new Error(`Central eGP metadata request failed (${response.status}) for ${projectId}`)
     }
-
-    const metadata = parseArchiveMetadata(await response.json(), projectId)
+    const temp = await response.json()
+    console.log(temp, 'raw metadata')
+    const metadata = parseArchiveMetadata(temp, projectId)
     this.archiveByProjectId.set(projectId, metadata)
 
     const detailUrl = new URL(SEARCH_URL)
@@ -81,7 +82,6 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
     const metadata =
       this.archiveByProjectId.get(projectId) ??
       (await this.loadArchiveMetadataWithoutReplacingProject(projectId))
-
     const url = new URL(DOWNLOAD_URL)
     url.searchParams.set('fileId', metadata.zipId)
 
