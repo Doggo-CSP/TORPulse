@@ -108,6 +108,7 @@ export async function updateJobStage(
     {
       $set: {
         currentStage: stage,
+        lockedUntil: new Date(Date.now() + LEASE_DURATION_MS),
       },
     },
   )
@@ -122,9 +123,10 @@ export async function completeJob(
   workerId: string,
   torId: Types.ObjectId,
 ): Promise<void> {
-  await IngestionJobModel.updateOne(
+  const result = await IngestionJobModel.updateOne(
     {
       _id: jobId,
+      status: 'processing',
       lockedBy: workerId,
     },
     {
@@ -141,6 +143,10 @@ export async function completeJob(
       },
     },
   )
+
+  if (result.modifiedCount !== 1) {
+    throw new Error(`Worker lost lease before completing job ${jobId}`)
+  }
 }
 
 export async function stopJob(

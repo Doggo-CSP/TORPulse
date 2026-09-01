@@ -5,6 +5,7 @@ import type { ProcurementProject } from '../adapters/procurement-source.adapter.
 
 const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/chat/completions'
 const MAX_RESPONSE_TOKENS = 8_000
+export const TOR_ANALYSIS_VERSION = 'v1'
 const stringArraySchema = z.preprocess(
   (value) => (value === null || value === undefined ? [] : value),
   z.array(z.string()),

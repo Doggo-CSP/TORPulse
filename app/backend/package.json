@@ -14,6 +14,8 @@
     "test:queue-upsert": "tsx src/scripts/test-ingestion-queue.ts",
     "test:central-egp": "tsx --test src/modules/ingestion/adapters/central-egp.adapters.test.ts",
     "test:producer": "tsx --test src/modules/ingestion/adapters/govspending-discovery.adapter.test.ts src/apps/queue-producer/queue-producer.test.ts",
+    "test:tor": "tsx --test src/modules/tor/tor.model.test.ts src/modules/tor/tor.repository.test.ts src/modules/ingestion/ingestion-job.repository.test.ts src/modules/ingestion/missing-tor-repair.test.ts",
+    "repair:missing-tors": "tsx src/scripts/repair-missing-tors.ts",
     "type-check": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
