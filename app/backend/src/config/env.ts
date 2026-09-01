@@ -16,6 +16,7 @@ const govSpendingKeywords = (
   .split(',')
   .map((keyword) => keyword.trim())
   .filter(Boolean)
+const nodeEnv = process.env.NODE_ENV ?? 'development'
 
 if (Number.isNaN(port)) {
   throw new Error('PORT must be a valid number')
@@ -42,6 +43,7 @@ if (
 
 export const env = {
   PORT: port,
+  NODE_ENV: nodeEnv,
   MONGODB_URI: mongodbUri,
   MONGODB_DATABASE: mongodbDatabase,
   DEEPSEEK_API_KEY: deepseekApiKey,
