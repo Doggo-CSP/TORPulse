@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 const googleLoginUrl = `${apiUrl}/auth/google`;
 
 interface LoginPageProps {

@@ -13,7 +13,7 @@ interface MeResponse {
   user: AuthUser | null;
 }
 
-const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
 export function useAuth() {
   const [user, setUser] = useState<AuthUser | null>(null);

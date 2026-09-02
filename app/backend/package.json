@@ -34,11 +34,11 @@
   "description": "",
   "dependencies": {
     "@opendataloader/pdf": "^2.5.5",
-    "connect-mongo": "^5.1.0",
+    "connect-mongo": "^6.0.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "fflate": "^0.8.3",
     "express-session": "^1.18.1",
+    "fflate": "^0.8.3",
     "mongoose": "^9.9.4",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
