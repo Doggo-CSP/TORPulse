@@ -14,23 +14,7 @@ export function Dropdown({ children }: { children: React.ReactNode }) {
   return <Menu>{children}</Menu>
 }
 
-/**
- * DropdownButton — wraps Headless UI v2 MenuButton.
- *
- * Headless UI v2 removed the `as` polymorphic prop; instead it exposes a
- * `render` function that lets you supply any element.  We keep the same
- * external API (`as` + all native props) so callers like:
- *
- *   <DropdownButton as={NavbarItem}> ... </DropdownButton>
- *
- * continue to work unchanged.
- *
- * NOTE: the cast to `React.ElementType` / `Record<string, unknown>` below is
- * intentional — Headless UI v2's internal `CleanProps<TTag, ...>` /
- * `OurProps<TTag, ...>` generics don't unify with a generically-typed `T`
- * from an outer component, even though the props are valid at runtime.
- * The outer signature below still gives callers full type-checking.
- */
+
 export function DropdownButton<T extends React.ElementType = 'button'>({
   as: Tag = 'button' as T,
   className,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { SiteNav } from "@/app/components/site_nav";
 import { useUserProfile, type UserProfileData } from "@/hooks/use-user-profile";
@@ -18,6 +18,7 @@ import {
   CheckCircleIcon,
   ArrowRightIcon,
   UserIcon,
+  CameraIcon,
 } from "@heroicons/react/24/outline";
 import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 
@@ -97,6 +98,34 @@ export default function ProfilePage() {
 
   const [activeTab, setActiveTab] = useState<TabType>("profile");
   const [formData, setFormData] = useState<Partial<UserProfileData>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("กรุณาเลือกไฟล์รูปภาพเท่านั้น");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("ขนาดไฟล์ต้องไม่เกิน 5MB");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setFormData((prev) => ({ ...prev, image: reader.result as string }));
+    };
+    reader.readAsDataURL(file);
+
+    // allow re-selecting the same file later
+    e.target.value = "";
+  };
 
   useEffect(() => {
     if (profile) {
@@ -295,36 +324,121 @@ export default function ProfilePage() {
 
         {/* ── TAB 1: Profile CRUD ── */}
         {activeTab === "profile" && (
-          <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 md:p-8 shadow-sm">
+          <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm md:p-8">
             <form onSubmit={handleFormSubmit} className="space-y-6">
-              {/* Account Type Selector */}
-              <div>
-                <h2 className="text-lg font-bold text-[#2d2d2d]">ประเภทบัญชี</h2>
-                <p className="mt-1 text-sm text-[#7a8b6f]">
-                  เลือกประเภทให้ตรงกับผู้ใช้งาน เพื่อให้เราแสดงข้อมูลที่เกี่ยวข้องได้อย่างถูกต้อง
-                </p>
 
-                <div className="mt-4 flex flex-wrap gap-3">
-                  {[
-                    { id: "personal", label: "บุคคล / ผู้ใช้งาน" },
-                    { id: "company", label: "บริษัท" },
-                    { id: "agency", label: "หน่วยงาน" },
-                  ].map((type) => (
-                    <button
-                      key={type.id}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, accountType: type.id as any })}
-                      className={`rounded-full px-5 py-2.5 text-sm font-medium transition-all border ${
-                        formData.accountType === type.id
-                          ? "border-[#4a7c59] bg-[#4a7c59] text-white shadow-sm"
-                          : "border-[#ddd5c8] bg-white text-[#5c5446] hover:bg-[#faf7f2]"
-                      }`}
-                    >
-                      {type.label}
-                    </button>
-                  ))}
+          {/* Top Section */}
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-[1fr_auto] md:items-start">
+
+          {/* Account Type — Left */}
+          <div>
+            <h2 className="text-lg font-bold text-[#2d2d2d]">
+              ประเภทบัญชี
+            </h2>
+
+            <p className="mt-1 text-sm text-[#7a8b6f]">
+              เลือกประเภทให้ตรงกับผู้ใช้งาน เพื่อให้เราแสดงข้อมูลที่เกี่ยวข้องได้อย่างถูกต้อง
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              {[
+                { id: "personal", label: "บุคคล / ผู้ใช้งาน" },
+                { id: "company", label: "บริษัท" },
+                { id: "agency", label: "หน่วยงาน" },
+              ].map((type) => (
+                <button
+                  key={type.id}
+                  type="button"
+                  onClick={() =>
+                    setFormData({
+                      ...formData,
+                      accountType: type.id as any,
+                    })
+                  }
+                  className={`rounded-full border px-5 py-2.5 text-sm font-medium transition-all ${
+                    formData.accountType === type.id
+                      ? "border-[#4a7c59] bg-[#4a7c59] text-white shadow-sm"
+                      : "border-[#ddd5c8] bg-white text-[#5c5446] hover:bg-[#faf7f2]"
+                  }`}
+                >
+                  {type.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Avatar — Right */}
+          <div className="grid grid-cols-1 gap-5 pt-2">
+            <label className="mb-1.5 block text-xs font-semibold text-[#5c5446]">
+              โลโก้ / รูปโปรไฟล์
+            </label>
+
+            <div className="flex items-center gap-4">
+
+              {/* Avatar */}
+              <button
+                type="button"
+                onClick={handleAvatarClick}
+                className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-[#e8e0d0] bg-[#faf7f2] focus:outline-none focus:ring-2 focus:ring-[#4a7c59]"
+              >
+                {formData.image ? (
+                  <img
+                    src={formData.image}
+                    alt="รูปโปรไฟล์"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-[#b0a898]">
+                    <UserIcon className="size-8" />
+                  </div>
+                )}
+
+                {/* Hover overlay */}
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                  <CameraIcon className="size-6 text-white" />
                 </div>
+              </button>
+
+              {/* Upload controls */}
+              <div>
+                <button
+                  type="button"
+                  onClick={handleAvatarClick}
+                  className="rounded-full border border-[#ddd5c8] bg-white px-4 py-2 text-xs font-medium text-[#5c5446] hover:bg-[#faf7f2]"
+                >
+                  เลือกรูปภาพ
+                </button>
+
+                {formData.image && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        image: "",
+                      })
+                    }
+                    className="ml-2 text-xs font-medium text-red-500 hover:underline"
+                  >
+                    ลบรูป
+                  </button>
+                )}
+
+                <p className="mt-1.5 text-xs text-[#998f80]">
+                  รองรับไฟล์ JPG, PNG ขนาดไม่เกิน 5MB
+                </p>
               </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                className="hidden"
+              />
+            </div>
+          </div>
+        </div>
 
               {/* Form Grid */}
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2 pt-2">
@@ -403,19 +517,6 @@ export default function ProfilePage() {
 
                 <div className="md:col-span-2">
                   <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    โลโก้ / รูปโปรไฟล์ (URL)
-                  </label>
-                  <input
-                    type="url"
-                    value={formData.image || ""}
-                    onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                    placeholder="https://example.com/avatar.jpg"
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
                     ที่อยู่
                   </label>
                   <textarea
@@ -467,7 +568,6 @@ export default function ProfilePage() {
               </p>
             </div>
 
-            {/* 4x2 Category Card Grid */}
             <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {CATEGORIES.map((cat) => {
                 const IconComponent = cat.icon;

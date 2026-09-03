@@ -16,7 +16,6 @@ import {
   recommended,
 } from "./mockData";
 
-// recharts measures container size, so render client-side only — disable SSR for it.
 const PriceComparisonChart = dynamic(
   () =>
     import("recharts").then((recharts) => {
@@ -546,7 +545,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* คำแนะนำเฉพาะบุคคล */}
+        {/* TOR Recommadation */}
         <section className="panel mt-8 p-6 md:p-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -615,13 +614,13 @@ export default function HomePage() {
         {/* Charts */}
         <section className="mt-8 grid gap-6 lg:grid-cols-3">
           <div className="panel flex flex-col p-6 lg:col-span-2">
-            <p className="label-eyebrow">สถิติภาพรวม</p>
+            <p className="label-eyebrow">สถิติภาพรวมของ TOR</p>
             <h2 className="mt-2 text-lg font-semibold">
-              วิเคราะห์ราคาย้อนหลัง
+              ข้อมูลสำหรับวิเคราะห์ราคาย้อนหลัง
             </h2>
             <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
               ดูแนวโน้มราคาจัดซื้อจัดจ้างโครงการซอฟต์แวร์จากข้อมูลโครงการที่ผ่านมา
-              เพื่อช่วยประเมินระดับราคาและเปรียบเทียบกับโครงการปัจจุบัน
+              เพื่อช่วยประเมินราคาและเปรียบเทียบกับโครงการปัจจุบัน
             </p>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -730,31 +729,6 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-        </section>
-
-        {/* Feature strip */}
-        <section className="mt-8 grid gap-6 md:grid-cols-3">
-          {[
-            {
-              t: "รวม TOR ไว้ที่เดียว",
-              d: "TOR งานซอฟต์แวร์จากทุกแหล่งจัดซื้อจัดจ้างของ กทม. คัดรายการซ้ำออก เหลือฟีดเดียวที่ครบถ้วน",
-            },
-            {
-              t: "สกัดข้อมูลด้วย AI",
-              d: "แปลงไฟล์ PDF เป็นข้อมูลที่ใช้งานได้ ทั้งงบประมาณ ขอบเขตงาน เทคโนโลยี ผลงานที่ต้องส่งมอบ และเกณฑ์การประเมิน",
-            },
-            {
-              t: "เทียบราคาและคุณสมบัติ",
-              d: "เทียบโปรไฟล์บริษัทกับแต่ละ TOR พร้อมราคาโครงการใกล้เคียงที่ประมูลผ่านแล้ว และแจ้งเตือนทางอีเมล",
-            },
-          ].map((f) => (
-            <div key={f.t} className="panel p-6">
-              <h3 className="text-[15px] font-semibold">{f.t}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {f.d}
-              </p>
-            </div>
-          ))}
         </section>
       </main>
 

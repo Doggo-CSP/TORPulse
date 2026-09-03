@@ -18,12 +18,20 @@ export function Avatar({
   className,
   ...props
 }: AvatarProps & React.ComponentPropsWithoutRef<'span'>) {
+  const [hasError, setHasError] = React.useState(false)
+
+  React.useEffect(() => {
+    setHasError(false)
+  }, [src])
+
+  const showImage = Boolean(src && src.trim() && !hasError)
+
   return (
     <span
       data-slot="avatar"
       className={clsx(
         className,
-        'inline-grid shrink-0 align-middle [--avatar-radius:20%] [--ring-opacity:20%] *:col-start-1 *:row-start-1',
+        'inline-grid shrink-0 align-middle [--avatar-radius:20%] [--ring-opacity:20%] *:col-start-1 *:row-start-1 overflow-hidden',
         square
           ? 'rounded-[--avatar-radius] *:rounded-[--avatar-radius]'
           : 'rounded-full *:rounded-full',
@@ -32,7 +40,7 @@ export function Avatar({
       )}
       {...props}
     >
-      {initials && (
+      {(!showImage || initials) && (
         <svg
           className="size-full select-none fill-current text-[48px] font-medium uppercase"
           viewBox="0 0 100 100"
@@ -47,11 +55,19 @@ export function Avatar({
             textAnchor="middle"
             dy=".125em"
           >
-            {initials}
+            {initials || 'U'}
           </text>
         </svg>
       )}
-      {src && <img className="size-full" src={src} alt={alt} />}
+      {showImage && (
+        <img
+          className="size-full object-cover"
+          src={src!}
+          alt={alt}
+          onError={() => setHasError(true)}
+        />
+      )}
     </span>
   )
 }
+
