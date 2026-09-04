@@ -15,6 +15,15 @@ export interface UserProfile {
   interests: string[];
   bookmarkedTorIds: string[];
   completionPercentage: number;
+  
+  // Organization
+  companyName?: string;
+  registrationNumber?: string;
+  businessType?: string;
+
+  // Agency
+  agencyName?: string;
+  agencyType?: string;
 }
 
 export interface TorItem {

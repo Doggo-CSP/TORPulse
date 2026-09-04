@@ -140,6 +140,13 @@ export default function ProfilePage() {
         image: profile.image || "",
         address: profile.address || "",
         about: profile.about || "",
+        // company fields
+        companyName: (profile as any).companyName || "",
+        registrationNumber: (profile as any).registrationNumber || "",
+        businessType: (profile as any).businessType || "",
+        // agency fields
+        agencyName: (profile as any).agencyName || "",
+        agencyType: (profile as any).agencyType || "",
       });
     }
   }, [profile]);
@@ -443,105 +450,275 @@ export default function ProfilePage() {
           </div>
         </div>
 
-              {/* Form Grid */}
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2 pt-2">
-                <div>
-                  <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    ชื่อที่แสดง
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.displayName || ""}
-                    onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                    placeholder="Kantapon Hemmadhun"
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
-                </div>
+              {/* ── Form Grid — changes by account type ── */}
 
-                <div>
-                  <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    ชื่อผู้ใช้งาน
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.firstName || ""}
-                    onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
-                </div>
+              {/* ── PERSONAL ── */}
+              {formData.accountType === "personal" && (
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 pt-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ชื่อที่แสดง</label>
+                    <input
+                      type="text"
+                      value={formData.displayName || ""}
+                      onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                      placeholder="เช่น Kantapon Hemmadhun"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    นามสกุล
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.lastName || ""}
-                    onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ชื่อ</label>
+                    <input
+                      type="text"
+                      value={formData.firstName || ""}
+                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    ตำแหน่งงาน
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.jobTitle || ""}
-                    onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">นามสกุล</label>
+                    <input
+                      type="text"
+                      value={formData.lastName || ""}
+                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    อีเมล
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.contactEmail || ""}
-                    onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ตำแหน่งงาน</label>
+                    <input
+                      type="text"
+                      value={formData.jobTitle || ""}
+                      onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
+                      placeholder="เช่น นักพัฒนาซอฟต์แวร์"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    เบอร์โทรศัพท์
-                  </label>
-                  <input
-                    type="tel"
-                    value={formData.phone || ""}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">อีเมล</label>
+                    <input
+                      type="email"
+                      value={formData.contactEmail || ""}
+                      onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    ที่อยู่
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={formData.address || ""}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">เบอร์โทรศัพท์</label>
+                    <input
+                      type="tel"
+                      value={formData.phone || ""}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    เกี่ยวกับคุณ
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={formData.about || ""}
-                    onChange={(e) => setFormData({ ...formData, about: e.target.value })}
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ที่อยู่</label>
+                    <textarea
+                      rows={2}
+                      value={formData.address || ""}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">เกี่ยวกับคุณ</label>
+                    <textarea
+                      rows={3}
+                      value={formData.about || ""}
+                      onChange={(e) => setFormData({ ...formData, about: e.target.value })}
+                      placeholder="แนะนำตัวสั้น ๆ เช่น ทักษะ ความถนัด หรือประสบการณ์"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* ── COMPANY ── */}
+              {formData.accountType === "company" && (
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 pt-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ชื่อที่แสดง</label>
+                    <input
+                      type="text"
+                      value={formData.displayName || ""}
+                      onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                      placeholder="เช่น Kantapon Hemmadhun"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ชื่อบริษัท</label>
+                    <input
+                      type="text"
+                      value={(formData as any).companyName || ""}
+                      onChange={(e) => setFormData({ ...formData, companyName: e.target.value } as any)}
+                      placeholder="เช่น บริษัท เทคโนโลยีไทย จำกัด"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">เลขทะเบียนนิติบุคคล</label>
+                    <input
+                      type="text"
+                      value={(formData as any).registrationNumber || ""}
+                      onChange={(e) => setFormData({ ...formData, registrationNumber: e.target.value } as any)}
+                      placeholder="เช่น 0105567012345"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ประเภทธุรกิจ</label>
+                    <input
+                      type="text"
+                      value={(formData as any).businessType || ""}
+                      onChange={(e) => setFormData({ ...formData, businessType: e.target.value } as any)}
+                      placeholder="เช่น ผู้พัฒนาซอฟต์แวร์"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">อีเมลติดต่อ</label>
+                    <input
+                      type="email"
+                      value={formData.contactEmail || ""}
+                      onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">เบอร์โทรศัพท์</label>
+                    <input
+                      type="tel"
+                      value={formData.phone || ""}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ที่อยู่สำนักงาน</label>
+                    <textarea
+                      rows={2}
+                      value={formData.address || ""}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">เกี่ยวกับบริษัท</label>
+                    <textarea
+                      rows={3}
+                      value={formData.about || ""}
+                      onChange={(e) => setFormData({ ...formData, about: e.target.value })}
+                      placeholder="แนะนำบริษัทสั้น ๆ ผลงาน หรือความเชี่ยวชาญ"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* ── AGENCY ── */}
+              {formData.accountType === "agency" && (
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 pt-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ชื่อที่แสดง</label>
+                    <input
+                      type="text"
+                      value={formData.displayName || ""}
+                      onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                      placeholder="เช่น Kantapon Hemmadhun"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ชื่อหน่วยงาน</label>
+                    <input
+                      type="text"
+                      value={(formData as any).agencyName || ""}
+                      onChange={(e) => setFormData({ ...formData, agencyName: e.target.value } as any)}
+                      placeholder="เช่น กรมพัฒนาธุรกิจการค้า"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ประเภทหน่วยงาน</label>
+                    <input
+                      type="text"
+                      value={(formData as any).agencyType || ""}
+                      onChange={(e) => setFormData({ ...formData, agencyType: e.target.value } as any)}
+                      placeholder="เช่น สำนัก / สำนักงานเขต / รัฐวิสาหกิจ"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">อีเมลติดต่อ</label>
+                    <input
+                      type="email"
+                      value={formData.contactEmail || ""}
+                      onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">เบอร์โทรศัพท์</label>
+                    <input
+                      type="tel"
+                      value={formData.phone || ""}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">เว็บไซต์</label>
+                    <input
+                      type="url"
+                      value={(formData as any).website || ""}
+                      onChange={(e) => setFormData({ ...formData, website: e.target.value } as any)}
+                      placeholder="เช่น https://agency.go.th"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">ที่อยู่หน่วยงาน</label>
+                    <textarea
+                      rows={2}
+                      value={formData.address || ""}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">เกี่ยวกับหน่วยงาน</label>
+                    <textarea
+                      rows={3}
+                      value={formData.about || ""}
+                      onChange={(e) => setFormData({ ...formData, about: e.target.value })}
+                      placeholder="แนะนำหน่วยงานสั้น ๆ ภารกิจ หรือขอบเขตงาน"
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Form Footer */}
               <div className="flex flex-col sm:flex-row items-center gap-4 border-t border-[#f0e8dc] pt-6">
