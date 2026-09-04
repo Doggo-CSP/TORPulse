@@ -233,13 +233,16 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <span className="text-xs font-semibold uppercase tracking-wider text-[#998f80]">
-                บัญชีของคุณ
+                บัญชีผู้ใช้งาน
               </span>
               <h1 className="mt-1 text-2xl font-bold text-[#2d2d2d] md:text-3xl">
                 {profile?.displayName || profile?.name || "Kantapon Hemmadhun"}
               </h1>
               <p className="mt-1 text-sm text-[#7a8b6f]">
-                {accountTypeLabel} - {profile?.email}
+                {accountTypeLabel}
+                {(profile?.email || authUser?.email) && (
+                  <> · {profile?.email || authUser?.email}</>
+                )}
               </p>
             </div>
 
@@ -370,7 +373,7 @@ export default function ProfilePage() {
           {/* Avatar — Right */}
           <div className="grid grid-cols-1 gap-5 pt-2">
             <label className="mb-1.5 block text-xs font-semibold text-[#5c5446]">
-              โลโก้ / รูปโปรไฟล์
+              Avatar / รูปโปรไฟล์
             </label>
 
             <div className="flex items-center gap-4">
@@ -457,7 +460,7 @@ export default function ProfilePage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    ชื่อจริง
+                    ชื่อผู้ใช้งาน
                   </label>
                   <input
                     type="text"
@@ -493,7 +496,7 @@ export default function ProfilePage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">
-                    อีเมลติดต่อ
+                    อีเมล
                   </label>
                   <input
                     type="email"

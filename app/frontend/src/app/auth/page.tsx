@@ -27,7 +27,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             เข้าสู่ระบบ
           </h1>
           <p className="mb-7 text-sm leading-relaxed text-[#7a8b6f]">
-            ใช้บัญชี Google เพื่อบันทึก TOR และรับคำแนะนำที่ตรงกับความสนใจของคุณ
+            ใช้บัญชี Google เพื่อเข้าใช้งานเว็บไซต์และค้นหา TOR ที่ตรงกับความสนใจของคุณ
           </p>
 
           {authenticationFailed ? (

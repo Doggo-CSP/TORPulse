@@ -222,7 +222,7 @@ export default function HomePage() {
           </div>
 
           <div className="panel p-6">
-            <p className="label-eyebrow">ดัชนีล่าสุด</p>
+            <p className="label-eyebrow">ข้อมูลล่าสุด</p>
             <div className="mt-5 grid grid-cols-2 gap-5">
               {[
                 { k: "TOR ที่จัดเก็บแล้ว", v: "1,284" },
@@ -250,7 +250,7 @@ export default function HomePage() {
         {/* Search + filter panel */}
         <section className="panel overflow-hidden">
           <div className="flex items-center justify-between bg-[#F8FAF7] px-6 py-4">
-            <h2 className="text-lg font-semibold">ค้นหารายการ</h2>
+            <h2 className="text-lg font-semibold">ค้นหารายการ TOR ที่ต้องการ</h2>
             <button
               onClick={() => setFiltersOpen((v) => !v)}
               className="flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-1.5 text-xs font-medium text-primary-foreground"
@@ -326,7 +326,7 @@ export default function HomePage() {
 
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                    งบประมาณ (ล้านบาท)
+                    งบประมาณ (บาท)
                   </label>
                   <div className="flex items-center gap-2">
                     <input
