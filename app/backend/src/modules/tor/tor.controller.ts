@@ -81,21 +81,27 @@ export function calculateInterestScore(
 
 interface TorLeanFields {
   _id: unknown
+  externalId: string
+  sourceAdapter: string
   projectTitle: string
   agencyName?: string | null
   budgetBaht?: number | null
   submissionDeadline?: string | null
   technologies?: string[]
+  createdAt: Date
 }
 
 export function toTorListItem(tor: TorLeanFields) {
   return {
     id: String(tor._id),
+    externalId: tor.externalId,
+    sourceAdapter: tor.sourceAdapter,
     projectTitle: tor.projectTitle,
     agencyName: tor.agencyName ?? null,
     budgetBaht: tor.budgetBaht ?? null,
     submissionDeadline: tor.submissionDeadline ?? null,
     technologies: tor.technologies ?? [],
+    createdAt: tor.createdAt,
     category: deriveCategory(tor.technologies ?? []),
   }
 }
@@ -105,31 +111,19 @@ export function toTorListItem(tor: TorLeanFields) {
 // ---------------------------------------------------------------------------
 
 export async function getFilterOptionsHandler(_req: Request, res: Response): Promise<void> {
-  const [departments, yearRows] = await Promise.all([
-    TorModel.distinct('agencyName', { agencyName: { $nin: [null, ''] } }),
+  const [yearRows, technologies] = await Promise.all([
     TorModel.aggregate<{ _id: number }>([
       { $group: { _id: { $year: '$updatedAt' } } },
       { $sort: { _id: -1 } },
     ]),
+    TorModel.distinct('technologies'),
   ])
 
   res.json({
-    departments: (departments as string[]).sort((a, b) => a.localeCompare(b)),
-    // budgetType omitted: no schema field supports it, awaits an ingestion-pipeline change.
-    // operationStatus omitted: the `tors` collection currently has no data to verify that
-    // submissionDeadline parses reliably as a date (see plan Decision A) — not shipping an
-    // unverified filter.
-    budgetYears: yearRows.map((row) => ({
-      value: row._id,
-      label: `${row._id + 543} (ปีที่บันทึกในระบบ ไม่ใช่ปีงบประมาณจริง)`,
-    })),
-    categories: [
-      { value: 'all', label: 'ทั้งหมด' },
-      { value: 'web_application', label: 'งานพัฒนาเว็บไซต์' },
-      { value: 'data_bi', label: 'งานข้อมูลและวิเคราะห์' },
-      { value: 'mobile_app', label: 'งานแอปพลิเคชันมือถือ' },
-      { value: 'enterprise_system', label: 'งานระบบองค์กร' },
-    ],
+    years: yearRows.map((row) => row._id),
+    technologies: (technologies as string[])
+      .filter((technology) => technology.trim() !== '')
+      .sort((a, b) => a.localeCompare(b)),
   })
 }
 
@@ -154,17 +148,16 @@ function parseStringParam(value: unknown): string | undefined {
 
 export async function listTorsHandler(req: Request, res: Response): Promise<void> {
   const q = parseStringParam(req.query.q)
-  const department = parseStringParam(req.query.department)
   const budgetMin = parseNumberParam(req.query.budget_min)
   const budgetMax = parseNumberParam(req.query.budget_max)
   const year = parseNumberParam(req.query.year)
-  const categoryFilter = parseStringParam(req.query.technologies)
+  const technology = parseStringParam(req.query.technologies)
   const page = Math.max(1, parseNumberParam(req.query.page) ?? 1)
   const limit = Math.min(MAX_LIMIT, Math.max(1, parseNumberParam(req.query.limit) ?? DEFAULT_LIMIT))
 
   const query: Record<string, unknown> = {}
   if (q) query.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
-  if (department) query.agencyName = { $regex: escapeRegex(department), $options: 'i' }
+  if (technology && technology !== 'all') query.technologies = technology
   if (budgetMin !== undefined || budgetMax !== undefined) {
     const budgetBaht: Record<string, number> = {}
     if (budgetMin !== undefined) budgetBaht.$gte = budgetMin
@@ -175,15 +168,7 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
     query.$expr = { $eq: [{ $year: '$updatedAt' }, year] }
   }
 
-  const docs = await TorModel.find(query).sort({ createdAt: -1 }).lean()
-  let items = docs.map(toTorListItem)
-
-  // deriveCategory is keyword-based, not a stored field, so it can't be expressed as a Mongo
-  // predicate — filter in JS after the cheap query filters above, reusing the one deriveCategory
-  // instead of duplicating its keyword lists as a Mongo query.
-  if (categoryFilter && categoryFilter !== 'all') {
-    items = items.filter((item) => item.category === categoryFilter)
-  }
+  const items = (await TorModel.find(query).sort({ createdAt: -1 }).lean()).map(toTorListItem)
 
   const total = items.length
   const totalPages = total === 0 ? 0 : Math.ceil(total / limit)

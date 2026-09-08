@@ -25,40 +25,45 @@ test('tor list + filter-options routes, against a deterministic seeded dataset',
   const app = express()
   app.use('/tors', router)
 
-  await t.test('GET /tors/filter-options lists departments, budgetYears and categories', async () => {
+  await t.test('GET /tors/filter-options lists database years and technologies', async () => {
     const response = await request(app).get('/tors/filter-options')
 
     assert.equal(response.status, 200)
-    assert.deepEqual(response.body.departments, [
-      'Ministry of Education',
-      'Ministry of Finance',
-      'Ministry of Health',
-      'Ministry of Interior',
-    ])
-    assert.equal(response.body.budgetType, undefined)
-    assert.equal(response.body.operationStatus, undefined)
-    assert.equal(response.body.categories.length, 5)
+    assert.ok(response.body.years.includes(new Date().getFullYear()))
+    assert.deepEqual(response.body.technologies, [...response.body.technologies].sort((a, b) => a.localeCompare(b)))
+    assert.ok(response.body.technologies.includes('React'))
+    assert.ok(response.body.technologies.includes('Power BI'))
   })
 
-  await t.test('GET /tors filters by department', async () => {
-    const response = await request(app).get('/tors').query({ department: 'Ministry of Health' })
+  await t.test('GET /tors filters by exact technology and accepts all', async () => {
+    const response = await request(app)
+      .get('/tors')
+      .query({ q: 'seed project seed-homepage-004', technologies: 'Flutter' })
 
     assert.equal(response.status, 200)
-    assert.equal(response.body.total, 2)
+    assert.equal(response.body.total, 1)
+    assert.deepEqual(response.body.items[0].technologies, ['Flutter'])
+
+    const allResponse = await request(app)
+      .get('/tors')
+      .query({ q: 'seed project seed-homepage-004', technologies: 'all' })
+    assert.equal(allResponse.body.total, 1)
   })
 
-  await t.test('GET /tors filters by derived category', async () => {
-    const response = await request(app).get('/tors').query({ technologies: 'mobile_app' })
+  await t.test('GET /tors filters by title, year, and budget range', async () => {
+    const response = await request(app)
+      .get('/tors')
+      .query({ q: 'seed project seed-homepage-004', year: new Date().getFullYear(), budget_min: 250000, budget_max: 350000 })
 
     assert.equal(response.status, 200)
-    assert.equal(response.body.total, 2)
-    for (const item of response.body.items) {
-      assert.equal(item.category, 'mobile_app')
-    }
+    assert.equal(response.body.total, 1)
+    assert.equal(response.body.items[0].externalId, 'seed-homepage-004')
+    assert.equal(response.body.items[0].sourceAdapter, 'central_egp')
+    assert.ok(response.body.items[0].createdAt)
   })
 
   await t.test('GET /tors paginates', async () => {
-    const response = await request(app).get('/tors').query({ page: 1, limit: 3 })
+    const response = await request(app).get('/tors').query({ q: 'seed project seed-homepage-', page: 1, limit: 3 })
 
     assert.equal(response.status, 200)
     assert.equal(response.body.items.length, 3)
