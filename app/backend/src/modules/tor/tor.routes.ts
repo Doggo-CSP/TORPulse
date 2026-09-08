@@ -1,9 +1,11 @@
 import { Router } from 'express'
 
-const r = Router()
+import { getFilterOptionsHandler, getRecommendationsHandler, listTorsHandler } from './tor.controller.js'
 
-r.get('/check', (_req, res, next) => {
-  res.json({ message: 'heelo' })
-  return
-})
-export default r
+const router = Router()
+
+router.get('/filter-options', getFilterOptionsHandler)
+router.get('/recommendations', getRecommendationsHandler)
+router.get('/', listTorsHandler)
+
+export default router
