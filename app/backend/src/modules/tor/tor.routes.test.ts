@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import express from 'express'
+import { Types } from 'mongoose'
 import request from 'supertest'
 
 import { database } from '../../config/mongoose.js'
@@ -30,7 +31,10 @@ test('tor list + filter-options routes, against a deterministic seeded dataset',
 
     assert.equal(response.status, 200)
     assert.ok(response.body.years.includes(new Date().getFullYear()))
-    assert.deepEqual(response.body.technologies, [...response.body.technologies].sort((a, b) => a.localeCompare(b)))
+    assert.deepEqual(
+      response.body.technologies,
+      [...response.body.technologies].sort((a, b) => a.localeCompare(b)),
+    )
     assert.ok(response.body.technologies.includes('React'))
     assert.ok(response.body.technologies.includes('Power BI'))
   })
@@ -53,7 +57,12 @@ test('tor list + filter-options routes, against a deterministic seeded dataset',
   await t.test('GET /tors filters by title, year, and budget range', async () => {
     const response = await request(app)
       .get('/tors')
-      .query({ q: 'seed project seed-homepage-004', year: new Date().getFullYear(), budget_min: 250000, budget_max: 350000 })
+      .query({
+        q: 'seed project seed-homepage-004',
+        year: new Date().getFullYear(),
+        budget_min: 250000,
+        budget_max: 350000,
+      })
 
     assert.equal(response.status, 200)
     assert.equal(response.body.total, 1)
@@ -63,11 +72,45 @@ test('tor list + filter-options routes, against a deterministic seeded dataset',
   })
 
   await t.test('GET /tors paginates', async () => {
-    const response = await request(app).get('/tors').query({ q: 'seed project seed-homepage-', page: 1, limit: 3 })
+    const response = await request(app)
+      .get('/tors')
+      .query({ q: 'seed project seed-homepage-', page: 1, limit: 3 })
 
     assert.equal(response.status, 200)
     assert.equal(response.body.items.length, 3)
     assert.equal(response.body.total, 10)
     assert.equal(response.body.totalPages, 4)
+  })
+
+  await t.test('GET /tors/:id returns a normalized TOR detail', async () => {
+    const seededTor = await TorModel.findOne({ externalId: 'seed-homepage-004' }).lean()
+    assert.ok(seededTor)
+
+    const response = await request(app).get(`/tors/${seededTor._id}`)
+
+    assert.equal(response.status, 200)
+    assert.equal(response.body.id, String(seededTor._id))
+    assert.equal(response.body.externalId, 'seed-homepage-004')
+    assert.equal(response.body.projectTitle, 'Seed project seed-homepage-004')
+    assert.deepEqual(response.body.technologies, ['Flutter'])
+    assert.ok(response.body.createdAt)
+    assert.ok(response.body.updatedAt)
+    assert.equal(response.body._id, undefined)
+    assert.equal(response.body.dataSourceId, undefined)
+    assert.equal(response.body.ingestionJobId, undefined)
+  })
+
+  await t.test('GET /tors/:id rejects a malformed id', async () => {
+    const response = await request(app).get('/tors/not-an-object-id')
+
+    assert.equal(response.status, 400)
+    assert.deepEqual(response.body, { message: 'Invalid TOR id' })
+  })
+
+  await t.test('GET /tors/:id returns 404 for an absent TOR', async () => {
+    const response = await request(app).get(`/tors/${new Types.ObjectId()}`)
+
+    assert.equal(response.status, 404)
+    assert.deepEqual(response.body, { message: 'TOR not found' })
   })
 })

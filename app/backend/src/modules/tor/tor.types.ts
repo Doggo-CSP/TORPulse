@@ -18,6 +18,7 @@ export interface UpsertTorInput {
   summary: string | null
   objectives: string[]
   requirements: string[]
+  bidderQualifications: string[]
   technologies: string[]
   budgetBaht: number | null
   submissionDeadline: string | null

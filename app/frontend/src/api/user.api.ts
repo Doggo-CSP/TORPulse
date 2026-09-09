@@ -72,8 +72,19 @@ export async function updateUserProfile(profileData: Partial<UserProfile>): Prom
     body: JSON.stringify(profileData),
   });
 
+  if (res.status === 401) {
+    throw new Error("UNAUTHORIZED");
+  }
+
   if (!res.ok) {
-    throw new Error("Failed to update profile");
+    let detail = "";
+    try {
+      const errBody = await res.json();
+      detail = errBody?.message || errBody?.error || JSON.stringify(errBody);
+    } catch {
+      detail = await res.text().catch(() => "");
+    }
+    throw new Error(`Failed to update profile (${res.status}): ${detail}`);
   }
 
   const data = await res.json();

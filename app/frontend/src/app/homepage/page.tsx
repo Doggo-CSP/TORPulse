@@ -4,16 +4,18 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { SiteNav } from "@/app/components/site_nav";
+import { useAuth } from "@/hooks/use-auth";
+import { useUserProfile } from "@/hooks/use-user-profile";
+import { useHomepage } from "@/hooks/use-homepage";
+import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
+import { useTorFilterOptions, useTors } from "@/hooks/use-tors";
 import {
-  tors,
   categorySplit,
-  totalBudgetAmount,
-  totalProjectCount,
   homeStats,
   priceComparisonData,
   priceChartSeries,
-  isLoggedIn,
-  recommended,
+  totalBudgetAmount,
+  totalProjectCount,
 } from "./mockData";
 
 const PriceComparisonChart = dynamic(
@@ -103,91 +105,119 @@ const PriceComparisonChart = dynamic(
 const baht = (n: number) => "฿" + (n / 1_000_000).toFixed(1) + " ล้าน";
 const toMillion = (n: number) => (n / 1_000_000).toFixed(1);
 
-const categories = [
-  "ทั้งหมด",
-  "Web Application",
-  "Data / BI",
-  "Mobile App",
-  "Enterprise System",
-];
-const trackingGroups = [
-  "ทั้งหมด",
-  "งานพัฒนาเว็บไซต์",
-  "งานข้อมูลและวิเคราะห์",
-  "งานแอปพลิเคชันมือถือ",
-  "งานระบบองค์กร",
-];
-const budgetYears = ["ทั้งหมด", "2569", "2568", "2567"];
-const budgetTypes = [
-  "ทั้งหมด",
-  "งบประมาณรายจ่ายประจำปี",
-  "เงินนอกงบประมาณ",
-  "เงินอุดหนุน",
-];
 const statuses = ["ทั้งหมด", "เปิดรับสมัคร", "ใกล้ปิดรับ", "ปิดรับสมัครแล้ว"];
-const agencies = ["ทั้งหมด", ...Array.from(new Set(tors.map((t) => t.agency)))];
 
 const ITEMS_PER_PAGE = 4;
 
 export default function HomePage() {
+  const { user, loading: authLoading } = useAuth();
+  const { profile, recommendedTors = [], loading: profileLoading } = useUserProfile();
+  const { summary, analytics, loadingSummary } = useHomepage();
+
+  // filter metadata (years + technologies) comes from the backend now
+  const { data: filterOptions } = useTorFilterOptions();
+  const budgetYears = useMemo(
+    () => ["ทั้งหมด", ...(filterOptions?.years.map(String) ?? [])],
+    [filterOptions],
+  );
+  const techOptions = useMemo(
+    () => ["ทั้งหมด", ...(filterOptions?.technologies ?? [])],
+    [filterOptions],
+  );
+
+  const displayedCategorySplit = useMemo(() => {
+    if (analytics?.categoryDistribution && analytics.categoryDistribution.length > 0) {
+      return analytics.categoryDistribution.map((item) => ({
+        label: item.label,
+        pct: item.percentage,
+      }));
+    }
+    return categorySplit;
+  }, [analytics]);
+
+  const currentUser = user || (profile ? {
+    id: profile.id,
+    name: profile.displayName || profile.name,
+    email: profile.email || profile.contactEmail,
+    image: profile.image,
+  } : null);
+
+  const isLoggedIn = !!currentUser;
+  const isAuthChecking = authLoading;
+
   const [filtersOpen, setFiltersOpen] = useState(true);
 
   const [name, setName] = useState("");
-  const [trackingGroup, setTrackingGroup] = useState("ทั้งหมด");
   const [budgetYear, setBudgetYear] = useState("ทั้งหมด");
-  const [budgetType, setBudgetType] = useState("ทั้งหมด");
   const [budgetMin, setBudgetMin] = useState("");
   const [budgetMax, setBudgetMax] = useState("");
-  const [agency, setAgency] = useState("ทั้งหมด");
-  const [status, setStatus] = useState("ทั้งหมด");
-  const [egpOnly, setEgpOnly] = useState(false);
-  const [cat, setCat] = useState("ทั้งหมด");
+  const [agency, setAgency] = useState("ทั้งหมด"); // not sent to API yet — see note below
+  const [status, setStatus] = useState("ทั้งหมด"); // not sent to API yet — see note below
+  const [egpOnly, setEgpOnly] = useState(false); // not sent to API yet — see note below
+  const [techs, setTechs] = useState<string[]>([]);
+  const [techSearch, setTechSearch] = useState("");
+  const [techExpanded, setTechExpanded] = useState(false);
+
+  const TECH_COLLAPSED_COUNT = 24;
+
+  const filteredTechOptions = useMemo(() => {
+    if (!techSearch.trim()) return techOptions.filter((t) => t !== "ทั้งหมด");
+    const q = techSearch.trim().toLowerCase();
+    return techOptions.filter((t) => t !== "ทั้งหมด" && t.toLowerCase().includes(q));
+  },  [techOptions, techSearch]);
+
+  const visibleTechOptions =
+    techExpanded || techSearch.trim() ? filteredTechOptions : filteredTechOptions.slice(0, TECH_COLLAPSED_COUNT);
+
+  const toggleTech = (t: string) => {
+    setTechs((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+    setCurrentPage(1);
+  };
 
   const [currentPage, setCurrentPage] = useState(1);
 
-  const results = useMemo(
-    () =>
-      tors.filter((t) => {
-        const matchesName = (t.title + t.agency + t.tech.join(" ") + t.id)
-          .toLowerCase()
-          .includes(name.toLowerCase());
-        const matchesCat = cat === "ทั้งหมด" || t.category === cat;
-        const matchesAgency = agency === "ทั้งหมด" || t.agency === agency;
-        const matchesStatus = status === "ทั้งหมด" || t.status === status;
-        const matchesEgp = !egpOnly || t.source === "e-GP";
-        const min = budgetMin ? Number(budgetMin) * 1_000_000 : -Infinity;
-        const max = budgetMax ? Number(budgetMax) * 1_000_000 : Infinity;
-        const matchesBudget = t.budget >= min && t.budget <= max;
-        return (
-          matchesName &&
-          matchesCat &&
-          matchesAgency &&
-          matchesStatus &&
-          matchesEgp &&
-          matchesBudget
-        );
-      }),
-    [name, cat, agency, status, egpOnly, budgetMin, budgetMax],
+  const recommendedList = useMemo(() => {
+    if (!isLoggedIn) return [];
+    return recommendedTors.map((item) => ({
+      id: item._id,
+      title: item.projectTitle,
+      agency: item.agencyName || "หน่วยงานรัฐ",
+      budget: item.budgetBaht || 0,
+      interestScore: 92,
+      reason: item.classificationReason || "ตรงกับหมวดหมู่ที่คุณสนใจ",
+    }));
+  }, [isLoggedIn, recommendedTors]);
+
+  // live search + filter against the real API
+  const requestParams = useMemo(
+    () => ({
+      q: name || undefined,
+      year: budgetYear === "ทั้งหมด" ? undefined : Number(budgetYear),
+      budget_min: budgetMin ? Number(budgetMin) * 1_000_000 : undefined,
+      budget_max: budgetMax ? Number(budgetMax) * 1_000_000 : undefined,
+      technologies: techs.length > 0 ? techs.join(",") : undefined, // needs backend $in support — see below
+      page: currentPage,
+      limit: ITEMS_PER_PAGE,
+    }),
+    [name, budgetYear, budgetMin, budgetMax, techs, currentPage],
   );
 
-  const totalPages = Math.max(1, Math.ceil(results.length / ITEMS_PER_PAGE));
+  const { data, isLoading: searching, error: searchError } = useTors(requestParams);
+  const pagedResults = data?.items ?? [];
+  const totalPages = Math.max(1, data?.totalPages ?? 1);
   const visiblePage = Math.min(currentPage, totalPages);
-  const pagedResults = results.slice(
-    (visiblePage - 1) * ITEMS_PER_PAGE,
-    visiblePage * ITEMS_PER_PAGE,
-  );
 
   const clearFilters = () => {
     setName("");
-    setTrackingGroup("ทั้งหมด");
     setBudgetYear("ทั้งหมด");
-    setBudgetType("ทั้งหมด");
     setBudgetMin("");
     setBudgetMax("");
     setAgency("ทั้งหมด");
     setStatus("ทั้งหมด");
     setEgpOnly(false);
-    setCat("ทั้งหมด");
+    setTechs([]);
+    setTechSearch("");
+    setCurrentPage(1);
   };
 
   return (
@@ -222,13 +252,49 @@ export default function HomePage() {
           </div>
 
           <div className="panel p-6">
-            <p className="label-eyebrow">ข้อมูลล่าสุด</p>
+            <div className="flex items-center justify-between">
+              <p className="label-eyebrow">ดัชนีล่าสุด</p>
+              {loadingSummary && (
+                <span
+                  className="size-3 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                  title="กำลังอัปเดตข้อมูลล่าสุด..."
+                />
+              )}
+            </div>
             <div className="mt-5 grid grid-cols-2 gap-5">
               {[
-                { k: "TOR ที่จัดเก็บแล้ว", v: "1,284" },
-                { k: "แหล่งข้อมูล", v: "6" },
-                { k: "งบประมาณรวมที่ติดตาม", v: "฿3.4 พันล้าน" },
-                { k: "ประกาศใหม่สัปดาห์นี้", v: "37" },
+                {
+                  k: "TOR ที่จัดเก็บแล้ว",
+                  v: summary
+                    ? summary.total_tors.toLocaleString("th-TH")
+                    : loadingSummary
+                    ? "..."
+                    : "1,284",
+                },
+                {
+                  k: "แหล่งข้อมูล",
+                  v: summary
+                    ? summary.total_sources.toLocaleString("th-TH")
+                    : loadingSummary
+                    ? "..."
+                    : "6",
+                },
+                {
+                  k: "งบประมาณรวมที่ติดตาม",
+                  v: summary
+                    ? formatBudgetSummary(summary.total_budget)
+                    : loadingSummary
+                    ? "..."
+                    : "฿3.4 พันล้าน",
+                },
+                {
+                  k: "ประกาศใหม่สัปดาห์นี้",
+                  v: summary
+                    ? summary.new_this_week.toLocaleString("th-TH")
+                    : loadingSummary
+                    ? "..."
+                    : "37",
+                },
               ].map((s) => (
                 <div key={s.k}>
                   <p className="font-display text-2xl font-semibold text-primary">
@@ -240,8 +306,7 @@ export default function HomePage() {
             </div>
             <div className="mt-6 border-t border-border pt-5">
               <p className="text-xs text-muted-foreground">
-                ดึงข้อมูลล่าสุด 08:40 น. · e-GP, ระบบจัดซื้อจัดจ้าง กทม.,
-                ข้อมูลเปิด DGA
+                ดึงข้อมูลล่าสุด {formatLastUpdatedTime(summary?.last_updated)} · e-GP, ระบบจัดซื้อจัดจ้าง กทม., ข้อมูลเปิด DGA
               </p>
             </div>
           </div>
@@ -281,21 +346,6 @@ export default function HomePage() {
 
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                    กลุ่มติดตาม
-                  </label>
-                  <select
-                    value={trackingGroup}
-                    onChange={(e) => setTrackingGroup(e.target.value)}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
-                  >
-                    {trackingGroups.map((g) => (
-                      <option key={g}>{g}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
                     ปีงบประมาณ
                   </label>
                   <select
@@ -311,22 +361,7 @@ export default function HomePage() {
 
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                    ประเภทงบประมาณ
-                  </label>
-                  <select
-                    value={budgetType}
-                    onChange={(e) => setBudgetType(e.target.value)}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
-                  >
-                    {budgetTypes.map((b) => (
-                      <option key={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                    งบประมาณ (บาท)
+                    งบประมาณ (ล้านบาท)
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -347,6 +382,9 @@ export default function HomePage() {
                   </div>
                 </div>
 
+                {/* NOTE: agency / status / EGP-only have no backend query param yet.
+                    They're kept as UI-only state for now — not applied to results.
+                    Confirm with backend whether these should be added to /api/v1/tors. */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
                     หน่วยงาน
@@ -356,9 +394,7 @@ export default function HomePage() {
                     onChange={(e) => setAgency(e.target.value)}
                     className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
                   >
-                    {agencies.map((a) => (
-                      <option key={a}>{a}</option>
-                    ))}
+                    <option>ทั้งหมด</option>
                   </select>
                 </div>
 
@@ -391,15 +427,46 @@ export default function HomePage() {
               </div>
 
               <div className="mt-5 border-t border-border pt-5">
-                <p className="label-eyebrow">หมวดงาน</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {categories.map((f) => (
+                <div className="flex items-center justify-between">
+                  <p className="label-eyebrow">
+                    เทคโนโลยี{techs.length > 0 && <span className="text-primary"> ({techs.length} เลือก)</span>}
+                  </p>
+                  {techs.length > 0 && (
+                    <button
+                      onClick={() => setTechs([])}
+                      className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      ล้างเทคโนโลยี
+                    </button>
+                  )}
+                </div>
+
+                <input
+                  value={techSearch}
+                  onChange={(e) => setTechSearch(e.target.value)}
+                  placeholder="ค้นหาเทคโนโลยี..."
+                  className="mt-2 w-full max-w-xs rounded-md border border-input bg-background px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-ring"
+                />
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setTechs([])}
+                    className={
+                      "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
+                      (techs.length === 0
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    ทั้งหมด
+                  </button>
+                  {visibleTechOptions.map((f) => (
                     <button
                       key={f}
-                      onClick={() => setCat(f)}
+                      onClick={() => toggleTech(f)}
                       className={
                         "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
-                        (cat === f
+                        (techs.includes(f)
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border text-muted-foreground hover:text-foreground")
                       }
@@ -408,6 +475,15 @@ export default function HomePage() {
                     </button>
                   ))}
                 </div>
+
+                {!techSearch.trim() && filteredTechOptions.length > TECH_COLLAPSED_COUNT && (
+                  <button
+                    onClick={() => setTechExpanded((v) => !v)}
+                    className="mt-3 text-xs font-medium text-primary hover:underline"
+                  >
+                    {techExpanded ? "แสดงน้อยลง ▲" : `แสดงทั้งหมด (${filteredTechOptions.length}) ▼`}
+                  </button>
+                )}
               </div>
 
               <div className="mt-6 flex items-center justify-end gap-3">
@@ -417,7 +493,10 @@ export default function HomePage() {
                 >
                   ล้างค่า
                 </button>
-                <button className="rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground">
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  className="rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground"
+                >
                   ค้นหา
                 </button>
               </div>
@@ -428,63 +507,63 @@ export default function HomePage() {
         {/* Results */}
         <section className="panel mt-6 p-6 md:p-8">
           <ul className="divide-y divide-border">
-            {pagedResults.map((t) => (
-              <li key={t.id}>
-                <Link
-                  href={`/tor/${t.id}`}
-                  className="grid gap-4 rounded-2xl px-3 py-5 transition-colors hover:bg-surface-2 md:grid-cols-[1fr_auto] md:items-center"
-                >
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                      <span className="rounded bg-surface-2 px-2 py-0.5">
-                        {t.id}
-                      </span>
-                      <span>{t.source}</span>
-                      <span>· ประกาศ {t.publishedAt}</span>
-                      <span className="text-warning">
-                        · ปิดรับ {t.closesAt}
-                      </span>
-                    </div>
-                    <h3 className="mt-2 text-[15px] leading-snug font-medium">
-                      {t.title}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {t.agency}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {t.tech.map((x) => (
-                        <span
-                          key={x}
-                          className="rounded border border-border px-2 py-0.5 text-[11px] text-accent"
-                        >
-                          {x}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6 md:flex-col md:items-end md:gap-2">
-                    <p className="font-display text-xl font-semibold">
-                      {baht(t.budget)}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-2">
-                        <div
-                          className="h-full rounded-full bg-success"
-                          style={{ width: `${t.match}%` }}
-                        />
-                      </div>
-                      <span className="font-mono text-xs text-success">
-                        ตรง {t.match}%
-                      </span>
-                    </div>
-                    <span className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground">
-                      ดูรายละเอียด
-                    </span>
-                  </div>
-                </Link>
+            {searching && (
+              <li className="py-10 text-center text-sm text-muted-foreground">
+                กำลังค้นหา...
               </li>
-            ))}
-            {results.length === 0 && (
+            )}
+            {!searching && searchError && (
+              <li className="py-10 text-center text-sm text-warning">
+                เกิดข้อผิดพลาดในการค้นหา
+              </li>
+            )}
+            {!searching &&
+              !searchError &&
+              pagedResults.map((t) => (
+                <li key={t.id}>
+                  <Link
+                    href={`/tor/${t.id}`}
+                    className="grid gap-4 rounded-2xl px-3 py-5 transition-colors hover:bg-surface-2 md:grid-cols-[1fr_auto] md:items-center"
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                        <span className="rounded bg-surface-2 px-2 py-0.5">
+                          {t.externalId}
+                        </span>
+                        <span>{t.sourceAdapter}</span>
+                        <span>
+                          · ปิดรับ {t.submissionDeadline ? new Date(t.submissionDeadline).toLocaleDateString("th-TH") : "-"}
+                        </span>
+                      </div>
+                      <h3 className="mt-2 text-[15px] leading-snug font-medium">
+                        {t.projectTitle}
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {t.agencyName ?? "หน่วยงานรัฐ"}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {t.technologies.map((x) => (
+                          <span
+                            key={x}
+                            className="rounded border border-border px-2 py-0.5 text-[11px] text-accent"
+                          >
+                            {x}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6 md:flex-col md:items-end md:gap-2">
+                      <p className="font-display text-xl font-semibold">
+                        {baht(t.budgetBaht ?? 0)}
+                      </p>
+                      <span className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground">
+                        ดูรายละเอียด
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            {!searching && !searchError && pagedResults.length === 0 && (
               <li className="py-10 text-center text-sm text-muted-foreground">
                 ไม่พบ TOR ที่ตรงกับเงื่อนไขนี้
               </li>
@@ -562,51 +641,131 @@ export default function HomePage() {
             </Link>
           </div>
 
-          {!isLoggedIn ? (
-            <div className="mt-5 rounded-2xl border border-dashed border-border p-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                เข้าสู่ระบบและเลือกหมวดหมู่ที่สนใจ เพื่อให้เราแนะนำ TOR
-                ที่ตรงกับงานของคุณ
+          {isAuthChecking ? (
+            <div className="mt-5 flex items-center justify-center rounded-2xl border border-dashed border-border p-10 text-center">
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                <span>กำลังโหลดข้อมูลผู้ใช้...</span>
+              </div>
+            </div>
+          ) : !isLoggedIn ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-border p-8 text-center bg-surface/40">
+              <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                </svg>
+              </div>
+              <p className="text-sm font-semibold text-foreground">
+                เข้าสู่ระบบและเลือกหมวดหมู่ที่สนใจ
+              </p>
+              <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">
+                เข้าสู่ระบบด้วยบัญชี Google เพื่อให้เราคัดสรรและแนะนำ TOR ที่ตรงกับงานและความเชี่ยวชาญของคุณ
               </p>
               <Link
                 href="/auth"
-                className="mt-4 inline-block rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground"
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 active:scale-[0.98]"
               >
-                เข้าสู่ระบบ / สมัครสมาชิก
+                <span>เข้าสู่ระบบ / สมัครสมาชิก</span>
+                <span aria-hidden="true">→</span>
               </Link>
             </div>
-          ) : recommended.length === 0 ? (
-            <div className="mt-5 rounded-2xl border border-dashed border-border p-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                ยังไม่พบ TOR ที่ตรงกับความสนใจของคุณ
-                ลองเลือกหมวดหมู่ที่สนใจในหน้าโปรไฟล์
-              </p>
-            </div>
-          ) : (
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              {recommended.map((t) => (
-                <Link
-                  key={t.id}
-                  href={`/tor/${t.id}`}
-                  className="rounded-2xl border border-border bg-surface p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
-                >
-                  <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
-                    <span>{t.id}</span>
-                    <span className="rounded-full bg-success/15 px-2 py-0.5 text-success">
-                      คะแนน {t.interestScore}
+          ) : recommendedList.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-border/80 bg-gradient-to-br from-surface/90 via-surface to-background p-6 sm:p-8 shadow-xs">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
+                {/* User Avatar */}
+                <div className="relative shrink-0">
+                  {currentUser.image ? (
+                    <img
+                      src={currentUser.image}
+                      alt={currentUser.name || currentUser.email}
+                      className="size-14 rounded-2xl object-cover ring-2 ring-primary/20 shadow-sm"
+                    />
+                  ) : (
+                    <div className="grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-[#4a7c59] to-[#2e5239] font-mono text-lg font-bold text-white shadow-sm">
+                      {(currentUser.name || currentUser.email || "U").slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="absolute -bottom-1 -right-1 flex size-4 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-background" title="เข้าสู่ระบบแล้ว">
+                    <span className="size-1.5 rounded-full bg-white animate-pulse" />
+                  </span>
+                </div>
+
+                {/* Welcome Details */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
+                      <span className="size-1.5 rounded-full bg-primary" />
+                      เข้าสู่ระบบสำเร็จ
+                    </span>
+                    <span className="text-xs text-muted-foreground font-mono truncate max-w-[260px] sm:max-w-none">
+                      {currentUser.email}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm font-medium leading-snug">
-                    {t.title}
+
+                  <h3 className="mt-2 text-base sm:text-lg font-semibold text-foreground">
+                    ยินดีต้อนรับคุณ, <span className="text-primary">{currentUser.name || currentUser.email}</span> 👋
+                  </h3>
+
+                  <p className="mt-1 text-xs sm:text-sm leading-relaxed text-muted-foreground">
+                    ขณะนี้ยังไม่พบโครงการ TOR ที่ตรงกับความสนใจของคุณ หรือคุณยังไม่ได้ระบุหมวดหมู่ที่สนใจ
+                    สามารถไปที่หน้าโปรไฟล์เพื่อเลือกหมวดหมู่ที่ต้องการติดตาม เพื่อให้ระบบช่วยแนะนำงานที่เหมาะกับคุณโดยอัตโนมัติ
                   </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t.agency} · {t.reason}
-                  </p>
-                  <p className="mt-3 font-display text-lg font-semibold">
-                    {baht(t.budget)}
-                  </p>
-                </Link>
-              ))}
+                </div>
+
+                {/* Actions */}
+                <div className="flex sm:flex-col gap-2.5 w-full sm:w-auto shrink-0 pt-2 sm:pt-0">
+                  <Link
+                    href="/profile"
+                    className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs sm:text-sm font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 active:scale-[0.98]"
+                  >
+                    <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    </svg>
+                    <span>เลือกความสนใจในโปรไฟล์</span>
+                  </Link>
+                  <Link
+                    href="/search"
+                    className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-background px-3.5 py-2.5 text-xs sm:text-sm font-medium text-muted-foreground hover:text-foreground transition-all hover:bg-surface"
+                  >
+                    <span>ค้นหา TOR ทั้งหมด</span>
+                    <span>›</span>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  แนะนำสำหรับคุณ (<span className="font-mono text-primary">{currentUser.email}</span>)
+                </span>
+                <span>พบ {recommendedList.length} รายการ</span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {recommendedList.map((t) => (
+                  <Link
+                    key={t.id}
+                    href={`/tor/${t.id}`}
+                    className="rounded-2xl border border-border bg-surface p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
+                      <span>{t.id}</span>
+                      <span className="rounded-full bg-success/15 px-2 py-0.5 text-success">
+                        คะแนน {t.interestScore}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-medium leading-snug">
+                      {t.title}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t.agency} · {t.reason}
+                    </p>
+                    <p className="mt-3 font-display text-lg font-semibold">
+                      {baht(t.budget)}
+                    </p>
+                  </Link>
+                ))}
+              </div>
             </div>
           )}
         </section>
@@ -680,7 +839,7 @@ export default function HomePage() {
           <div className="panel p-6">
             <p className="label-eyebrow">สัดส่วนตามหมวดงาน</p>
             <ul className="mt-5 space-y-3.5">
-              {categorySplit.map((c) => (
+              {displayedCategorySplit.map((c) => (
                 <li key={c.label}>
                   <div className="flex justify-between text-xs">
                     <span>{c.label}</span>
@@ -691,7 +850,7 @@ export default function HomePage() {
                   <div className="mt-1.5 h-1.5 rounded-full bg-surface-2">
                     <div
                       className="h-full rounded-full bg-accent"
-                      style={{ width: `${c.pct * 2.6}%` }}
+                      style={{ width: `${Math.min(100, c.pct * 2.6)}%` }}
                     />
                   </div>
                 </li>
@@ -701,12 +860,14 @@ export default function HomePage() {
               <div className="overflow-hidden rounded-xl border border-border">
                 <div className="bg-primary px-4 py-2.5">
                   <p className="text-xs font-medium text-primary-foreground">
-                    งบประมาณในการจัดซื้อจัดจ้างรวมงบประมาณปี 2569
+                    งบประมาณในการจัดซื้อจัดจ้างรวม
                   </p>
                 </div>
                 <div className="px-4 py-4">
                   <p className="font-display text-2xl font-semibold text-primary">
-                    {totalBudgetAmount.toLocaleString("th-TH")}
+                    {summary
+                      ? summary.total_budget.toLocaleString("th-TH", { maximumFractionDigits: 0 })
+                      : totalBudgetAmount.toLocaleString("th-TH")}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">บาท</p>
                 </div>
@@ -715,12 +876,14 @@ export default function HomePage() {
               <div className="overflow-hidden rounded-xl border border-border">
                 <div className="bg-primary px-4 py-2.5">
                   <p className="text-xs font-medium text-primary-foreground">
-                    จำนวนโครงการทั้งหมด ปีงบประมาณ 2569
+                    จำนวนโครงการทั้งหมด
                   </p>
                 </div>
                 <div className="px-4 py-4">
                   <p className="font-display text-2xl font-semibold text-primary">
-                    {totalProjectCount.toLocaleString("th-TH")}
+                    {summary
+                      ? summary.total_tors.toLocaleString("th-TH")
+                      : totalProjectCount.toLocaleString("th-TH")}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     โครงการ
@@ -734,7 +897,7 @@ export default function HomePage() {
 
       <footer className="border-t border-border py-8">
         <p className="mx-auto max-w-6xl px-5 text-xs text-muted-foreground">
-          TOR — ระบบรวมและค้นหา TOR งานซอฟต์แวร์ของกรุงเทพมหานคร
+          TORPulse © 2026 — เว็บไซต์รวบรวมและค้นหา TOR งานซอฟต์แวร์ของกรุงเทพมหานคร
         </p>
       </footer>
     </div>
