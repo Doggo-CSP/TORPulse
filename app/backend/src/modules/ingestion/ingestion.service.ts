@@ -90,6 +90,7 @@ export async function processIngestionJob(
     summary: extractedTor.summary,
     objectives: extractedTor.objectives,
     requirements: extractedTor.requirements,
+    bidderQualifications: extractedTor.bidderQualifications,
     technologies: extractedTor.technologies,
     budgetBaht: extractedTor.budgetBaht,
     submissionDeadline: extractedTor.submissionDeadline,

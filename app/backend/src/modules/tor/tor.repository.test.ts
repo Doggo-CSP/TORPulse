@@ -11,13 +11,15 @@ test('upserts by source identity and returns the persisted TOR', async (context)
   const torId = new Types.ObjectId()
   const input = createTorInput()
   let capturedFilter: unknown
+  let capturedUpdate: unknown
   let capturedOptions: unknown
 
   context.mock.method(
     TorModel,
     'findOneAndUpdate',
-    (filter: unknown, _update: unknown, options: unknown) => {
+    (filter: unknown, update: unknown, options: unknown) => {
       capturedFilter = filter
+      capturedUpdate = update
       capturedOptions = options
       return { exec: async () => ({ _id: torId }) } as ReturnType<typeof TorModel.findOneAndUpdate>
     },
@@ -33,6 +35,7 @@ test('upserts by source identity and returns the persisted TOR', async (context)
     externalId: input.externalId,
     sourceVersion: input.sourceVersion,
   })
+  assert.deepEqual(capturedUpdate, { $set: { ...input, summary: 'Updated summary' } })
   assert.deepEqual(capturedOptions, {
     upsert: true,
     returnDocument: 'after',
@@ -54,6 +57,7 @@ function createTorInput(): UpsertTorInput {
     summary: null,
     objectives: [],
     requirements: [],
+    bidderQualifications: [],
     technologies: [],
     budgetBaht: 1000,
     submissionDeadline: null,

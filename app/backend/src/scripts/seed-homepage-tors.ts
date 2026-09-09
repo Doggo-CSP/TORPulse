@@ -165,6 +165,7 @@ export async function seedHomepageTors(): Promise<void> {
       summary: null,
       objectives: [],
       requirements: [],
+      bidderQualifications: [],
       technologies: fixture.technologies,
       budgetBaht: fixture.budgetBaht,
       submissionDeadline: null,

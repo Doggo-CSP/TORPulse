@@ -14,7 +14,7 @@
     "test:queue-upsert": "tsx src/scripts/test-ingestion-queue.ts",
     "test:central-egp": "tsx --test src/modules/ingestion/adapters/central-egp.adapters.test.ts",
     "test:producer": "tsx --test src/modules/ingestion/adapters/govspending-discovery.adapter.test.ts src/apps/queue-producer/queue-producer.test.ts",
-    "test:tor": "tsx --test src/modules/tor/tor.model.test.ts src/modules/tor/tor.repository.test.ts src/modules/ingestion/ingestion-job.repository.test.ts src/modules/ingestion/missing-tor-repair.test.ts",
+    "test:tor": "tsx --test src/modules/tor/tor.model.test.ts src/modules/tor/tor.repository.test.ts src/modules/ingestion/ingestion-job.repository.test.ts src/modules/ingestion/missing-tor-repair.test.ts src/modules/ingestion/extraction/deepseek-tor-extractor.test.ts",
     "test:auth": "tsx --test src/modules/auth/auth.routes.test.ts src/modules/auth/auth.config.test.ts",
     "test:homepage": "tsx --test src/modules/tor/tor.controller.test.ts && tsx --test src/modules/homepage/homepage.routes.test.ts && tsx --test src/modules/tor/tor.routes.test.ts",
     "repair:missing-tors": "tsx src/scripts/repair-missing-tors.ts",
