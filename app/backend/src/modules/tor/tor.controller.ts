@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 
 import type { Request, Response } from 'express'
+import { isObjectIdOrHexString } from 'mongoose'
 
 import { TorModel } from './tor.model.js'
 
@@ -158,7 +159,10 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
   const query: Record<string, unknown> = {}
   if (q) query.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
   if (technology && technology !== 'all') {
-    const techList = technology.split(',').map((t) => t.trim()).filter(Boolean)
+    const techList = technology
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
     if (techList.length > 0) query.technologies = { $in: techList }
   }
   if (budgetMin !== undefined || budgetMax !== undefined) {
@@ -178,6 +182,49 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
   const paged = items.slice((page - 1) * limit, (page - 1) * limit + limit)
 
   res.json({ items: paged, total, page, totalPages })
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/tors/:id
+// ---------------------------------------------------------------------------
+
+export async function getTorByIdHandler(req: Request, res: Response): Promise<void> {
+  const { id } = req.params
+
+  if (!isObjectIdOrHexString(id)) {
+    res.status(400).json({ message: 'Invalid TOR id' })
+    return
+  }
+
+  const tor = await TorModel.findById(id).lean()
+  if (!tor) {
+    res.status(404).json({ message: 'TOR not found' })
+    return
+  }
+
+  res.json({
+    id: String(tor._id),
+    externalId: tor.externalId,
+    sourceAdapter: tor.sourceAdapter,
+    sourceVersion: tor.sourceVersion,
+    detailUrl: tor.detailUrl,
+    projectTitle: tor.projectTitle,
+    agencyName: tor.agencyName ?? null,
+    summary: tor.summary ?? null,
+    objectives: tor.objectives,
+    requirements: tor.requirements,
+    bidderQualifications: tor.bidderQualifications,
+    technologies: tor.technologies,
+    budgetBaht: tor.budgetBaht ?? null,
+    submissionDeadline: tor.submissionDeadline ?? null,
+    contactInformation: tor.contactInformation,
+    classificationReason: tor.classificationReason,
+    confidence: tor.confidence,
+    analyzedAt: tor.analyzedAt,
+    documents: tor.documents,
+    createdAt: tor.createdAt,
+    updatedAt: tor.updatedAt,
+  })
 }
 
 // ---------------------------------------------------------------------------
