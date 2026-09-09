@@ -7,6 +7,7 @@ import { SiteNav } from "@/app/components/site_nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserProfile } from "@/hooks/use-user-profile";
 import { useHomepage } from "@/hooks/use-homepage";
+import { useTorRecommendations } from "@/hooks/use-tors";
 import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
 import {
   tors,
@@ -121,7 +122,7 @@ const ITEMS_PER_PAGE = 4;
 
 export default function HomePage() {
   const { user, loading: authLoading } = useAuth();
-  const { profile, recommendedTors = [], loading: profileLoading } = useUserProfile();
+  const { profile, loading: profileLoading } = useUserProfile(!!user);
   const { summary, analytics, loadingSummary } = useHomepage();
 
   const displayedCategorySplit = useMemo(() => {
@@ -144,6 +145,8 @@ export default function HomePage() {
   const isLoggedIn = !!currentUser;
   const isAuthChecking = authLoading;
 
+  const { data: recommendedTors = [] } = useTorRecommendations(isLoggedIn);
+
   const [filtersOpen, setFiltersOpen] = useState(true);
 
   const [name, setName] = useState("");
@@ -162,12 +165,12 @@ export default function HomePage() {
 
     if (recommendedTors && recommendedTors.length > 0) {
       return recommendedTors.map((item) => ({
-        id: item._id,
+        id: item.id,
         title: item.projectTitle,
         agency: item.agencyName || "หน่วยงานรัฐ",
         budget: item.budgetBaht || 0,
-        interestScore: 92,
-        reason: item.classificationReason || "ตรงกับหมวดหมู่ที่คุณสนใจ",
+        interestScore: item.score,
+        reason: `ตรงกับหมวดหมู่ ${item.category}`,
       }));
     }
 

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { SiteNav } from "@/app/components/site_nav";
 import { useUserProfile, type UserProfileData } from "@/hooks/use-user-profile";
+import { useTorRecommendations } from "@/hooks/use-tors";
 import { useAuth } from "@/hooks/use-auth";
 import {
   GlobeAltIcon,
@@ -90,11 +91,11 @@ export default function ProfilePage() {
     saving,
     message,
     bookmarkedTors,
-    recommendedTors,
     updateProfile,
     updateInterests,
     toggleBookmark,
-  } = useUserProfile();
+  } = useUserProfile(!!authUser);
+  const { data: recommendedTors = [] } = useTorRecommendations(!!authUser);
 
   const [activeTab, setActiveTab] = useState<TabType>("profile");
   const [formData, setFormData] = useState<Partial<UserProfileData>>({});
@@ -147,6 +148,7 @@ export default function ProfilePage() {
         // agency fields
         agencyName: (profile as any).agencyName || "",
         agencyType: (profile as any).agencyType || "",
+        website: profile.website || "",
       });
     }
   }, [profile]);
@@ -303,7 +305,7 @@ export default function ProfilePage() {
                   : "bg-[#f5f0e8] text-[#5c5446] hover:bg-[#e8e0d0]"
               }`}
             >
-              TOR ที่บันทึกไว้ ({profile?.bookmarkedTorIds?.length || 0})
+              TOR ที่บันทึกไว้ ({profile?.bookmarkedCount || 0})
             </button>
 
             <button
@@ -690,8 +692,8 @@ export default function ProfilePage() {
                     <label className="block text-xs font-semibold text-[#5c5446] mb-1.5">เว็บไซต์</label>
                     <input
                       type="url"
-                      value={(formData as any).website || ""}
-                      onChange={(e) => setFormData({ ...formData, website: e.target.value } as any)}
+                      value={formData.website || ""}
+                      onChange={(e) => setFormData({ ...formData, website: e.target.value })}
                       placeholder="เช่น https://agency.go.th"
                       className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
                     />
@@ -915,11 +917,11 @@ export default function ProfilePage() {
             ) : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {recommendedTors.map((tor) => {
-                  const isBookmarked = profile?.bookmarkedTorIds?.includes(tor._id);
+                  const isBookmarked = bookmarkedTors.some((b) => b._id === tor.id);
 
                   return (
                     <div
-                      key={tor._id}
+                      key={tor.id}
                       className="flex flex-col justify-between rounded-2xl border border-[#e8e0d0] bg-white p-5 shadow-sm hover:border-[#4a7c59]"
                     >
                       <div>
@@ -928,7 +930,7 @@ export default function ProfilePage() {
                             {tor.projectTitle}
                           </h3>
                           <button
-                            onClick={() => void toggleBookmark(tor._id)}
+                            onClick={() => void toggleBookmark(tor.id)}
                             className="text-[#4a7c59] hover:opacity-75"
                             title={isBookmarked ? "ยกเลิกการบันทึก" : "บันทึก TOR"}
                           >

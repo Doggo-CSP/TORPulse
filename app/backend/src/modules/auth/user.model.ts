@@ -4,7 +4,7 @@ export interface UserRecord {
   googleId: string
   name: string
   email: string
-  image?: string | null
+  image: string | null
   accountType?: 'personal' | 'company' | 'agency'
   displayName?: string
   firstName?: string
@@ -15,7 +15,12 @@ export interface UserRecord {
   address?: string
   about?: string
   interests?: string[]
-  bookmarkedTorIds?: mongoose.Types.ObjectId[]
+  website?: string | null
+  companyName?: string
+  registrationNumber?: string
+  businessType?: string
+  agencyName?: string
+  agencyType?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -36,7 +41,12 @@ const userSchema = new Schema<UserRecord>(
     address: { type: String, default: '' },
     about: { type: String, default: '' },
     interests: { type: [String], default: [] },
-    bookmarkedTorIds: [{ type: Schema.Types.ObjectId, ref: 'Tor' }],
+    website: { type: String, default: null },
+    companyName: { type: String, default: '' },
+    registrationNumber: { type: String, default: '' },
+    businessType: { type: String, default: '' },
+    agencyName: { type: String, default: '' },
+    agencyType: { type: String, default: '' },
   },
   { timestamps: true },
 )

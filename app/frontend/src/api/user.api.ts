@@ -13,10 +13,11 @@ export interface UserProfile {
   address: string;
   about: string;
   interests: string[];
-  bookmarkedTorIds: string[];
+  bookmarkedCount: number;
   completionPercentage: number;
-  
+
   // Organization
+  website?: string;
   companyName?: string;
   registrationNumber?: string;
   businessType?: string;
@@ -112,7 +113,7 @@ export async function updateUserInterests(interests: string[]): Promise<{ intere
 /**
  * API Function to toggle TOR bookmark
  */
-export async function toggleUserBookmark(torId: string): Promise<{ bookmarked: boolean; bookmarkedTorIds: string[] }> {
+export async function toggleUserBookmark(torId: string): Promise<{ bookmarked: boolean; bookmarkedCount: number }> {
   const res = await fetch(`${apiUrl}/api/v1/user/bookmarks/${torId}`, {
     method: "POST",
     credentials: "include",
@@ -135,22 +136,6 @@ export async function fetchUserBookmarks(): Promise<TorItem[]> {
 
   if (!res.ok) {
     throw new Error("Failed to fetch bookmarks");
-  }
-
-  const data = await res.json();
-  return data.tors || [];
-}
-
-/**
- * API Function to fetch recommended TORs based on user interest categories
- */
-export async function fetchUserRecommended(): Promise<TorItem[]> {
-  const res = await fetch(`${apiUrl}/api/v1/user/recommended`, {
-    credentials: "include",
-  });
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch recommendations");
   }
 
   const data = await res.json();
