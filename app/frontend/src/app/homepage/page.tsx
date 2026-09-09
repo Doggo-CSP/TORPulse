@@ -8,14 +8,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { useUserProfile } from "@/hooks/use-user-profile";
 import { useHomepage } from "@/hooks/use-homepage";
 import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
+import { useTorFilterOptions, useTors } from "@/hooks/use-tors";
 import {
-  tors,
   categorySplit,
-  totalBudgetAmount,
-  totalProjectCount,
   homeStats,
   priceComparisonData,
   priceChartSeries,
+  totalBudgetAmount,
+  totalProjectCount,
   recommended as mockRecommended,
 } from "./mockData";
 
@@ -106,16 +106,7 @@ const PriceComparisonChart = dynamic(
 const baht = (n: number) => "฿" + (n / 1_000_000).toFixed(1) + " ล้าน";
 const toMillion = (n: number) => (n / 1_000_000).toFixed(1);
 
-const categories = [
-  "ทั้งหมด",
-  "Web Application",
-  "Data / BI",
-  "Mobile App",
-  "Enterprise System",
-];
-const budgetYears = ["ทั้งหมด", "2569", "2568", "2567"];
 const statuses = ["ทั้งหมด", "เปิดรับสมัคร", "ใกล้ปิดรับ", "ปิดรับสมัครแล้ว"];
-const agencies = ["ทั้งหมด", ...Array.from(new Set(tors.map((t) => t.agency)))];
 
 const ITEMS_PER_PAGE = 4;
 
@@ -123,6 +114,17 @@ export default function HomePage() {
   const { user, loading: authLoading } = useAuth();
   const { profile, recommendedTors = [], loading: profileLoading } = useUserProfile();
   const { summary, analytics, loadingSummary } = useHomepage();
+
+  // filter metadata (years + technologies) comes from the backend now
+  const { data: filterOptions } = useTorFilterOptions();
+  const budgetYears = useMemo(
+    () => ["ทั้งหมด", ...(filterOptions?.years.map(String) ?? [])],
+    [filterOptions],
+  );
+  const techOptions = useMemo(
+    () => ["ทั้งหมด", ...(filterOptions?.technologies ?? [])],
+    [filterOptions],
+  );
 
   const displayedCategorySplit = useMemo(() => {
     if (analytics?.categoryDistribution && analytics.categoryDistribution.length > 0) {
@@ -150,10 +152,28 @@ export default function HomePage() {
   const [budgetYear, setBudgetYear] = useState("ทั้งหมด");
   const [budgetMin, setBudgetMin] = useState("");
   const [budgetMax, setBudgetMax] = useState("");
-  const [agency, setAgency] = useState("ทั้งหมด");
-  const [status, setStatus] = useState("ทั้งหมด");
-  const [egpOnly, setEgpOnly] = useState(false);
-  const [cat, setCat] = useState("ทั้งหมด");
+  const [agency, setAgency] = useState("ทั้งหมด"); // not sent to API yet — see note below
+  const [status, setStatus] = useState("ทั้งหมด"); // not sent to API yet — see note below
+  const [egpOnly, setEgpOnly] = useState(false); // not sent to API yet — see note below
+  const [techs, setTechs] = useState<string[]>([]);
+  const [techSearch, setTechSearch] = useState("");
+  const [techExpanded, setTechExpanded] = useState(false);
+
+  const TECH_COLLAPSED_COUNT = 24;
+
+  const filteredTechOptions = useMemo(() => {
+    if (!techSearch.trim()) return techOptions.filter((t) => t !== "ทั้งหมด");
+    const q = techSearch.trim().toLowerCase();
+    return techOptions.filter((t) => t !== "ทั้งหมด" && t.toLowerCase().includes(q));
+  },  [techOptions, techSearch]);
+
+  const visibleTechOptions =
+    techExpanded || techSearch.trim() ? filteredTechOptions : filteredTechOptions.slice(0, TECH_COLLAPSED_COUNT);
+
+  const toggleTech = (t: string) => {
+    setTechs((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+    setCurrentPage(1);
+  };
 
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -171,25 +191,6 @@ export default function HomePage() {
       }));
     }
 
-    const userInterests = (profile?.interests || []).map((s) => s.toLowerCase());
-    if (userInterests.length > 0) {
-      const matched = tors.filter((t) => {
-        const cat = (t.category || "").toLowerCase();
-        const tech = (t.tech || []).map((x) => x.toLowerCase());
-        return userInterests.some((int) => cat.includes(int) || tech.some((tc) => tc.includes(int)));
-      });
-      if (matched.length > 0) {
-        return matched.map((t) => ({
-          id: t.id,
-          title: t.title,
-          agency: t.agency,
-          budget: t.budget,
-          interestScore: t.match,
-          reason: `ตรงกับหมวดหมู่ ${t.category}`,
-        }));
-      }
-    }
-
     return (mockRecommended || []).map((t) => ({
       id: t.id,
       title: t.title,
@@ -198,39 +199,26 @@ export default function HomePage() {
       interestScore: t.interestScore,
       reason: t.reason,
     }));
-  }, [isLoggedIn, recommendedTors, profile?.interests]);
+  }, [isLoggedIn, recommendedTors]);
 
-  const results = useMemo(
-    () =>
-      tors.filter((t) => {
-        const matchesName = (t.title + t.agency + t.tech.join(" ") + t.id)
-          .toLowerCase()
-          .includes(name.toLowerCase());
-        const matchesCat = cat === "ทั้งหมด" || t.category === cat;
-        const matchesAgency = agency === "ทั้งหมด" || t.agency === agency;
-        const matchesStatus = status === "ทั้งหมด" || t.status === status;
-        const matchesEgp = !egpOnly || t.source === "e-GP";
-        const min = budgetMin ? Number(budgetMin) * 1_000_000 : -Infinity;
-        const max = budgetMax ? Number(budgetMax) * 1_000_000 : Infinity;
-        const matchesBudget = t.budget >= min && t.budget <= max;
-        return (
-          matchesName &&
-          matchesCat &&
-          matchesAgency &&
-          matchesStatus &&
-          matchesEgp &&
-          matchesBudget
-        );
-      }),
-    [name, cat, agency, status, egpOnly, budgetMin, budgetMax],
+  // live search + filter against the real API
+  const requestParams = useMemo(
+    () => ({
+      q: name || undefined,
+      year: budgetYear === "ทั้งหมด" ? undefined : Number(budgetYear),
+      budget_min: budgetMin ? Number(budgetMin) * 1_000_000 : undefined,
+      budget_max: budgetMax ? Number(budgetMax) * 1_000_000 : undefined,
+      technologies: techs.length > 0 ? techs.join(",") : undefined, // needs backend $in support — see below
+      page: currentPage,
+      limit: ITEMS_PER_PAGE,
+    }),
+    [name, budgetYear, budgetMin, budgetMax, techs, currentPage],
   );
 
-  const totalPages = Math.max(1, Math.ceil(results.length / ITEMS_PER_PAGE));
+  const { data, isLoading: searching, error: searchError } = useTors(requestParams);
+  const pagedResults = data?.items ?? [];
+  const totalPages = Math.max(1, data?.totalPages ?? 1);
   const visiblePage = Math.min(currentPage, totalPages);
-  const pagedResults = results.slice(
-    (visiblePage - 1) * ITEMS_PER_PAGE,
-    visiblePage * ITEMS_PER_PAGE,
-  );
 
   const clearFilters = () => {
     setName("");
@@ -240,7 +228,9 @@ export default function HomePage() {
     setAgency("ทั้งหมด");
     setStatus("ทั้งหมด");
     setEgpOnly(false);
-    setCat("ทั้งหมด");
+    setTechs([]);
+    setTechSearch("");
+    setCurrentPage(1);
   };
 
   return (
@@ -384,7 +374,7 @@ export default function HomePage() {
 
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                    งบประมาณ (บาท)
+                    งบประมาณ (ล้านบาท)
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -405,6 +395,9 @@ export default function HomePage() {
                   </div>
                 </div>
 
+                {/* NOTE: agency / status / EGP-only have no backend query param yet.
+                    They're kept as UI-only state for now — not applied to results.
+                    Confirm with backend whether these should be added to /api/v1/tors. */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
                     หน่วยงาน
@@ -414,9 +407,7 @@ export default function HomePage() {
                     onChange={(e) => setAgency(e.target.value)}
                     className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
                   >
-                    {agencies.map((a) => (
-                      <option key={a}>{a}</option>
-                    ))}
+                    <option>ทั้งหมด</option>
                   </select>
                 </div>
 
@@ -449,15 +440,46 @@ export default function HomePage() {
               </div>
 
               <div className="mt-5 border-t border-border pt-5">
-                <p className="label-eyebrow">หมวดงาน</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {categories.map((f) => (
+                <div className="flex items-center justify-between">
+                  <p className="label-eyebrow">
+                    เทคโนโลยี{techs.length > 0 && <span className="text-primary"> ({techs.length} เลือก)</span>}
+                  </p>
+                  {techs.length > 0 && (
+                    <button
+                      onClick={() => setTechs([])}
+                      className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      ล้างเทคโนโลยี
+                    </button>
+                  )}
+                </div>
+
+                <input
+                  value={techSearch}
+                  onChange={(e) => setTechSearch(e.target.value)}
+                  placeholder="ค้นหาเทคโนโลยี..."
+                  className="mt-2 w-full max-w-xs rounded-md border border-input bg-background px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-ring"
+                />
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setTechs([])}
+                    className={
+                      "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
+                      (techs.length === 0
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    ทั้งหมด
+                  </button>
+                  {visibleTechOptions.map((f) => (
                     <button
                       key={f}
-                      onClick={() => setCat(f)}
+                      onClick={() => toggleTech(f)}
                       className={
                         "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
-                        (cat === f
+                        (techs.includes(f)
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border text-muted-foreground hover:text-foreground")
                       }
@@ -466,6 +488,15 @@ export default function HomePage() {
                     </button>
                   ))}
                 </div>
+
+                {!techSearch.trim() && filteredTechOptions.length > TECH_COLLAPSED_COUNT && (
+                  <button
+                    onClick={() => setTechExpanded((v) => !v)}
+                    className="mt-3 text-xs font-medium text-primary hover:underline"
+                  >
+                    {techExpanded ? "แสดงน้อยลง ▲" : `แสดงทั้งหมด (${filteredTechOptions.length}) ▼`}
+                  </button>
+                )}
               </div>
 
               <div className="mt-6 flex items-center justify-end gap-3">
@@ -475,7 +506,10 @@ export default function HomePage() {
                 >
                   ล้างค่า
                 </button>
-                <button className="rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground">
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  className="rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground"
+                >
                   ค้นหา
                 </button>
               </div>
@@ -486,63 +520,63 @@ export default function HomePage() {
         {/* Results */}
         <section className="panel mt-6 p-6 md:p-8">
           <ul className="divide-y divide-border">
-            {pagedResults.map((t) => (
-              <li key={t.id}>
-                <Link
-                  href={`/tor/${t.id}`}
-                  className="grid gap-4 rounded-2xl px-3 py-5 transition-colors hover:bg-surface-2 md:grid-cols-[1fr_auto] md:items-center"
-                >
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                      <span className="rounded bg-surface-2 px-2 py-0.5">
-                        {t.id}
-                      </span>
-                      <span>{t.source}</span>
-                      <span>· ประกาศ {t.publishedAt}</span>
-                      <span className="text-warning">
-                        · ปิดรับ {t.closesAt}
-                      </span>
-                    </div>
-                    <h3 className="mt-2 text-[15px] leading-snug font-medium">
-                      {t.title}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {t.agency}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {t.tech.map((x) => (
-                        <span
-                          key={x}
-                          className="rounded border border-border px-2 py-0.5 text-[11px] text-accent"
-                        >
-                          {x}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6 md:flex-col md:items-end md:gap-2">
-                    <p className="font-display text-xl font-semibold">
-                      {baht(t.budget)}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-2">
-                        <div
-                          className="h-full rounded-full bg-success"
-                          style={{ width: `${t.match}%` }}
-                        />
-                      </div>
-                      <span className="font-mono text-xs text-success">
-                        ตรง {t.match}%
-                      </span>
-                    </div>
-                    <span className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground">
-                      ดูรายละเอียด
-                    </span>
-                  </div>
-                </Link>
+            {searching && (
+              <li className="py-10 text-center text-sm text-muted-foreground">
+                กำลังค้นหา...
               </li>
-            ))}
-            {results.length === 0 && (
+            )}
+            {!searching && searchError && (
+              <li className="py-10 text-center text-sm text-warning">
+                เกิดข้อผิดพลาดในการค้นหา
+              </li>
+            )}
+            {!searching &&
+              !searchError &&
+              pagedResults.map((t) => (
+                <li key={t.id}>
+                  <Link
+                    href={`/tor/${t.id}`}
+                    className="grid gap-4 rounded-2xl px-3 py-5 transition-colors hover:bg-surface-2 md:grid-cols-[1fr_auto] md:items-center"
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                        <span className="rounded bg-surface-2 px-2 py-0.5">
+                          {t.externalId}
+                        </span>
+                        <span>{t.sourceAdapter}</span>
+                        <span>
+                          · ปิดรับ {t.submissionDeadline ? new Date(t.submissionDeadline).toLocaleDateString("th-TH") : "-"}
+                        </span>
+                      </div>
+                      <h3 className="mt-2 text-[15px] leading-snug font-medium">
+                        {t.projectTitle}
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {t.agencyName ?? "หน่วยงานรัฐ"}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {t.technologies.map((x) => (
+                          <span
+                            key={x}
+                            className="rounded border border-border px-2 py-0.5 text-[11px] text-accent"
+                          >
+                            {x}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6 md:flex-col md:items-end md:gap-2">
+                      <p className="font-display text-xl font-semibold">
+                        {baht(t.budgetBaht ?? 0)}
+                      </p>
+                      <span className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground">
+                        ดูรายละเอียด
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            {!searching && !searchError && pagedResults.length === 0 && (
               <li className="py-10 text-center text-sm text-muted-foreground">
                 ไม่พบ TOR ที่ตรงกับเงื่อนไขนี้
               </li>

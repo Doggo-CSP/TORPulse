@@ -157,7 +157,10 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
 
   const query: Record<string, unknown> = {}
   if (q) query.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
-  if (technology && technology !== 'all') query.technologies = technology
+  if (technology && technology !== 'all') {
+    const techList = technology.split(',').map((t) => t.trim()).filter(Boolean)
+    if (techList.length > 0) query.technologies = { $in: techList }
+  }
   if (budgetMin !== undefined || budgetMax !== undefined) {
     const budgetBaht: Record<string, number> = {}
     if (budgetMin !== undefined) budgetBaht.$gte = budgetMin
