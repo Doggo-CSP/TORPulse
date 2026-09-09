@@ -77,6 +77,11 @@ const torSchema = new Schema(
       required: true,
       default: [],
     },
+    bidderQualifications: {
+      type: [String],
+      required: true,
+      default: [],
+    },
     technologies: {
       type: [String],
       required: true,

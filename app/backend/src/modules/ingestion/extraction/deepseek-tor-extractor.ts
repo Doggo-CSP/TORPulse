@@ -5,7 +5,7 @@ import type { ProcurementProject } from '../adapters/procurement-source.adapter.
 
 const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/chat/completions'
 const MAX_RESPONSE_TOKENS = 8_000
-export const TOR_ANALYSIS_VERSION = 'v1'
+export const TOR_ANALYSIS_VERSION = 'v2'
 const stringArraySchema = z.preprocess(
   (value) => (value === null || value === undefined ? [] : value),
   z.array(z.string()),
@@ -19,6 +19,7 @@ const torAnalysisSchema = z.object({
   summary: z.string().nullable(),
   objectives: stringArraySchema,
   requirements: stringArraySchema,
+  bidderQualifications: stringArraySchema,
   technologies: stringArraySchema,
   budgetBaht: z.number().nonnegative().nullable(),
   submissionDeadline: z.string().nullable(),
@@ -85,6 +86,10 @@ export async function analyzeTorWithDeepSeek(
     throw new Error('DeepSeek returned an empty TOR analysis')
   }
 
+  return parseTorAnalysis(content)
+}
+
+export function parseTorAnalysis(content: string): TorAnalysis {
   let parsed: unknown
   try {
     parsed = JSON.parse(content)
@@ -116,12 +121,15 @@ Return one JSON object with exactly this shape:
   "summary": "string or null",
   "objectives": ["string"],
   "requirements": ["string"],
+  "bidderQualifications": ["one explicit bidder or offeror eligibility criterion"],
   "technologies": ["string"],
   "budgetBaht": null,
   "submissionDeadline": "ISO date when confidently known, otherwise source text or null",
   "contactInformation": ["string"],
   "confidence": 0.0
 }
+
+For "bidderQualifications", extract each explicit qualification for the bidder or offeror (คุณสมบัติผู้ยื่นเสนอ) as a separate concise, source-grounded item. Do not infer qualifications. Use [] when the section is absent.
 
 The response must be valid JSON. Use null for unknown scalar values and [] for unknown lists.`
 }
