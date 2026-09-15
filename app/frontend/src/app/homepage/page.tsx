@@ -9,14 +9,6 @@ import { useUserProfile } from "@/hooks/use-user-profile";
 import { useHomepage } from "@/hooks/use-homepage";
 import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
 import { useTorFilterOptions, useTorRecommendations, useTors } from "@/hooks/use-tors";
-import {
-  categorySplit,
-  homeStats,
-  priceComparisonData,
-  priceChartSeries,
-  totalBudgetAmount,
-  totalProjectCount,
-} from "./mockData";
 
 const PriceComparisonChart = dynamic(
   () =>
@@ -108,6 +100,36 @@ const toMillion = (n: number) => (n / 1_000_000).toFixed(1);
 const statuses = ["ทั้งหมด", "เปิดรับสมัคร", "ใกล้ปิดรับ", "ปิดรับสมัครแล้ว"];
 
 const ITEMS_PER_PAGE = 4;
+
+const categorySplit = [
+  { label: "Web Application", pct: 34 },
+  { label: "Data / BI", pct: 22 },
+  { label: "Mobile App", pct: 18 },
+  { label: "Enterprise System", pct: 26 },
+];
+
+const totalBudgetAmount = 6_128_192;
+const totalProjectCount = 51_800;
+
+const homeStats = {
+  avgMid: 21_400_000,
+  avgAwarded: 18_900_000,
+  avgDiscountPct: 11.7,
+};
+
+const priceComparisonData = [
+  { category: "Web App", midPrice: 18.5, awardedPrice: 16.2 },
+  { category: "Mobile App", midPrice: 12.0, awardedPrice: 10.8 },
+  { category: "Data / BI", midPrice: 28.0, awardedPrice: 24.5 },
+  { category: "Enterprise", midPrice: 35.0, awardedPrice: 31.0 },
+  { category: "Cloud & Infra", midPrice: 22.0, awardedPrice: 19.5 },
+  { category: "Cybersecurity", midPrice: 15.0, awardedPrice: 13.8 },
+];
+
+const priceChartSeries = [
+  { key: "midPrice", label: "ราคากลาง", color: "#b0a898" },
+  { key: "awardedPrice", label: "ราคาที่ชนะ", color: "#4a7c59" },
+];
 
 export default function HomePage() {
   const { user, loading: authLoading } = useAuth();
@@ -234,9 +256,9 @@ export default function HomePage() {
               TOR · แพลตฟอร์มค้นหางานประมูลซอฟต์แวร์
             </p>
             <h1 className="mt-4 text-4xl leading-[1.18] font-semibold md:text-[3rem]">
-              เว็บไซต์รวบรวมทุก TOR งานซอฟต์แวร์ของ กทม.
+              เว็บไซต์รวบรวมทุก TOR ที่เกี่ยวข้องกับงานซอฟต์แวร์
               <br />
-              <span className="text-primary">รวมไว้ในเรดาร์เดียว</span>
+              <span className="text-primary">รวมไว้ในที่เดียว</span>
             </h1>
             <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
               ไม่ต้องเสียเวลาตามหา TOR จากหลายเว็บไซต์ TOR Pulse รวบรวม TOR
@@ -494,12 +516,6 @@ export default function HomePage() {
                   className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                 >
                   ล้างค่า
-                </button>
-                <button
-                  onClick={() => setCurrentPage(1)}
-                  className="rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground"
-                >
-                  ค้นหา
                 </button>
               </div>
             </div>

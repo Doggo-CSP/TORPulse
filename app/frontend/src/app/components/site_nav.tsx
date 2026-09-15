@@ -44,8 +44,8 @@ export function SiteNav() {
       {/* Main nav links */}
       <NavbarSection className="max-lg:hidden">
         <NavbarItem href="/">หน้าแรก</NavbarItem>
-        <NavbarItem href="/saved">TOR ที่บันทึกไว้</NavbarItem>
-        <NavbarItem href="/profile">โปรไฟล์</NavbarItem>
+        <NavbarItem href="/saved">TOR ที่บันทึกไว้</NavbarItem>  
+        <NavbarItem href="/reports">รายงาน</NavbarItem>
         <NavbarItem href="/admin">ผู้ดูแลระบบ</NavbarItem>
       </NavbarSection>
 

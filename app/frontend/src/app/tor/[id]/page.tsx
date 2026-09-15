@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { use } from "react";
+import { use, useState, useMemo } from "react";
 import { SiteNav } from "@/app/components/site_nav";
 import { useTor } from "@/hooks/use-tors";
+import { useAuth } from "@/hooks/use-auth";
+import { useUserProfile } from "@/hooks/use-user-profile";
+import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
+import { BookmarkIcon as BookmarkOutlineIcon } from "@heroicons/react/24/outline";
 
 const formatBaht = (amount: number | null) =>
   amount === null
@@ -56,6 +60,35 @@ export default function TorDetailPage({
   const { id } = use(params);
   const decodedId = decodeURIComponent(id);
   const { data: tor, isLoading, error } = useTor(decodedId);
+  const { user } = useAuth();
+  const { bookmarkedTors, toggleBookmark } = useUserProfile(!!user);
+  const [savingBookmark, setSavingBookmark] = useState(false);
+  const [bookmarkFeedback, setBookmarkFeedback] = useState<string | null>(null);
+
+  const isBookmarked = useMemo(() => {
+    if (!tor) return false;
+    return bookmarkedTors.some(
+      (t) => t._id === tor.id || t._id === decodedId || (tor.externalId && t.externalId === tor.externalId)
+    );
+  }, [bookmarkedTors, tor, decodedId]);
+
+  const handleBookmarkToggle = async () => {
+    if (!user) {
+      alert("กรุณาเข้าสู่ระบบเพื่อบันทึก TOR");
+      return;
+    }
+    const targetId = tor?.id || decodedId;
+    try {
+      setSavingBookmark(true);
+      await toggleBookmark(targetId);
+      setBookmarkFeedback(isBookmarked ? "นำออกจากรายการที่บันทึกแล้ว" : "บันทึกในรายการเรียบร้อยแล้ว");
+      setTimeout(() => setBookmarkFeedback(null), 3000);
+    } catch {
+      alert("เกิดข้อผิดพลาดในการบันทึก");
+    } finally {
+      setSavingBookmark(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -113,14 +146,14 @@ export default function TorDetailPage({
         </Link>
 
         <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="max-w-2xl">
             <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
               <span className="rounded bg-surface-2 px-2 py-0.5">
                 {tor.externalId}
               </span>
               <span>{tor.sourceAdapter}</span>
             </div>
-            <h1 className="mt-2 max-w-2xl text-2xl font-semibold leading-snug md:text-[1.7rem]">
+            <h1 className="mt-2 text-2xl font-semibold leading-snug md:text-[1.7rem]">
               {tor.projectTitle}
             </h1>
             <p className="mt-2 text-sm text-muted-foreground">
@@ -128,11 +161,49 @@ export default function TorDetailPage({
             </p>
           </div>
 
-          <div className="panel min-w-[220px] p-5">
-            <p className="label-eyebrow mb-1">วงเงิน (บาท)</p>
-            <p className="font-display text-2xl font-bold text-foreground">
-              {formatBaht(tor.budgetBaht)}
-            </p>
+          <div className="flex flex-col sm:flex-row md:flex-col gap-3 min-w-[220px]">
+            <div className="panel p-5">
+              <p className="label-eyebrow mb-1">วงเงิน (บาท)</p>
+              <p className="font-display text-2xl font-bold text-foreground">
+                {formatBaht(tor.budgetBaht)}
+              </p>
+            </div>
+
+            {/* Bookmark button */}
+            <button
+              onClick={handleBookmarkToggle}
+              disabled={savingBookmark}
+              className={`flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all shadow-xs ${
+                isBookmarked
+                  ? "border-primary bg-primary/10 text-primary hover:bg-primary/20"
+                  : "border-border bg-surface text-foreground hover:border-primary/50 hover:bg-surface-2"
+              }`}
+            >
+              {isBookmarked ? (
+                <>
+                  <BookmarkSolidIcon className="size-5 text-primary" />
+                  <span>บันทึกแล้ว</span>
+                </>
+              ) : (
+                <>
+                  <BookmarkOutlineIcon className="size-5 text-muted-foreground" />
+                  <span>บันทึก TOR นี้</span>
+                </>
+              )}
+            </button>
+            {bookmarkFeedback && (
+              <p className="text-center text-xs font-medium text-primary animate-in fade-in">
+                {bookmarkFeedback}
+              </p>
+            )}
+            {isBookmarked && (
+              <Link
+                href="/saved"
+                className="text-center text-xs text-muted-foreground hover:text-primary transition-colors underline underline-offset-2"
+              >
+                ไปยังหน้า TOR ที่บันทึกไว้ →
+              </Link>
+            )}
           </div>
         </div>
 
