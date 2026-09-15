@@ -8,6 +8,7 @@ const CATEGORY_LABELS: Record<TorCategory, string> = {
   data_bi: 'งานข้อมูลและวิเคราะห์',
   mobile_app: 'งานแอปพลิเคชันมือถือ',
   enterprise_system: 'งานระบบองค์กร',
+  consulting_architecture: 'งานที่ปรึกษา/สถาปัตยกรรมองค์กร',
 }
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000
@@ -98,6 +99,7 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
     data_bi: 0,
     mobile_app: 0,
     enterprise_system: 0,
+    consulting_architecture: 0,
   }
   for (const doc of technologyDocs) {
     counts[deriveCategory(doc.technologies ?? [])] += 1

@@ -9,7 +9,8 @@ import { TorModel } from './tor.model.js'
 // Category derivation (pure, no DB) — shared with homepage.controller.ts
 // ---------------------------------------------------------------------------
 
-export type TorCategory = 'mobile_app' | 'data_bi' | 'web_application' | 'enterprise_system'
+export type TorCategory =
+  'mobile_app' | 'data_bi' | 'web_application' | 'enterprise_system' | 'consulting_architecture'
 
 const MOBILE_APP_KEYWORDS = ['flutter', 'react native', 'swift', 'kotlin', 'android', 'ios']
 const DATA_BI_KEYWORDS = [
@@ -29,6 +30,15 @@ const WEB_APPLICATION_KEYWORDS = [
   'express',
   'django',
 ]
+const CONSULTING_ARCHITECTURE_KEYWORDS = [
+  'consulting',
+  'advisory',
+  'enterprise architecture',
+  'business analysis',
+  'it strategy',
+  'it governance',
+  'togaf',
+]
 
 const matchesAny = (technologies: string[], keywords: string[]): boolean =>
   technologies.some((tech) => keywords.some((keyword) => tech.includes(keyword)))
@@ -47,6 +57,10 @@ export function deriveCategory(technologies: string[]): TorCategory {
 
   if (hasWebKeyword) {
     return 'web_application'
+  }
+
+  if (matchesAny(normalized, CONSULTING_ARCHITECTURE_KEYWORDS)) {
+    return 'consulting_architecture'
   }
 
   return 'enterprise_system'

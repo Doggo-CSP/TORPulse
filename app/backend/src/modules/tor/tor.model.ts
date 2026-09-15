@@ -92,6 +92,41 @@ const torSchema = new Schema(
       min: 0,
       default: null,
     },
+    referencePriceBaht: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    winningPriceBaht: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    department: {
+      type: String,
+      enum: [
+        'สำนักการโยธา กทม.',
+        'สำนักการแพทย์ กทม.',
+        'สำนักป้องกันและบรรเทาสาธารณภัย',
+        'สำนักงานเลขานุการปลัด กทม.',
+        'สำนักยุทธศาสตร์และประเมินผล',
+        'สำนักงานประชาสัมพันธ์ กทม.',
+      ],
+      default: null,
+    },
+    status: {
+      type: String,
+      enum: ['open', 'closed'],
+      default: null,
+    },
+    announcementDate: {
+      type: Date,
+      default: null,
+    },
+    contractSignedDate: {
+      type: Date,
+      default: null,
+    },
     submissionDeadline: {
       type: String,
       default: null,
@@ -146,6 +181,9 @@ torSchema.index(
   },
   { unique: true },
 )
+
+torSchema.index({ status: 1, announcementDate: -1 })
+torSchema.index({ status: 1, department: 1 })
 
 export type Tor = InferSchemaType<typeof torSchema>
 

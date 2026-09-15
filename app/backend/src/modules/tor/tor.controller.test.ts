@@ -5,7 +5,11 @@ import express from 'express'
 import { Types } from 'mongoose'
 import request from 'supertest'
 
-import { calculateInterestScore, deriveCategory, getRecommendationsHandler } from './tor.controller.js'
+import {
+  calculateInterestScore,
+  deriveCategory,
+  getRecommendationsHandler,
+} from './tor.controller.js'
 import { TorModel } from './tor.model.js'
 
 // --- deriveCategory (pure) -------------------------------------------------
@@ -30,6 +34,16 @@ const categoryCases: Array<{ name: string; technologies: string[]; expected: str
     name: 'enterprise keywords explicit',
     technologies: ['.NET', 'SAP'],
     expected: 'enterprise_system',
+  },
+  {
+    name: 'consulting/architecture keyword',
+    technologies: ['IT Consulting'],
+    expected: 'consulting_architecture',
+  },
+  {
+    name: 'web keyword takes priority over consulting/architecture keyword',
+    technologies: ['React', 'Consulting'],
+    expected: 'web_application',
   },
   {
     name: 'empty technologies falls back to enterprise_system',
