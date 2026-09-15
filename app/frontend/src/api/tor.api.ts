@@ -36,6 +36,8 @@ export interface TorListItem {
   sourceAdapter: string;
   projectTitle: string;
   agencyName: string | null;
+  summary: string | null;
+  detailUrl: string | null;
   budgetBaht: number | null;
   submissionDeadline: string | null;
   technologies: string[];

@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useUserProfile } from "@/hooks/use-user-profile";
 import { useHomepage } from "@/hooks/use-homepage";
 import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
-import { useTorFilterOptions, useTors } from "@/hooks/use-tors";
+import { useTorFilterOptions, useTorRecommendations, useTors } from "@/hooks/use-tors";
 import {
   categorySplit,
   homeStats,
@@ -111,7 +111,7 @@ const ITEMS_PER_PAGE = 4;
 
 export default function HomePage() {
   const { user, loading: authLoading } = useAuth();
-  const { profile, recommendedTors = [], loading: profileLoading } = useUserProfile();
+  const { profile, loading: profileLoading } = useUserProfile(!!user);
   const { summary, analytics, loadingSummary } = useHomepage();
 
   // filter metadata (years + technologies) comes from the backend now
@@ -144,6 +144,8 @@ export default function HomePage() {
 
   const isLoggedIn = !!currentUser;
   const isAuthChecking = authLoading;
+
+  const { data: recommendedTors = [] } = useTorRecommendations(isLoggedIn);
 
   const [filtersOpen, setFiltersOpen] = useState(true);
 
@@ -179,12 +181,12 @@ export default function HomePage() {
   const recommendedList = useMemo(() => {
     if (!isLoggedIn) return [];
     return recommendedTors.map((item) => ({
-      id: item._id,
+      id: item.id,
       title: item.projectTitle,
       agency: item.agencyName || "หน่วยงานรัฐ",
       budget: item.budgetBaht || 0,
-      interestScore: 92,
-      reason: item.classificationReason || "ตรงกับหมวดหมู่ที่คุณสนใจ",
+      interestScore: item.score,
+      reason: `ตรงกับหมวดหมู่ ${item.category}`,
     }));
   }, [isLoggedIn, recommendedTors]);
 
@@ -672,7 +674,6 @@ export default function HomePage() {
           ) : recommendedList.length === 0 ? (
             <div className="mt-5 rounded-2xl border border-border/80 bg-gradient-to-br from-surface/90 via-surface to-background p-6 sm:p-8 shadow-xs">
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
-                {/* User Avatar */}
                 <div className="relative shrink-0">
                   {currentUser.image ? (
                     <img
@@ -690,7 +691,6 @@ export default function HomePage() {
                   </span>
                 </div>
 
-                {/* Welcome Details */}
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary">
@@ -712,7 +712,6 @@ export default function HomePage() {
                   </p>
                 </div>
 
-                {/* Actions */}
                 <div className="flex sm:flex-col gap-2.5 w-full sm:w-auto shrink-0 pt-2 sm:pt-0">
                   <Link
                     href="/profile"
@@ -805,7 +804,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Grouped bar chart via recharts, comparing ราคากลาง vs ราคาที่ชนะการประมูล by category */}
             <div className="mt-5" style={{ height: 280 }}>
               <PriceComparisonChart
                 data={priceComparisonData}

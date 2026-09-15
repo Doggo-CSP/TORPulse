@@ -8,7 +8,6 @@ import {
   updateUserInterests,
   toggleUserBookmark,
   fetchUserBookmarks,
-  fetchUserRecommended,
   type UserProfile,
   type TorItem,
 } from "@/api/user.api";
@@ -16,7 +15,7 @@ import {
 export type { UserProfile, TorItem };
 export type UserProfileData = UserProfile;
 
-export function useUserProfile() {
+export function useUserProfile(enabled: boolean = true) {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -29,19 +28,13 @@ export function useUserProfile() {
     queryKey: ["userProfile"],
     queryFn: fetchUserProfile,
     retry: false,
+    enabled,
   });
 
   // 2. Fetch User Bookmarks with TanStack Query
   const { data: bookmarkedTors = [], isLoading: loadingBookmarks } = useQuery({
     queryKey: ["userBookmarks"],
     queryFn: fetchUserBookmarks,
-    enabled: !!profile,
-  });
-
-  // 3. Fetch User Recommended TORs with TanStack Query
-  const { data: recommendedTors = [], isLoading: loadingRecommended } = useQuery({
-    queryKey: ["userRecommended"],
-    queryFn: fetchUserRecommended,
     enabled: !!profile,
   });
 
@@ -70,7 +63,7 @@ export function useUserProfile() {
             }
           : undefined
       );
-      void queryClient.invalidateQueries({ queryKey: ["userRecommended"] });
+      void queryClient.invalidateQueries({ queryKey: ["torRecommendations"] });
     },
     onError: () => {
       setMessage({ type: "error", text: "ไม่สามารถบันทึกความสนใจได้" });
@@ -85,7 +78,7 @@ export function useUserProfile() {
         old
           ? {
               ...old,
-              bookmarkedTorIds: data.bookmarkedTorIds,
+              bookmarkedCount: data.bookmarkedCount,
             }
           : undefined
       );
@@ -99,7 +92,6 @@ export function useUserProfile() {
     saving: profileMutation.isPending || interestsMutation.isPending,
     message,
     bookmarkedTors,
-    recommendedTors,
     updateProfile: profileMutation.mutateAsync,
     updateInterests: interestsMutation.mutateAsync,
     toggleBookmark: bookmarkMutation.mutateAsync,
