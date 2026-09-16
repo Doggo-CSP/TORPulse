@@ -1,15 +1,19 @@
 import { Router } from 'express'
 
 import {
-  categoryPriceHistoryHandler,
+  categoryComparisonHandler,
+  departmentsFilterHandler,
   priceOverviewHandler,
-  procurementComparisonHandler,
+  procurementListHandler,
+  savingsDistributionHandler,
 } from './report.controller.js'
 
 const router = Router()
 
-router.get('/procurement-comparison', procurementComparisonHandler)
 router.get('/price-overview', priceOverviewHandler)
-router.get('/category-price-history', categoryPriceHistoryHandler)
+router.get('/savings-distribution', savingsDistributionHandler)
+router.get('/category-comparison', categoryComparisonHandler)
+router.get('/procurement-list', procurementListHandler)
+router.get('/filters/departments', departmentsFilterHandler)
 
 export default router

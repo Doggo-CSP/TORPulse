@@ -9,158 +9,168 @@ import type { UpsertTorInput } from '../modules/tor/tor.types.js'
 
 export const SEED_PREFIX = 'seed-report-'
 
-// Fixed department shorthands used throughout this seed's comments/tables.
-const D1 = 'สำนักการโยธา กทม.'
-const D2 = 'สำนักการแพทย์ กทม.'
-const D3 = 'สำนักป้องกันและบรรเทาสาธารณภัย'
-// D4/D5/D6 are intentionally never used by any fixture below — they are the
-// "department filter matches nothing" test case (all 5 categories returned
-// with project_count: 0 and null prices).
+export const SEED_AGENCY_ALPHA = 'Seed Agency Alpha'
+export const SEED_AGENCY_BETA = 'Seed Agency Beta'
 
 const daysAgo = (days: number): Date => new Date(Date.now() - days * 24 * 60 * 60 * 1000)
 
 interface ClosedFixtureSpec {
   externalId: string
   technologies: string[]
-  department: string
-  referencePriceBaht: number
-  winningPriceBaht: number
-  announcementDaysAgo: number // recent=30 (in 6m), mid=270 (in 1y, out 6m), old=730 (in 3y, out 1y), ancient=1500 (out 3y)
+  agencyName: string | null
+  midPriceBaht: number
+  awardedPriceBaht: number
+  analyzedAtDaysAgo: number
 }
 
-// Hand-authored, fixed dataset (not random) so tests can assert exact numbers.
-// 2 closed fixtures per category, prices chosen so every average is an exact
-// 1-decimal value:
-//   mobile_app:               10.0 / 8.5  / -15.0  (n=2)
-//   data_bi:                  20.0 / 18.0 / -10.0  (n=2)
-//   web_application:          15.0 / 12.8 / -15.0  (n=2)  (12.75 -> rounds to 12.8)
-//   enterprise_system:         6.0 / 5.6  / -7.5   (n=2)  (5.55 -> rounds to 5.6)
-//   consulting_architecture:  40.0 / 37.0 / -7.5   (n=2)
-// Overall (unfiltered, period=all): 18.2 / 16.4 / -11.0 (n=10) (16.36 -> rounds to 16.4)
+// Hand-authored, fixed dataset (not random). Every fixture uses the same
+// midPriceBaht (10,000,000 baht = 10.0 million) so savings_pct and
+// savings_amount are trivial to hand-verify, and every awardedPriceBaht is
+// chosen to land the fixture's savings_pct in a distinct spot:
+//   SA (agencyName=Seed Agency Alpha, analyzedAt 30 days ago -> "recent"):
+//     mobile_app x2:  20.0%, 10.0%
+//     data_bi x2:      8.0%,  6.0%
+//     web_application: -5.0%  (over budget -> NOT below-reference)
+//   SB (agencyName=Seed Agency Beta, analyzedAt 730 days ago -> "old", outside 1y/6m):
+//     web_application:  3.0%
+//     enterprise_system x2: 12.0%, 14.0%
+//     consulting_architecture x2: 18.0%, 16.0%
+//
+// Hand-computed expectations (agencyName=Seed Agency Alpha, period=all or 6m):
+//   project_count=5, total_mid_price=50.0, total_awarded_price=46.1,
+//   total_savings=3.9, overall_savings_pct=7.8, avg_mid_price=10.0,
+//   avg_savings_baht=0.78, pct_projects_below_reference=80.0 (4/5),
+//   max_savings_pct=20.0
+// Hand-computed expectations (agencyName=Seed Agency Beta, period=all or 3y):
+//   project_count=5, total_mid_price=50.0, total_awarded_price=43.7,
+//   total_savings=6.3, overall_savings_pct=12.6, avg_mid_price=10.0,
+//   avg_savings_baht=1.26, pct_projects_below_reference=100.0 (5/5),
+//   max_savings_pct=18.0
+// agencyName=Seed Agency Beta + period=1y -> 0 matches (730 days is outside 1y).
 export const CLOSED_FIXTURES: ClosedFixtureSpec[] = [
   {
     externalId: `${SEED_PREFIX}closed-001`,
     technologies: ['Flutter'],
-    department: D1,
-    referencePriceBaht: 10_000_000,
-    winningPriceBaht: 8_000_000,
-    announcementDaysAgo: 30,
+    agencyName: SEED_AGENCY_ALPHA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 8_000_000, // savings_pct 20.0
+    analyzedAtDaysAgo: 30,
   },
   {
     externalId: `${SEED_PREFIX}closed-002`,
     technologies: ['Kotlin'],
-    department: D2,
-    referencePriceBaht: 10_000_000,
-    winningPriceBaht: 9_000_000,
-    announcementDaysAgo: 270,
+    agencyName: SEED_AGENCY_ALPHA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 9_000_000, // savings_pct 10.0
+    analyzedAtDaysAgo: 30,
   },
   {
     externalId: `${SEED_PREFIX}closed-003`,
     technologies: ['Python', 'Power BI'],
-    department: D1,
-    referencePriceBaht: 20_000_000,
-    winningPriceBaht: 17_000_000,
-    announcementDaysAgo: 30,
+    agencyName: SEED_AGENCY_ALPHA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 9_200_000, // savings_pct 8.0
+    analyzedAtDaysAgo: 30,
   },
   {
     externalId: `${SEED_PREFIX}closed-004`,
     technologies: ['SQL Server'],
-    department: D3,
-    referencePriceBaht: 20_000_000,
-    winningPriceBaht: 19_000_000,
-    announcementDaysAgo: 1500,
+    agencyName: SEED_AGENCY_ALPHA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 9_400_000, // savings_pct 6.0
+    analyzedAtDaysAgo: 30,
   },
   {
     externalId: `${SEED_PREFIX}closed-005`,
-    technologies: ['React', 'Node.js'],
-    department: D2,
-    referencePriceBaht: 15_000_000,
-    winningPriceBaht: 12_000_000,
-    announcementDaysAgo: 30,
+    technologies: ['Vue'],
+    agencyName: SEED_AGENCY_ALPHA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 10_500_000, // savings_pct -5.0 (over budget)
+    analyzedAtDaysAgo: 30,
   },
   {
     externalId: `${SEED_PREFIX}closed-006`,
-    technologies: ['Vue'],
-    department: D1,
-    referencePriceBaht: 15_000_000,
-    winningPriceBaht: 13_500_000,
-    announcementDaysAgo: 730,
+    technologies: ['React', 'Node.js'],
+    agencyName: SEED_AGENCY_BETA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 9_700_000, // savings_pct 3.0
+    analyzedAtDaysAgo: 730,
   },
   {
     externalId: `${SEED_PREFIX}closed-007`,
     technologies: ['.NET', 'SAP'],
-    department: D3,
-    referencePriceBaht: 6_000_000,
-    winningPriceBaht: 5_400_000,
-    announcementDaysAgo: 30,
+    agencyName: SEED_AGENCY_BETA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 8_800_000, // savings_pct 12.0
+    analyzedAtDaysAgo: 730,
   },
   {
     externalId: `${SEED_PREFIX}closed-008`,
     technologies: ['COBOL', 'Mainframe'],
-    department: D1,
-    referencePriceBaht: 6_000_000,
-    winningPriceBaht: 5_700_000,
-    announcementDaysAgo: 1500,
+    agencyName: SEED_AGENCY_BETA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 8_600_000, // savings_pct 14.0
+    analyzedAtDaysAgo: 730,
   },
   {
     externalId: `${SEED_PREFIX}closed-009`,
     technologies: ['IT Consulting'],
-    department: D2,
-    referencePriceBaht: 40_000_000,
-    winningPriceBaht: 36_000_000,
-    announcementDaysAgo: 30,
+    agencyName: SEED_AGENCY_BETA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 8_200_000, // savings_pct 18.0
+    analyzedAtDaysAgo: 730,
   },
   {
     externalId: `${SEED_PREFIX}closed-010`,
     technologies: ['Enterprise Architecture Advisory'],
-    department: D1,
-    referencePriceBaht: 40_000_000,
-    winningPriceBaht: 38_000_000,
-    announcementDaysAgo: 730,
+    agencyName: SEED_AGENCY_BETA,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 8_400_000, // savings_pct 16.0
+    analyzedAtDaysAgo: 730,
+  },
+  {
+    // agencyName: null -> exercises the "อื่นๆ" department bucket.
+    externalId: `${SEED_PREFIX}closed-011`,
+    technologies: ['Django'],
+    agencyName: null,
+    midPriceBaht: 10_000_000,
+    awardedPriceBaht: 9_000_000, // savings_pct 10.0
+    analyzedAtDaysAgo: 30,
   },
 ]
 
 interface OpenFixtureSpec {
   externalId: string
   technologies: string[]
-  department: string
-  referencePriceBaht: number
+  agencyName: string
+  midPriceBaht: number
+  analyzedAtDaysAgo: number
 }
 
-// Currently-open projects (no winner yet) used only by price-overview's
-// current_vs_historical bucket. Not filtered by period, so no date bucketing
-// needed here — announcementDate is set to a recent, arbitrary date.
-// current_avg_reference_price (unfiltered) = (12+16+8+24)/4 = 15.0, n=4
+// Not-yet-awarded projects (awardedPriceBaht: null) — must be excluded from
+// every report endpoint's aggregates, since all of them gate on
+// awardedPriceBaht != null.
 export const OPEN_FIXTURES: OpenFixtureSpec[] = [
   {
     externalId: `${SEED_PREFIX}open-001`,
     technologies: ['React'],
-    department: D1,
-    referencePriceBaht: 12_000_000,
+    agencyName: SEED_AGENCY_ALPHA,
+    midPriceBaht: 12_000_000,
+    analyzedAtDaysAgo: 5,
   },
   {
     externalId: `${SEED_PREFIX}open-002`,
-    technologies: ['React'],
-    department: D1,
-    referencePriceBaht: 16_000_000,
-  },
-  {
-    externalId: `${SEED_PREFIX}open-003`,
-    technologies: ['.NET'],
-    department: D3,
-    referencePriceBaht: 8_000_000,
-  },
-  {
-    externalId: `${SEED_PREFIX}open-004`,
     technologies: ['Python'],
-    department: D2,
-    referencePriceBaht: 24_000_000,
+    agencyName: SEED_AGENCY_BETA,
+    midPriceBaht: 9_000_000,
+    analyzedAtDaysAgo: 5,
   },
 ]
 
 function baseInput(
   externalId: string,
   technologies: string[],
+  agencyName: string | null,
   dataSourceId: UpsertTorInput['dataSourceId'],
   ingestionJobId: UpsertTorInput['ingestionJobId'],
 ): UpsertTorInput {
@@ -172,7 +182,7 @@ function baseInput(
     sourceAdapter: 'gov_spending',
     detailUrl: `https://example.com/${externalId}`,
     projectTitle: `Seed procurement report project ${externalId}`,
-    agencyName: null,
+    agencyName,
     summary: null,
     objectives: [],
     requirements: [],
@@ -208,13 +218,16 @@ export async function seedProcurementReports(): Promise<void> {
     })
 
     const input: UpsertTorInput = {
-      ...baseInput(fixture.externalId, fixture.technologies, dataSource._id, ingestionJob._id),
-      department: fixture.department,
-      status: 'closed',
-      referencePriceBaht: fixture.referencePriceBaht,
-      winningPriceBaht: fixture.winningPriceBaht,
-      announcementDate: daysAgo(fixture.announcementDaysAgo),
-      contractSignedDate: daysAgo(Math.max(fixture.announcementDaysAgo - 15, 0)),
+      ...baseInput(
+        fixture.externalId,
+        fixture.technologies,
+        fixture.agencyName,
+        dataSource._id,
+        ingestionJob._id,
+      ),
+      midPriceBaht: fixture.midPriceBaht,
+      awardedPriceBaht: fixture.awardedPriceBaht,
+      analyzedAt: daysAgo(fixture.analyzedAtDaysAgo),
     }
 
     const tor = await upsertTor(input)
@@ -231,13 +244,16 @@ export async function seedProcurementReports(): Promise<void> {
     })
 
     const input: UpsertTorInput = {
-      ...baseInput(fixture.externalId, fixture.technologies, dataSource._id, ingestionJob._id),
-      department: fixture.department,
-      status: 'open',
-      referencePriceBaht: fixture.referencePriceBaht,
-      winningPriceBaht: null,
-      announcementDate: daysAgo(10),
-      contractSignedDate: null,
+      ...baseInput(
+        fixture.externalId,
+        fixture.technologies,
+        fixture.agencyName,
+        dataSource._id,
+        ingestionJob._id,
+      ),
+      midPriceBaht: fixture.midPriceBaht,
+      awardedPriceBaht: null,
+      analyzedAt: daysAgo(fixture.analyzedAtDaysAgo),
     }
 
     const tor = await upsertTor(input)

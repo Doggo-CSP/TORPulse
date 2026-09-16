@@ -1,25 +1,10 @@
-import type { TorCategory } from '../tor/tor.controller.js'
+import { CATEGORY_LABELS, type TorCategory } from '../tor/tor.controller.js'
 
-export const REPORT_DEPARTMENTS = [
-  'สำนักการโยธา กทม.',
-  'สำนักการแพทย์ กทม.',
-  'สำนักป้องกันและบรรเทาสาธารณภัย',
-  'สำนักงานเลขานุการปลัด กทม.',
-  'สำนักยุทธศาสตร์และประเมินผล',
-  'สำนักงานประชาสัมพันธ์ กทม.',
-] as const
+export const UNKNOWN_DEPARTMENT_LABEL = 'อื่นๆ'
 
-export type ReportDepartment = (typeof REPORT_DEPARTMENTS)[number]
+export const REPORT_CATEGORY_LABELS = CATEGORY_LABELS
 
-export const REPORT_CATEGORY_LABELS: Record<TorCategory, string> = {
-  consulting_architecture: 'Consulting / Architecture',
-  data_bi: 'Data / BI',
-  web_application: 'Web Application',
-  mobile_app: 'Mobile App',
-  enterprise_system: 'Enterprise System',
-}
-
-// Fixed display order for endpoint 1, which must always emit all 5 categories.
+// Fixed display order for endpoint C, which must always emit all 5 categories.
 export const REPORT_CATEGORY_ORDER: TorCategory[] = [
   'consulting_architecture',
   'data_bi',
@@ -47,3 +32,25 @@ export function periodToCutoff(period: ReportPeriod, now: Date = new Date()): Da
   if (period === '3y') cutoff.setFullYear(cutoff.getFullYear() - 3)
   return cutoff
 }
+
+export interface SavingsBucket {
+  label: string
+  min?: number
+  max?: number
+}
+
+export const SAVINGS_BUCKETS: SavingsBucket[] = [
+  { label: 'ประหยัด < 5%', max: 5 },
+  { label: 'ประหยัด 5% - 10%', min: 5, max: 10 },
+  { label: 'ประหยัด 10% - 15%', min: 10, max: 15 },
+  { label: 'ประหยัดสูง > 15%', min: 15 },
+]
+
+export const PROCUREMENT_LIST_SORT_FIELDS = [
+  'projectTitle',
+  'midPriceBaht',
+  'awardedPriceBaht',
+  'savings_amount',
+  'savings_pct',
+] as const
+export type ProcurementListSortField = (typeof PROCUREMENT_LIST_SORT_FIELDS)[number]

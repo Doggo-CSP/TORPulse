@@ -7,24 +7,14 @@ import request from 'supertest'
 import { database } from '../../config/mongoose.js'
 import { DataSourceModel } from '../ingestion/data-source.model.js'
 import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
-import { SEED_PREFIX, seedProcurementReports } from '../../scripts/seed-procurement-reports.js'
+import {
+  SEED_AGENCY_ALPHA,
+  SEED_AGENCY_BETA,
+  SEED_PREFIX,
+  seedProcurementReports,
+} from '../../scripts/seed-procurement-reports.js'
 import { TorModel } from '../tor/tor.model.js'
 import router from './report.routes.js'
-
-const D1 = 'สำนักการโยธา กทม.'
-const D5 = 'สำนักยุทธศาสตร์และประเมินผล'
-
-interface CategoryRow {
-  category: string
-  avg_reference_price: number | null
-  avg_winning_price: number | null
-  avg_percentage_diff: number | null
-  project_count: number
-}
-
-function byLabel(categories: CategoryRow[]): Record<string, CategoryRow> {
-  return Object.fromEntries(categories.map((c) => [c.category, c]))
-}
 
 test('procurement report endpoints, against a deterministic seeded dataset', async (t) => {
   await database.connect()
@@ -41,186 +31,86 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
   app.use('/reports', router)
 
   await t.test(
-    'GET /reports/procurement-comparison with no filters returns all 5 categories',
-    async () => {
-      const response = await request(app).get('/reports/procurement-comparison')
-
-      assert.equal(response.status, 200)
-      assert.equal(response.body.success, true)
-      const categories = byLabel(response.body.data.categories)
-      assert.equal(response.body.data.categories.length, 5)
-
-      assert.deepEqual(categories['Mobile App'], {
-        category: 'Mobile App',
-        avg_reference_price: 10.0,
-        avg_winning_price: 8.5,
-        avg_percentage_diff: -15.0,
-        project_count: 2,
-      })
-      assert.deepEqual(categories['Data / BI'], {
-        category: 'Data / BI',
-        avg_reference_price: 20.0,
-        avg_winning_price: 18.0,
-        avg_percentage_diff: -10.0,
-        project_count: 2,
-      })
-      assert.deepEqual(categories['Web Application'], {
-        category: 'Web Application',
-        avg_reference_price: 15.0,
-        avg_winning_price: 12.8,
-        avg_percentage_diff: -15.0,
-        project_count: 2,
-      })
-      assert.deepEqual(categories['Enterprise System'], {
-        category: 'Enterprise System',
-        avg_reference_price: 6.0,
-        avg_winning_price: 5.6,
-        avg_percentage_diff: -7.5,
-        project_count: 2,
-      })
-      assert.deepEqual(categories['Consulting / Architecture'], {
-        category: 'Consulting / Architecture',
-        avg_reference_price: 40.0,
-        avg_winning_price: 37.0,
-        avg_percentage_diff: -7.5,
-        project_count: 2,
-      })
-    },
-  )
-
-  await t.test(
-    'GET /reports/procurement-comparison filtered by department=D1 narrows to 1 project/category',
-    async () => {
-      const response = await request(app)
-        .get('/reports/procurement-comparison')
-        .query({ department: D1 })
-
-      assert.equal(response.status, 200)
-      const categories = byLabel(response.body.data.categories)
-      assert.equal(response.body.data.categories.length, 5)
-      assert.equal(categories['Mobile App']!.project_count, 1)
-      assert.equal(categories['Mobile App']!.avg_percentage_diff, -20.0)
-      assert.deepEqual(categories['Web Application'], {
-        category: 'Web Application',
-        avg_reference_price: 15.0,
-        avg_winning_price: 13.5,
-        avg_percentage_diff: -10.0,
-        project_count: 1,
-      })
-      assert.deepEqual(categories['Enterprise System'], {
-        category: 'Enterprise System',
-        avg_reference_price: 6.0,
-        avg_winning_price: 5.7,
-        avg_percentage_diff: -5.0,
-        project_count: 1,
-      })
-    },
-  )
-
-  await t.test(
-    'GET /reports/procurement-comparison filtered by an unused department returns all 5 categories with zero counts',
-    async () => {
-      const response = await request(app)
-        .get('/reports/procurement-comparison')
-        .query({ department: D5 })
-
-      assert.equal(response.status, 200)
-      assert.equal(response.body.data.categories.length, 5)
-      for (const category of response.body.data.categories) {
-        assert.equal(category.project_count, 0)
-        assert.equal(category.avg_reference_price, null)
-        assert.equal(category.avg_winning_price, null)
-        assert.equal(category.avg_percentage_diff, null)
-      }
-    },
-  )
-
-  await t.test(
-    'GET /reports/procurement-comparison with period=6m narrows to one project per category',
-    async () => {
-      const response = await request(app)
-        .get('/reports/procurement-comparison')
-        .query({ period: '6m' })
-
-      assert.equal(response.status, 200)
-      const categories = byLabel(response.body.data.categories)
-      assert.equal(categories['Mobile App']!.project_count, 1)
-      assert.equal(categories['Mobile App']!.avg_percentage_diff, -20.0)
-      assert.equal(categories['Consulting / Architecture']!.project_count, 1)
-      assert.equal(categories['Consulting / Architecture']!.avg_percentage_diff, -10.0)
-    },
-  )
-
-  await t.test(
-    'GET /reports/procurement-comparison with budget_min=30 leaves only Consulting/Architecture non-zero',
-    async () => {
-      const response = await request(app)
-        .get('/reports/procurement-comparison')
-        .query({ budget_min: 30 })
-
-      assert.equal(response.status, 200)
-      const categories = byLabel(response.body.data.categories)
-      assert.equal(categories['Consulting / Architecture']!.project_count, 2)
-      assert.equal(categories['Mobile App']!.project_count, 0)
-      assert.equal(categories['Data / BI']!.project_count, 0)
-    },
-  )
-
-  await t.test('GET /reports/procurement-comparison rejects an invalid department', async () => {
-    const response = await request(app)
-      .get('/reports/procurement-comparison')
-      .query({ department: 'not-a-real-department' })
-
-    assert.equal(response.status, 400)
-    assert.ok(response.body.message)
-  })
-
-  await t.test(
-    'GET /reports/price-overview with no filters matches hand-computed overall stats',
-    async () => {
-      const response = await request(app).get('/reports/price-overview')
-
-      assert.equal(response.status, 200)
-      assert.equal(response.body.data.avg_reference_price, 18.2)
-      assert.equal(response.body.data.avg_winning_price, 16.4)
-      assert.equal(response.body.data.avg_percentage_diff, -11.0)
-      assert.equal(response.body.data.project_count, 10)
-      assert.equal(response.body.data.trend, 'ราคามีแนวโน้มลดลง')
-      assert.deepEqual(response.body.data.current_vs_historical, {
-        current_avg_reference_price: 15.0,
-        current_project_count: 4,
-        historical_avg_reference_price: 18.2,
-        higher_than_avg_pct: -17.6,
-      })
-    },
-  )
-
-  await t.test(
-    'GET /reports/price-overview filtered by category+department matches hand-computed values',
+    'GET /reports/price-overview for Seed Agency Alpha matches hand-computed totals',
     async () => {
       const response = await request(app)
         .get('/reports/price-overview')
-        .query({ category: 'Web Application', department: D1 })
+        .query({ agencyName: SEED_AGENCY_ALPHA })
 
       assert.equal(response.status, 200)
-      assert.equal(response.body.data.avg_reference_price, 15.0)
-      assert.equal(response.body.data.project_count, 1)
-      assert.deepEqual(response.body.data.current_vs_historical, {
-        current_avg_reference_price: 14.0,
-        current_project_count: 2,
-        historical_avg_reference_price: 15.0,
-        higher_than_avg_pct: -6.7,
+      assert.equal(response.body.success, true)
+      assert.deepEqual(response.body.data, {
+        total_mid_price: 50.0,
+        total_awarded_price: 46.1,
+        avg_mid_price: 10.0,
+        project_count: 5,
+        total_savings: 3.9,
+        overall_savings_pct: 7.8,
+        avg_savings_baht: 0.78,
+        pct_projects_below_reference: 80.0,
+        max_savings_pct: 20.0,
       })
     },
   )
 
-  await t.test('GET /reports/price-overview with zero closed matches returns nulls', async () => {
-    const response = await request(app).get('/reports/price-overview').query({ department: D5 })
+  await t.test(
+    'GET /reports/price-overview for Seed Agency Beta matches hand-computed totals',
+    async () => {
+      const response = await request(app)
+        .get('/reports/price-overview')
+        .query({ agencyName: SEED_AGENCY_BETA })
 
-    assert.equal(response.status, 200)
-    assert.equal(response.body.data.avg_reference_price, null)
-    assert.equal(response.body.data.project_count, 0)
-    assert.equal(response.body.data.trend, null)
+      assert.equal(response.status, 200)
+      assert.deepEqual(response.body.data, {
+        total_mid_price: 50.0,
+        total_awarded_price: 43.7,
+        avg_mid_price: 10.0,
+        project_count: 5,
+        total_savings: 6.3,
+        overall_savings_pct: 12.6,
+        avg_savings_baht: 1.26,
+        pct_projects_below_reference: 100.0,
+        max_savings_pct: 18.0,
+      })
+    },
+  )
+
+  await t.test(
+    'GET /reports/price-overview with period=1y excludes Seed Agency Beta (730 days old)',
+    async () => {
+      const response = await request(app)
+        .get('/reports/price-overview')
+        .query({ agencyName: SEED_AGENCY_BETA, period: '1y' })
+
+      assert.equal(response.status, 200)
+      assert.equal(response.body.data.project_count, 0)
+      assert.equal(response.body.data.avg_mid_price, null)
+      assert.equal(response.body.data.overall_savings_pct, null)
+      assert.equal(response.body.data.max_savings_pct, null)
+    },
+  )
+
+  await t.test(
+    'GET /reports/price-overview with category+agency isolating a single over-budget project yields max_savings_pct null',
+    async () => {
+      const response = await request(app)
+        .get('/reports/price-overview')
+        .query({ category: 'งานพัฒนาเว็บไซต์', agencyName: SEED_AGENCY_ALPHA })
+
+      assert.equal(response.status, 200)
+      assert.equal(response.body.data.project_count, 1)
+      assert.equal(response.body.data.overall_savings_pct, -5.0)
+      assert.equal(response.body.data.pct_projects_below_reference, 0.0)
+      assert.equal(response.body.data.max_savings_pct, null)
+    },
+  )
+
+  await t.test('GET /reports/price-overview rejects an unknown agencyName', async () => {
+    const response = await request(app)
+      .get('/reports/price-overview')
+      .query({ agencyName: 'ไม่มีหน่วยงานนี้จริง' })
+
+    assert.equal(response.status, 400)
   })
 
   await t.test('GET /reports/price-overview rejects an invalid period', async () => {
@@ -230,48 +120,220 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
   })
 
   await t.test(
-    'GET /reports/category-price-history returns 5 rows sorted descending by avg_reference_price',
+    'GET /reports/savings-distribution for Seed Agency Alpha buckets projects correctly',
     async () => {
-      const response = await request(app).get('/reports/category-price-history')
+      const response = await request(app)
+        .get('/reports/savings-distribution')
+        .query({ agencyName: SEED_AGENCY_ALPHA })
 
       assert.equal(response.status, 200)
-      const categories: CategoryRow[] = response.body.data.categories
-      assert.deepEqual(
-        categories.map((c) => c.category),
-        [
-          'Consulting / Architecture',
-          'Data / BI',
-          'Web Application',
-          'Mobile App',
-          'Enterprise System',
-        ],
-      )
-      assert.equal(categories[0]!.avg_reference_price, 40.0)
-      assert.equal(categories[4]!.avg_reference_price, 6.0)
+      assert.equal(response.body.data.total_projects, 5)
+      assert.deepEqual(response.body.data.buckets, [
+        { label: 'ประหยัด < 5%', count: 1, pct: 20.0 },
+        { label: 'ประหยัด 5% - 10%', count: 2, pct: 40.0 },
+        { label: 'ประหยัด 10% - 15%', count: 1, pct: 20.0 },
+        { label: 'ประหยัดสูง > 15%', count: 1, pct: 20.0 },
+      ])
     },
   )
 
   await t.test(
-    'GET /reports/category-price-history with period=6m returns one project per category',
+    'GET /reports/savings-distribution for Seed Agency Beta buckets projects correctly',
     async () => {
       const response = await request(app)
-        .get('/reports/category-price-history')
-        .query({ period: '6m' })
+        .get('/reports/savings-distribution')
+        .query({ agencyName: SEED_AGENCY_BETA })
 
       assert.equal(response.status, 200)
-      const categories: CategoryRow[] = response.body.data.categories
-      assert.equal(categories.length, 5)
-      for (const category of categories) {
-        assert.equal(category.project_count, 1)
-      }
+      assert.equal(response.body.data.total_projects, 5)
+      assert.deepEqual(response.body.data.buckets, [
+        { label: 'ประหยัด < 5%', count: 1, pct: 20.0 },
+        { label: 'ประหยัด 5% - 10%', count: 0, pct: 0.0 },
+        { label: 'ประหยัด 10% - 15%', count: 2, pct: 40.0 },
+        { label: 'ประหยัดสูง > 15%', count: 2, pct: 40.0 },
+      ])
     },
   )
 
-  await t.test('GET /reports/category-price-history rejects an invalid period', async () => {
+  await t.test(
+    'GET /reports/category-comparison for Seed Agency Alpha returns all 5 categories, 2 empty',
+    async () => {
+      const response = await request(app)
+        .get('/reports/category-comparison')
+        .query({ agencyName: SEED_AGENCY_ALPHA })
+
+      assert.equal(response.status, 200)
+      const categories: Record<string, unknown>[] = response.body.data.categories
+      assert.equal(categories.length, 5)
+      const byCategory = Object.fromEntries(categories.map((c) => [c.category, c]))
+
+      assert.deepEqual(byCategory.mobile_app, {
+        category: 'mobile_app',
+        category_label: 'งานแอปพลิเคชันมือถือ',
+        total_mid_price: 20.0,
+        total_awarded_price: 17.0,
+        avg_savings_pct: 15.0,
+        project_count: 2,
+      })
+      assert.deepEqual(byCategory.data_bi, {
+        category: 'data_bi',
+        category_label: 'งานข้อมูลและวิเคราะห์',
+        total_mid_price: 20.0,
+        total_awarded_price: 18.6,
+        avg_savings_pct: 7.0,
+        project_count: 2,
+      })
+      assert.deepEqual(byCategory.web_application, {
+        category: 'web_application',
+        category_label: 'งานพัฒนาเว็บไซต์',
+        total_mid_price: 10.0,
+        total_awarded_price: 10.5,
+        avg_savings_pct: -5.0,
+        project_count: 1,
+      })
+      assert.deepEqual(byCategory.enterprise_system, {
+        category: 'enterprise_system',
+        category_label: 'งานระบบองค์กร',
+        total_mid_price: 0,
+        total_awarded_price: 0,
+        avg_savings_pct: null,
+        project_count: 0,
+      })
+      assert.deepEqual(byCategory.consulting_architecture, {
+        category: 'consulting_architecture',
+        category_label: 'Consulting / Architecture',
+        total_mid_price: 0,
+        total_awarded_price: 0,
+        avg_savings_pct: null,
+        project_count: 0,
+      })
+    },
+  )
+
+  await t.test(
+    'GET /reports/category-comparison for Seed Agency Beta returns the complementary empty categories',
+    async () => {
+      const response = await request(app)
+        .get('/reports/category-comparison')
+        .query({ agencyName: SEED_AGENCY_BETA })
+
+      assert.equal(response.status, 200)
+      const categories: Record<string, unknown>[] = response.body.data.categories
+      const byCategory = Object.fromEntries(categories.map((c) => [c.category, c]))
+
+      assert.equal(byCategory.mobile_app!.project_count, 0)
+      assert.equal(byCategory.data_bi!.project_count, 0)
+      assert.deepEqual(byCategory.enterprise_system, {
+        category: 'enterprise_system',
+        category_label: 'งานระบบองค์กร',
+        total_mid_price: 20.0,
+        total_awarded_price: 17.4,
+        avg_savings_pct: 13.0,
+        project_count: 2,
+      })
+      assert.deepEqual(byCategory.consulting_architecture, {
+        category: 'consulting_architecture',
+        category_label: 'Consulting / Architecture',
+        total_mid_price: 20.0,
+        total_awarded_price: 16.6,
+        avg_savings_pct: 17.0,
+        project_count: 2,
+      })
+    },
+  )
+
+  await t.test(
+    'GET /reports/procurement-list for Seed Agency Alpha sorts by savings_amount desc by default and paginates',
+    async () => {
+      const page1 = await request(app)
+        .get('/reports/procurement-list')
+        .query({ agencyName: SEED_AGENCY_ALPHA, page_size: 2, page: 1 })
+
+      assert.equal(page1.status, 200)
+      assert.equal(page1.body.data.total_count, 5)
+      assert.equal(page1.body.data.total_pages, 3)
+      assert.equal(page1.body.data.items.length, 2)
+      assert.equal(page1.body.data.items[0].external_id, `${SEED_PREFIX}closed-001`)
+      assert.equal(page1.body.data.items[0].savings_amount, 2_000_000)
+      assert.equal(page1.body.data.items[0].savings_pct, 20.0)
+
+      const lastPage = await request(app)
+        .get('/reports/procurement-list')
+        .query({ agencyName: SEED_AGENCY_ALPHA, page_size: 2, page: 3 })
+
+      assert.equal(lastPage.body.data.items.length, 1)
+      assert.equal(lastPage.body.data.items[0].external_id, `${SEED_PREFIX}closed-005`)
+      assert.equal(lastPage.body.data.items[0].savings_amount, -500_000)
+    },
+  )
+
+  await t.test('GET /reports/procurement-list sorts ascending by awardedPriceBaht', async () => {
+    const response = await request(app).get('/reports/procurement-list').query({
+      agencyName: SEED_AGENCY_ALPHA,
+      sort_by: 'awardedPriceBaht',
+      sort_order: 'asc',
+      page_size: 10,
+    })
+
+    assert.equal(response.status, 200)
+    const items: { external_id: string; awarded_price_baht: number }[] = response.body.data.items
+    assert.equal(items[0]!.external_id, `${SEED_PREFIX}closed-001`)
+    assert.equal(items[0]!.awarded_price_baht, 8_000_000)
+    assert.equal(items[4]!.external_id, `${SEED_PREFIX}closed-005`)
+    assert.equal(items[4]!.awarded_price_baht, 10_500_000)
+  })
+
+  await t.test(
+    'GET /reports/procurement-list with budget_min above all fixtures returns an empty page',
+    async () => {
+      const response = await request(app)
+        .get('/reports/procurement-list')
+        .query({ agencyName: SEED_AGENCY_ALPHA, budget_min: 15 })
+
+      assert.equal(response.status, 200)
+      assert.equal(response.body.data.total_count, 0)
+      assert.equal(response.body.data.total_pages, 0)
+      assert.deepEqual(response.body.data.items, [])
+    },
+  )
+
+  await t.test(
+    'GET /reports/procurement-list includes the null-agencyName fixture under the "อื่นๆ" bucket',
+    async () => {
+      const response = await request(app)
+        .get('/reports/procurement-list')
+        .query({ agencyName: 'อื่นๆ', page_size: 100 })
+
+      assert.equal(response.status, 200)
+      const externalIds: string[] = response.body.data.items.map(
+        (item: { external_id: string }) => item.external_id,
+      )
+      assert.ok(externalIds.includes(`${SEED_PREFIX}closed-011`))
+    },
+  )
+
+  await t.test('GET /reports/procurement-list rejects an invalid sort_by', async () => {
     const response = await request(app)
-      .get('/reports/category-price-history')
-      .query({ period: 'foo' })
+      .get('/reports/procurement-list')
+      .query({ sort_by: 'not_a_field' })
 
     assert.equal(response.status, 400)
   })
+
+  await t.test(
+    'GET /reports/filters/departments includes both seeded agencies, sorted',
+    async () => {
+      const response = await request(app).get('/reports/filters/departments')
+
+      assert.equal(response.status, 200)
+      const departments: string[] = response.body.data.departments
+      assert.ok(departments.includes(SEED_AGENCY_ALPHA))
+      assert.ok(departments.includes(SEED_AGENCY_BETA))
+      const knownOnly = departments.filter((d) => d !== 'อื่นๆ')
+      assert.deepEqual(
+        knownOnly,
+        [...knownOnly].sort((a, b) => a.localeCompare(b)),
+      )
+    },
+  )
 })

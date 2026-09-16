@@ -66,6 +66,14 @@ export function deriveCategory(technologies: string[]): TorCategory {
   return 'enterprise_system'
 }
 
+export const CATEGORY_LABELS: Record<TorCategory, string> = {
+  web_application: 'งานพัฒนาเว็บไซต์',
+  data_bi: 'งานข้อมูลและวิเคราะห์',
+  mobile_app: 'งานแอปพลิเคชันมือถือ',
+  enterprise_system: 'งานระบบองค์กร',
+  consulting_architecture: 'Consulting / Architecture',
+}
+
 // ---------------------------------------------------------------------------
 // Interest scoring (pure, no DB) — used by getRecommendationsHandler below
 // ---------------------------------------------------------------------------

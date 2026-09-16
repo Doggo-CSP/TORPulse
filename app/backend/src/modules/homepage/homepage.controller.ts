@@ -1,15 +1,7 @@
 import type { Request, Response } from 'express'
 
-import { deriveCategory, type TorCategory } from '../tor/tor.controller.js'
+import { CATEGORY_LABELS, deriveCategory, type TorCategory } from '../tor/tor.controller.js'
 import { TorModel } from '../tor/tor.model.js'
-
-const CATEGORY_LABELS: Record<TorCategory, string> = {
-  web_application: 'งานพัฒนาเว็บไซต์',
-  data_bi: 'งานข้อมูลและวิเคราะห์',
-  mobile_app: 'งานแอปพลิเคชันมือถือ',
-  enterprise_system: 'งานระบบองค์กร',
-  consulting_architecture: 'งานที่ปรึกษา/สถาปัตยกรรมองค์กร',
-}
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000
 
