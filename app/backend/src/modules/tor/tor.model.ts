@@ -92,6 +92,18 @@ const torSchema = new Schema(
       min: 0,
       default: null,
     },
+    midPriceBaht: {
+      type: Number,
+      min: 0,
+      default: null,
+      alias: 'referencePriceBaht',
+    },
+    awardedPriceBaht: {
+      type: Number,
+      min: 0,
+      default: null,
+      alias: 'winningPriceBaht',
+    },
     submissionDeadline: {
       type: String,
       default: null,
@@ -146,6 +158,9 @@ torSchema.index(
   },
   { unique: true },
 )
+
+torSchema.index({ awardedPriceBaht: 1, analyzedAt: -1 })
+torSchema.index({ awardedPriceBaht: 1, agencyName: 1 })
 
 export type Tor = InferSchemaType<typeof torSchema>
 

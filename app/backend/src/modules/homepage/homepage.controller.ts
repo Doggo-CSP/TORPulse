@@ -1,14 +1,7 @@
 import type { Request, Response } from 'express'
 
-import { deriveCategory, type TorCategory } from '../tor/tor.controller.js'
+import { CATEGORY_LABELS, deriveCategory, type TorCategory } from '../tor/tor.controller.js'
 import { TorModel } from '../tor/tor.model.js'
-
-const CATEGORY_LABELS: Record<TorCategory, string> = {
-  web_application: 'งานพัฒนาเว็บไซต์',
-  data_bi: 'งานข้อมูลและวิเคราะห์',
-  mobile_app: 'งานแอปพลิเคชันมือถือ',
-  enterprise_system: 'งานระบบองค์กร',
-}
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000
 
@@ -98,6 +91,7 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
     data_bi: 0,
     mobile_app: 0,
     enterprise_system: 0,
+    consulting_architecture: 0,
   }
   for (const doc of technologyDocs) {
     counts[deriveCategory(doc.technologies ?? [])] += 1
