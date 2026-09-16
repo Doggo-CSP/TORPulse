@@ -1,3 +1,4 @@
+import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import path from 'node:path'
 
 import { unzipSync, type UnzipFileInfo } from 'fflate'
@@ -12,6 +13,10 @@ const EGP_ORIGIN = 'https://process5.gprocurement.go.th'
 const METADATA_URL = `${EGP_ORIGIN}/egp-approval-service/apv-common/infoProcureDocAnnounZipTemp`
 const DOWNLOAD_URL = `${EGP_ORIGIN}/egp-upload-service/v1/downloadFileTest`
 const SEARCH_URL = `${EGP_ORIGIN}/egp-agpc01-web/announcement`
+const ANNOUNCEMENT_URL = `${EGP_ORIGIN}/egp-atpj27-service/pb/a-egp-allt-project/announcement`
+const TOKEN_URL = `${ANNOUNCEMENT_URL}/generateToken`
+const PROJECT_DETAIL_URL = `${ANNOUNCEMENT_URL}/getProjectDetail`
+const PROCUREMENT_DETAIL_URL = `${ANNOUNCEMENT_URL}/getProcurementDetail`
 
 const PROJECT_ID_PATTERN = /^\d{11}$/
 const TOR_FILE_PATTERN = /(?:^|[_\W])tor(?:[_\W]|$)|ขอบเขต.*งาน/iu
@@ -24,6 +29,14 @@ const MAX_COMPRESSION_RATIO = 500
 interface ArchiveMetadata {
   zipId: string
   archiveName: string
+}
+
+export interface CentralEgpProjectDetails {
+  departmentName: string
+  departmentSubName: string
+  projectStatus: string | null
+  midPriceBaht: number | null
+  awardedPriceBaht: number | null
 }
 
 export interface CentralEgpAdapterOptions {
@@ -45,24 +58,10 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
     const projectId = externalId.trim()
     assertProjectId(projectId)
 
-    const url = new URL(METADATA_URL)
-    url.searchParams.set('projectId', projectId)
-
-    const response = await this.fetchImpl(url, {
-      headers: {
-        Accept: 'application/json',
-        noToken: 'noToken',
-        noDataProfile: 'noDataProfile',
-      },
-      signal: AbortSignal.timeout(this.requestTimeoutMs),
-    })
-
-    if (!response.ok) {
-      throw new Error(`Central eGP metadata request failed (${response.status}) for ${projectId}`)
-    }
-    const temp = await response.json()
-    console.log(temp, 'raw metadata')
-    const metadata = parseArchiveMetadata(temp, projectId)
+    const [metadata, details] = await Promise.all([
+      this.fetchArchiveMetadata(projectId),
+      this.getProjectDetails(projectId),
+    ])
     this.archiveByProjectId.set(projectId, metadata)
 
     const detailUrl = new URL(SEARCH_URL)
@@ -72,6 +71,34 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
       externalId: projectId,
       title: `Central eGP project ${projectId}`,
       detailUrl: detailUrl.toString(),
+      ...details,
+    }
+  }
+
+  public async getProjectDetails(externalId: string): Promise<CentralEgpProjectDetails> {
+    const projectId = externalId.trim()
+    assertProjectId(projectId)
+    const token = await this.generateAnnouncementToken(projectId)
+    const headers = {
+      Accept: 'application/json',
+      noToken: 'noToken',
+      noDataProfile: 'noDataProfile',
+      'X-Announcement-Token': token,
+    }
+
+    const [projectPayload, procurementPayload] = await Promise.all([
+      this.fetchJson(PROJECT_DETAIL_URL, projectId, headers, 'project detail'),
+      this.fetchJson(PROCUREMENT_DETAIL_URL, projectId, headers, 'procurement detail'),
+    ])
+    const projectDetail = parseDetailData(projectPayload, projectId, 'project detail')
+    const procurementDetail = parseDetailData(procurementPayload, projectId, 'procurement detail')
+
+    return {
+      departmentName: requiredString(projectDetail.deptName, 'deptName', projectId),
+      departmentSubName: requiredString(projectDetail.deptSubName, 'deptSubName', projectId),
+      projectStatus: nullableString(procurementDetail.flowName, 'flowName', projectId),
+      midPriceBaht: nullablePrice(procurementDetail.priceBuild, 'priceBuild', projectId),
+      awardedPriceBaht: nullablePrice(procurementDetail.priceAgree, 'priceAgree', projectId),
     }
   }
 
@@ -80,8 +107,8 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
     assertProjectId(projectId)
 
     const metadata =
-      this.archiveByProjectId.get(projectId) ??
-      (await this.loadArchiveMetadataWithoutReplacingProject(projectId))
+      this.archiveByProjectId.get(projectId) ?? (await this.fetchArchiveMetadata(projectId))
+    this.archiveByProjectId.set(projectId, metadata)
     const url = new URL(DOWNLOAD_URL)
     url.searchParams.set('fileId', metadata.zipId)
 
@@ -121,18 +148,135 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
     return documents
   }
 
-  private async loadArchiveMetadataWithoutReplacingProject(
-    projectId: string,
-  ): Promise<ArchiveMetadata> {
-    await this.getProject(projectId)
-    const metadata = this.archiveByProjectId.get(projectId)
+  private async fetchArchiveMetadata(projectId: string): Promise<ArchiveMetadata> {
+    const url = new URL(METADATA_URL)
+    url.searchParams.set('projectId', projectId)
+    const response = await this.fetchImpl(url, {
+      headers: {
+        Accept: 'application/json',
+        noToken: 'noToken',
+        noDataProfile: 'noDataProfile',
+      },
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
+    })
 
-    if (!metadata) {
-      throw new Error(`Central eGP archive metadata was not cached for ${projectId}`)
+    if (!response.ok) {
+      throw new Error(`Central eGP metadata request failed (${response.status}) for ${projectId}`)
     }
 
-    return metadata
+    return parseArchiveMetadata(await response.json(), projectId)
   }
+
+  private async generateAnnouncementToken(projectId: string): Promise<string> {
+    const key = encryptAnnouncementData(encryptAnnouncementData({ projectId }))
+    const response = await this.fetchImpl(TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        noToken: 'noToken',
+        noDataProfile: 'noDataProfile',
+      },
+      body: JSON.stringify({ key }),
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Central eGP token request failed (${response.status}) for ${projectId}`)
+    }
+
+    const payload: unknown = await response.json()
+    if (!isRecord(payload) || typeof payload.data !== 'string' || payload.data.length === 0) {
+      throw new Error(`Central eGP returned a malformed announcement token for ${projectId}`)
+    }
+
+    return payload.data
+  }
+
+  private async fetchJson(
+    endpoint: string,
+    projectId: string,
+    headers: Record<string, string>,
+    label: string,
+  ): Promise<unknown> {
+    const url = new URL(endpoint)
+    url.searchParams.set('projectId', projectId)
+    const response = await this.fetchImpl(url, {
+      headers,
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Central eGP ${label} request failed (${response.status}) for ${projectId}`)
+    }
+
+    return response.json()
+  }
+}
+
+function encryptAnnouncementData(value: unknown): string {
+  // Match the public e-GP client protocol: CryptoJS AES passphrase encryption in OpenSSL format.
+  const salt = randomBytes(8)
+  const password = Buffer.from('RDCrypto')
+  let derived = Buffer.alloc(0)
+  let block = Buffer.alloc(0)
+
+  while (derived.length < 48) {
+    block = createHash('md5')
+      .update(Buffer.concat([block, password, salt]))
+      .digest()
+    derived = Buffer.concat([derived, block])
+  }
+
+  const cipher = createCipheriv('aes-256-cbc', derived.subarray(0, 32), derived.subarray(32, 48))
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()])
+
+  return encodeURIComponent(
+    Buffer.concat([Buffer.from('Salted__'), salt, encrypted]).toString('base64'),
+  )
+}
+
+function parseDetailData(
+  payload: unknown,
+  projectId: string,
+  label: string,
+): Record<string, unknown> {
+  if (isRecord(payload) && payload.validateAnnouncementToken === false) {
+    throw new Error(`Central eGP rejected the announcement token for ${projectId}`)
+  }
+  if (!isRecord(payload) || !isRecord(payload.response) || !isRecord(payload.data)) {
+    throw new Error(`Central eGP returned malformed ${label} for ${projectId}`)
+  }
+  if (payload.response.responseCode !== '0') {
+    throw new Error(`Central eGP returned unsuccessful ${label} for ${projectId}`)
+  }
+  if (payload.data.projectId !== projectId) {
+    throw new Error(`Central eGP returned mismatched ${label} for ${projectId}`)
+  }
+
+  return payload.data
+}
+
+function requiredString(value: unknown, field: string, projectId: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Central eGP returned invalid ${field} for ${projectId}`)
+  }
+  return value.trim()
+}
+
+function nullableString(value: unknown, field: string, projectId: string): string | null {
+  if (value === null) return null
+  if (typeof value !== 'string') {
+    throw new Error(`Central eGP returned invalid ${field} for ${projectId}`)
+  }
+  return value.trim() || null
+}
+
+function nullablePrice(value: unknown, field: string, projectId: string): number | null {
+  if (value === null) return null
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error(`Central eGP returned invalid ${field} for ${projectId}`)
+  }
+  return value
 }
 
 function assertProjectId(projectId: string): void {

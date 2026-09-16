@@ -4,6 +4,8 @@ const mongodbUri = process.env.MONGODB_URI
 const mongodbDatabase = process.env.MONGODB_DATABASE
 const deepseekApiKey = process.env.DEEPSEEK_API_KEY
 const deepseekModel = process.env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash'
+const aiProviderValue = process.env.AI_PROVIDER ?? 'deepseek'
+const geminiModel = process.env.GEMINI_MODEL ?? 'gemini-3.8-flash'
 const govSpendingApiKey = process.env.GOVSPENDING_API_KEY
 const govSpendingSyncIntervalMs = Number(process.env.GOVSPENDING_SYNC_INTERVAL_MS ?? 600_000)
 const govSpendingFiscalYear = process.env.GOVSPENDING_FISCAL_YEAR
@@ -30,6 +32,12 @@ if (!mongodbDatabase) {
   throw new Error('MONGODB_DATABASE is required')
 }
 
+if (aiProviderValue !== 'deepseek' && aiProviderValue !== 'gemini') {
+  throw new Error('AI_PROVIDER must be either deepseek or gemini')
+}
+
+const aiProvider: 'deepseek' | 'gemini' = aiProviderValue
+
 if (!Number.isFinite(govSpendingSyncIntervalMs) || govSpendingSyncIntervalMs <= 0) {
   throw new Error('GOVSPENDING_SYNC_INTERVAL_MS must be a positive number')
 }
@@ -48,6 +56,8 @@ export const env = {
   MONGODB_DATABASE: mongodbDatabase,
   DEEPSEEK_API_KEY: deepseekApiKey,
   DEEPSEEK_MODEL: deepseekModel,
+  AI_PROVIDER: aiProvider,
+  GEMINI_MODEL: geminiModel,
   GOVSPENDING_API_KEY: govSpendingApiKey,
   GOVSPENDING_SYNC_INTERVAL_MS: govSpendingSyncIntervalMs,
   GOVSPENDING_FISCAL_YEAR: govSpendingFiscalYear,

@@ -63,6 +63,18 @@ const torSchema = new Schema(
       type: String,
       default: null,
     },
+    departmentName: {
+      type: String,
+      default: null,
+    },
+    departmentSubName: {
+      type: String,
+      default: null,
+    },
+    projectStatus: {
+      type: String,
+      default: null,
+    },
     summary: {
       type: String,
       default: null,
@@ -88,6 +100,16 @@ const torSchema = new Schema(
       default: [],
     },
     budgetBaht: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    midPriceBaht: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    awardedPriceBaht: {
       type: Number,
       min: 0,
       default: null,
