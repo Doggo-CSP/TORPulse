@@ -38,6 +38,20 @@ export interface TorItem {
   classificationReason?: string;
   detailUrl?: string;
   createdAt?: string;
+  updatedAt?: string;
+  externalId?: string;
+  sourceAdapter?: string;
+  sourceVersion?: string;
+  objectives?: string[];
+  requirements?: string[];
+  bidderQualifications?: string[];
+  contactInformation?: string[];
+  confidence?: number;
+  documents?: Array<{
+    fileName: string;
+    mimeType: string;
+    sourceUrl: string;
+  }>;
 }
 
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
