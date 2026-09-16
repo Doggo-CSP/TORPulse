@@ -15,6 +15,9 @@ export interface UpsertTorInput {
   detailUrl: string
   projectTitle: string
   agencyName: string | null
+  departmentName?: string | null
+  departmentSubName?: string | null
+  projectStatus?: string | null
   summary: string | null
   objectives: string[]
   requirements: string[]

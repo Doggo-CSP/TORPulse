@@ -9,6 +9,7 @@ import {
   analyzeTorWithDeepSeek,
   TOR_ANALYSIS_VERSION,
 } from './extraction/deepseek-tor-extractor.js'
+import { analyzeTorWithGemini } from './extraction/gemini-tor-extractor.js'
 import {
   extractDocumentsToMarkdown,
   OcrRequiredError,
@@ -24,6 +25,11 @@ export type IngestionResult =
 
 const adapters: Record<string, ProcurementSourceAdapter> = {
   central_egp: new CentralEgpAdapter(),
+}
+
+const torAnalyzers = {
+  deepseek: analyzeTorWithDeepSeek,
+  gemini: analyzeTorWithGemini,
 }
 
 export async function processIngestionJob(
@@ -66,7 +72,7 @@ export async function processIngestionJob(
   }
 
   await updateStage('classifying')
-  const extractedTor = await analyzeTorWithDeepSeek(extractedText, project)
+  const extractedTor = await torAnalyzers[env.AI_PROVIDER](extractedText, project)
 
   if (!extractedTor.isSoftwareRelated) {
     return {
@@ -87,17 +93,22 @@ export async function processIngestionJob(
     detailUrl: project.detailUrl,
     projectTitle: nonBlankOrFallback(extractedTor.projectTitle, project.title),
     agencyName: nonBlankOrFallback(extractedTor.agencyName, project.agencyName ?? null),
+    departmentName: project.departmentName ?? null,
+    departmentSubName: project.departmentSubName ?? null,
+    projectStatus: project.projectStatus ?? null,
     summary: extractedTor.summary,
     objectives: extractedTor.objectives,
     requirements: extractedTor.requirements,
     bidderQualifications: extractedTor.bidderQualifications,
     technologies: extractedTor.technologies,
     budgetBaht: extractedTor.budgetBaht,
+    midPriceBaht: project.midPriceBaht ?? null,
+    awardedPriceBaht: project.awardedPriceBaht ?? null,
     submissionDeadline: extractedTor.submissionDeadline,
     contactInformation: extractedTor.contactInformation,
     classificationReason: extractedTor.classificationReason,
     confidence: extractedTor.confidence,
-    analysisModel: env.DEEPSEEK_MODEL,
+    analysisModel: env.AI_PROVIDER === 'gemini' ? env.GEMINI_MODEL : env.DEEPSEEK_MODEL,
     analysisVersion: TOR_ANALYSIS_VERSION,
     analyzedAt: new Date(),
     documents: documents.map((document) => ({

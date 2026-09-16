@@ -24,6 +24,25 @@ test('rejects confidence values outside zero to one', async () => {
   await assert.rejects(() => new TorModel({ ...input, confidence: 1.1 }).validate(), /confidence/)
 })
 
+test('stores nullable e-GP details and rejects negative prices', async () => {
+  const input = createTorInput()
+  const tor = new TorModel({
+    ...input,
+    departmentName: 'กรมชลประทาน',
+    departmentSubName: 'สำนักบริหารจัดการน้ำและอุทกวิทยา',
+    projectStatus: 'จัดทำสัญญา/บริหารสัญญา',
+    midPriceBaht: 9_014_000,
+    awardedPriceBaht: null,
+  })
+
+  await tor.validate()
+  assert.equal(tor.departmentName, 'กรมชลประทาน')
+  await assert.rejects(
+    () => new TorModel({ ...input, awardedPriceBaht: -1 }).validate(),
+    /awardedPriceBaht/,
+  )
+})
+
 function createTorInput(): UpsertTorInput {
   return {
     dataSourceId: new Types.ObjectId(),

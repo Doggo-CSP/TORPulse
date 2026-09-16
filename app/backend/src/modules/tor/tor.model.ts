@@ -63,6 +63,18 @@ const torSchema = new Schema(
       type: String,
       default: null,
     },
+    departmentName: {
+      type: String,
+      default: null,
+    },
+    departmentSubName: {
+      type: String,
+      default: null,
+    },
+    projectStatus: {
+      type: String,
+      default: null,
+    },
     summary: {
       type: String,
       default: null,
