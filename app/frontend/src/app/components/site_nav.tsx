@@ -53,10 +53,6 @@ export function SiteNav() {
 
       {/* Right-side actions */}
       <NavbarSection>
-        <NavbarItem href="/search" aria-label="ค้นหา">
-          <MagnifyingGlassIcon className="size-5" />
-        </NavbarItem>
-
         {loading ? null : user ? (
           /* ── Logged-in user dropdown ── */
           <Dropdown>
