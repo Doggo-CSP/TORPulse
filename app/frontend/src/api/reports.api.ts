@@ -14,6 +14,7 @@ export interface TorPriceAnalysisItem {
   discountPct: number; // อัตราส่วนลด / ประหยัด (%)
   technologies: string[];
   submissionDeadline: string | null;
+  createdAt?: string;
   statusBadge: {
     label: string;
     variant: "high-savings" | "standard" | "competitive" | "tight";
@@ -56,6 +57,18 @@ export interface DiscountBracketDistribution {
   count: number;
   percentage: number;
   color: string;
+}
+
+export interface PriceTimelinePoint {
+  key: string;
+  label: string;
+  date: string;
+  projectTitle?: string;
+  medianPriceMillion: number;
+  winningPriceMillion: number;
+  savingsMillion: number;
+  avgDiscountPct: number;
+  projectCount: number;
 }
 
 export const CATEGORY_NAME_MAP: Record<string, string> = {
@@ -142,6 +155,7 @@ export function enrichTorPriceAnalysis(item: TorListItem): TorPriceAnalysisItem 
     discountPct,
     technologies: item.technologies || [],
     submissionDeadline: item.submissionDeadline,
+    createdAt: item.createdAt,
     statusBadge,
   };
 }
@@ -303,6 +317,128 @@ export function computeDiscountBrackets(items: TorPriceAnalysisItem[]): Discount
     ...b,
     percentage: Math.round((b.count / items.length) * 1000) / 10,
   }));
+}
+
+const THAI_MONTHS_SHORT = [
+  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
+];
+
+/**
+ * Compute chronological timeline trend of Median Price vs Winning Award Price and Savings.
+ */
+export function computePriceTimelineTrend(items: TorPriceAnalysisItem[]): PriceTimelinePoint[] {
+  if (!items.length) return [];
+
+  const getItemDate = (item: TorPriceAnalysisItem): { dateObj: Date; dateStr: string } => {
+    if (item.submissionDeadline) {
+      const d = new Date(item.submissionDeadline);
+      if (!isNaN(d.getTime())) {
+        return { dateObj: d, dateStr: item.submissionDeadline.slice(0, 10) };
+      }
+    }
+    if (item.createdAt) {
+      const d = new Date(item.createdAt);
+      if (!isNaN(d.getTime())) {
+        return { dateObj: d, dateStr: item.createdAt.slice(0, 10) };
+      }
+    }
+    const adYear = item.fiscalYear > 2400 ? item.fiscalYear - 543 : item.fiscalYear;
+    const hash = Math.abs(item.id.split("").reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0)) % 12;
+    const d = new Date(adYear, hash, 15);
+    return { dateObj: d, dateStr: `${adYear}-${String(hash + 1).padStart(2, "0")}-15` };
+  };
+
+  // If few items (e.g. filtered to a single agency or small result set), show individual projects chronologically
+  if (items.length <= 14) {
+    const sorted = [...items].sort((a, b) => {
+      return getItemDate(a).dateObj.getTime() - getItemDate(b).dateObj.getTime();
+    });
+
+    return sorted.map((item, idx) => {
+      const { dateObj, dateStr } = getItemDate(item);
+      const m = THAI_MONTHS_SHORT[dateObj.getMonth()];
+      const yBE = (dateObj.getFullYear() + 543) % 100;
+      const day = dateObj.getDate();
+      const label = items.length === 1 ? `${day} ${m} ${yBE}` : `${m} ${yBE} (#${idx + 1})`;
+
+      const medianM = Math.round((item.medianPrice / 1_000_000) * 10) / 10;
+      const winningM = Math.round((item.winningPrice / 1_000_000) * 10) / 10;
+      const savingsM = Math.round((item.savingsAmount / 1_000_000) * 10) / 10;
+
+      return {
+        key: item.id,
+        label,
+        date: dateStr,
+        projectTitle: item.projectTitle,
+        medianPriceMillion: medianM,
+        winningPriceMillion: winningM,
+        savingsMillion: savingsM,
+        avgDiscountPct: item.discountPct,
+        projectCount: 1,
+      };
+    });
+  }
+
+  // If many items, group chronologically by Month/Year
+  const monthMap = new Map<
+    string,
+    {
+      year: number;
+      month: number;
+      median: number;
+      winning: number;
+      savings: number;
+      discounts: number[];
+      count: number;
+    }
+  >();
+
+  items.forEach((item) => {
+    const { dateObj } = getItemDate(item);
+    const y = dateObj.getFullYear();
+    const m = dateObj.getMonth();
+    const key = `${y}-${String(m + 1).padStart(2, "0")}`;
+
+    const cur = monthMap.get(key) || {
+      year: y,
+      month: m,
+      median: 0,
+      winning: 0,
+      savings: 0,
+      discounts: [],
+      count: 0,
+    };
+
+    cur.median += item.medianPrice;
+    cur.winning += item.winningPrice;
+    cur.savings += item.savingsAmount;
+    cur.discounts.push(item.discountPct);
+    cur.count += 1;
+
+    monthMap.set(key, cur);
+  });
+
+  const sortedKeys = Array.from(monthMap.keys()).sort();
+
+  return sortedKeys.map((key) => {
+    const data = monthMap.get(key)!;
+    const m = THAI_MONTHS_SHORT[data.month];
+    const yBE = (data.year + 543) % 100;
+    const avgDiscount =
+      data.discounts.reduce((a, b) => a + b, 0) / (data.discounts.length || 1);
+
+    return {
+      key,
+      label: `${m} ${yBE}`,
+      date: key,
+      medianPriceMillion: Math.round((data.median / 1_000_000) * 10) / 10,
+      winningPriceMillion: Math.round((data.winning / 1_000_000) * 10) / 10,
+      savingsMillion: Math.round((data.savings / 1_000_000) * 10) / 10,
+      avgDiscountPct: Math.round(avgDiscount * 10) / 10,
+      projectCount: data.count,
+    };
+  });
 }
 
 /**

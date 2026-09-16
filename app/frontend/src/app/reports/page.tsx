@@ -11,10 +11,12 @@ import {
   computeCategoryPriceComparison,
   computeTopAgencySavings,
   computeDiscountBrackets,
+  computePriceTimelineTrend,
   formatBahtCurrency,
   exportToCsv,
   CATEGORY_NAME_MAP,
   TorPriceAnalysisItem,
+  PriceTimelinePoint,
 } from "@/api/reports.api";
 import {
   BanknotesIcon,
@@ -26,13 +28,21 @@ import {
   MagnifyingGlassIcon,
   FunnelIcon,
   ChevronUpDownIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  XMarkIcon,
   SparklesIcon,
   BuildingLibraryIcon,
   InformationCircleIcon,
 } from "@heroicons/react/24/outline";
 import { CheckCircleIcon } from "@heroicons/react/20/solid";
+import {
+  Listbox,
+  ListboxButton,
+  ListboxOption,
+  ListboxOptions,
+} from "@headlessui/react";
 
 // Dynamic imports for Recharts to avoid SSR hydration issues
 const DynamicPriceBarChart = dynamic(
@@ -150,86 +160,151 @@ const DynamicPriceBarChart = dynamic(
   { ssr: false }
 );
 
-const DynamicAgencyBarChart = dynamic(
+const DynamicTimelineAreaChart = dynamic(
   () =>
     import("recharts").then((recharts) => {
       const {
-        BarChart,
-        Bar,
+        AreaChart,
+        Area,
+        Line,
         XAxis,
         YAxis,
         Tooltip,
         ResponsiveContainer,
         CartesianGrid,
+        Legend,
       } = recharts;
 
-      return function AgencyBarChartComponent({
+      return function TimelineAreaChartComponent({
         data,
       }: {
-        data: Array<{
-          agencyName: string;
-          savingsMillion: number;
-          medianPriceMillion: number;
-          winningPriceMillion: number;
-          avgDiscountPct: number;
-        }>;
+        data: PriceTimelinePoint[];
       }) {
+        if (!data || !data.length) {
+          return (
+            <div className="flex h-64 items-center justify-center text-xs text-muted-foreground">
+              ไม่มีข้อมูลไทม์ไลน์สำหรับเงื่อนไขการค้นหาที่เลือก
+            </div>
+          );
+        }
+
         return (
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart
+          <ResponsiveContainer width="100%" height={340}>
+            <AreaChart
               data={data}
-              layout="vertical"
-              margin={{ top: 10, right: 25, left: 10, bottom: 10 }}
+              margin={{ top: 15, right: 25, left: 10, bottom: 5 }}
             >
+              <defs>
+                <linearGradient id="colorMedian" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#8c827a" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="#8c827a" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="colorWinning" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#2d6a4f" stopOpacity={0.45} />
+                  <stop offset="95%" stopColor="#2d6a4f" stopOpacity={0.04} />
+                </linearGradient>
+              </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
-                horizontal={false}
                 stroke="var(--color-border)"
                 opacity={0.4}
+                vertical={false}
               />
               <XAxis
-                type="number"
+                dataKey="label"
+                tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
+                tickLine={false}
+                axisLine={{ stroke: "var(--color-border)" }}
+              />
+              <YAxis
                 tick={{ fontSize: 11, fill: "var(--color-muted-foreground)" }}
                 tickLine={false}
                 axisLine={{ stroke: "var(--color-border)" }}
                 tickFormatter={(val: number) => `฿${val}M`}
               />
-              <YAxis
-                type="category"
-                dataKey="agencyName"
-                width={160}
-                tick={{ fontSize: 11, fill: "var(--color-foreground)" }}
-                tickLine={false}
-                axisLine={false}
-              />
               <Tooltip
                 content={({ active, payload }) => {
                   if (!active || !payload || !payload.length) return null;
-                  const item = payload[0]?.payload;
+                  const item = payload[0]?.payload as PriceTimelinePoint;
+                  if (!item) return null;
                   return (
-                    <div className="rounded-xl border border-border bg-surface p-3 shadow-xl text-xs">
-                      <p className="font-semibold text-foreground">{item.agencyName}</p>
-                      <p className="mt-1 text-emerald-700 font-medium">
-                        มูลค่าประหยัดได้: ฿{item.savingsMillion?.toFixed(1)} ล้านบาท
-                      </p>
-                      <p className="text-muted-foreground">
-                        ราคากลาง: ฿{item.medianPriceMillion?.toFixed(1)}M | ชนะ: ฿
-                        {item.winningPriceMillion?.toFixed(1)}M
-                      </p>
-                      <p className="text-muted-foreground">
-                        ส่วนต่างเฉลี่ย: {item.avgDiscountPct}%
-                      </p>
+                    <div className="rounded-xl border border-border bg-surface p-3.5 shadow-xl text-xs max-w-sm">
+                      <div className="flex items-center justify-between gap-2 border-b border-border pb-2 mb-2">
+                        <span className="font-semibold text-foreground">{item.label}</span>
+                        {item.projectCount > 1 ? (
+                          <span className="text-[11px] font-mono text-muted-foreground bg-surface-2 px-2 py-0.5 rounded">
+                            {item.projectCount} โครงการ
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-mono text-muted-foreground">
+                            {item.date}
+                          </span>
+                        )}
+                      </div>
+                      {item.projectTitle && (
+                        <p className="font-medium text-foreground mb-2.5 line-clamp-2 leading-relaxed">
+                          {item.projectTitle}
+                        </p>
+                      )}
+                      <div className="space-y-1.5 font-mono text-xs">
+                        <div className="flex items-center justify-between text-muted-foreground">
+                          <span>ราคากลาง (Median):</span>
+                          <span className="font-medium text-foreground">
+                            ฿{item.medianPriceMillion?.toFixed(1)} ล้านบาท
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-muted-foreground">
+                          <span>ราคาชนะประมูล (Award):</span>
+                          <span className="font-medium text-emerald-700">
+                            ฿{item.winningPriceMillion?.toFixed(1)} ล้านบาท
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1.5 border-t border-border/60 text-emerald-800 font-semibold">
+                          <span>ส่วนต่างประหยัดงบ:</span>
+                          <span>
+                            ฿{item.savingsMillion?.toFixed(1)}M ({item.avgDiscountPct}%)
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   );
                 }}
               />
-              <Bar
-                dataKey="savingsMillion"
-                name="มูลค่าที่ประหยัดได้ (ล้านบาท)"
-                fill="#2d6a4f"
-                radius={[0, 6, 6, 0]}
+              <Legend
+                wrapperStyle={{ paddingTop: 14, fontSize: 12 }}
+                iconType="circle"
               />
-            </BarChart>
+              <Area
+                type="monotone"
+                dataKey="medianPriceMillion"
+                name="ราคากลาง (ล้านบาท)"
+                stroke="#8c827a"
+                strokeWidth={2.5}
+                fill="url(#colorMedian)"
+                dot={{ r: 5, fill: "#8c827a" }}
+                activeDot={{ r: 7 }}
+              />
+              <Area
+                type="monotone"
+                dataKey="winningPriceMillion"
+                name="ราคาที่ชนะการประมูล (ล้านบาท)"
+                stroke="#2d6a4f"
+                strokeWidth={2.5}
+                fill="url(#colorWinning)"
+                dot={{ r: 5, fill: "#2d6a4f" }}
+                activeDot={{ r: 7 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="savingsMillion"
+                name="งบประมาณที่ประหยัดได้ (ล้านบาท)"
+                stroke="#10b981"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                dot={{ r: 4, fill: "#10b981" }}
+                activeDot={{ r: 6 }}
+              />
+            </AreaChart>
           </ResponsiveContainer>
         );
       };
@@ -520,6 +595,7 @@ export default function ReportsDashboardPage() {
   const categoryComparison = useMemo(() => computeCategoryPriceComparison(filteredItems), [filteredItems]);
   const topAgencies = useMemo(() => computeTopAgencySavings(filteredItems, 6), [filteredItems]);
   const discountBrackets = useMemo(() => computeDiscountBrackets(filteredItems), [filteredItems]);
+  const timelineData = useMemo(() => computePriceTimelineTrend(filteredItems), [filteredItems]);
 
   // Sorted and paginated table data
   const sortedItems = useMemo(() => {
@@ -623,7 +699,7 @@ export default function ReportsDashboardPage() {
         {/* ── Summary KPI Cards (4 Cards) ── */}
         <section className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {/* Card 1: ราคากลางรวม */}
-          <div className="panel p-5 relative overflow-hidden transition-all hover:shadow-md">
+          <div className="panel p-5 relative overflow-hidden transition-all hover:shadow-md print:break-inside-avoid">
             <div className="flex items-center justify-between">
               <span className="label-eyebrow">ราคากลางรวม (Median Budget)</span>
               <div className="grid h-8 w-8 place-items-center rounded-lg bg-surface-2 text-muted-foreground">
@@ -640,7 +716,7 @@ export default function ReportsDashboardPage() {
           </div>
 
           {/* Card 2: ราคาที่ชนะการประมูลรวม */}
-          <div className="panel p-5 relative overflow-hidden transition-all hover:shadow-md">
+          <div className="panel p-5 relative overflow-hidden transition-all hover:shadow-md print:break-inside-avoid">
             <div className="flex items-center justify-between">
               <span className="label-eyebrow">ราคาชนะการประมูลรวม (Awarded)</span>
               <div className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 text-primary">
@@ -657,7 +733,7 @@ export default function ReportsDashboardPage() {
           </div>
 
           {/* Card 3: มูลค่าประหยัดงบประมาณรวม */}
-          <div className="panel p-5 relative overflow-hidden transition-all hover:shadow-md bg-gradient-to-br from-surface to-emerald-50/25 border-emerald-500/20">
+          <div className="panel p-5 relative overflow-hidden transition-all hover:shadow-md bg-gradient-to-br from-surface to-emerald-50/25 border-emerald-500/20 print:break-inside-avoid">
             <div className="flex items-center justify-between">
               <span className="label-eyebrow text-emerald-800">งบประมาณที่ประหยัดได้ (Savings)</span>
               <div className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-100 text-emerald-800">
@@ -679,9 +755,9 @@ export default function ReportsDashboardPage() {
           </div>
 
           {/* Card 4: สัดส่วนการแข่งขันและความคุ้มค่า */}
-          <div className="panel p-5 relative overflow-hidden transition-all hover:shadow-md">
+          <div className="panel p-5 relative overflow-hidden transition-all hover:shadow-md print:break-inside-avoid">
             <div className="flex items-center justify-between">
-              <span className="label-eyebrow">ดัชนีการแข่งขัน (Competitiveness)</span>
+              <span className="label-eyebrow">โครงการที่ราคาต่ำกว่าราคากลาง (Below Reference Price)</span>
               <div className="grid h-8 w-8 place-items-center rounded-lg bg-surface-2 text-muted-foreground">
                 <ChartBarIcon className="size-4" />
               </div>
@@ -693,20 +769,20 @@ export default function ReportsDashboardPage() {
                   : 0}
                 %
               </p>
-              <span className="text-xs text-muted-foreground">โครงการที่ได้ส่วนลด</span>
+              <span className="text-xs text-muted-foreground">ของโครงการทั้งหมด</span>
             </div>
             <div className="mt-2.5 flex items-center justify-between text-xs text-muted-foreground">
-              <span>ส่วนลดสูงสุด</span>
-              <span className="font-mono font-medium text-primary">ประหยัดสูงสุด {summary.maxDiscountPct}%</span>
+              <span>ส่วนต่างสูงสุด</span>
+              <span className="font-mono font-medium text-primary">{summary.maxDiscountPct}%</span>
             </div>
           </div>
         </section>
 
         {/* ── Interactive Filters Bar ── */}
         <section className="mt-6 panel p-4 print:hidden">
-          <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3.5 xl:flex-row xl:items-center xl:justify-between">
             {/* Search Input */}
-            <div className="relative flex-1 min-w-[240px]">
+            <div className="relative flex-1 min-w-[280px]">
               <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <input
                 type="text"
@@ -716,8 +792,21 @@ export default function ReportsDashboardPage() {
                   setCurrentPage(1);
                 }}
                 placeholder="ค้นหาชื่อโครงการ, รหัสจัดซื้อ, หรือหน่วยงาน..."
-                className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-4 text-xs sm:text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
+                className="h-9 w-full rounded-xl border border-border bg-background pl-9 pr-8 text-xs placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setCurrentPage(1);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
+                  title="ล้างคำค้นหา"
+                >
+                  <XMarkIcon className="size-3.5" />
+                </button>
+              )}
             </div>
 
             {/* Filter Dropdowns */}
@@ -731,7 +820,7 @@ export default function ReportsDashboardPage() {
                     setSelectedYear(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
+                  className="h-9 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none cursor-pointer"
                 >
                   <option value="all">ทุกปีงบประมาณ</option>
                   {availableYears.map((year) => (
@@ -751,7 +840,7 @@ export default function ReportsDashboardPage() {
                     setSelectedCategory(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
+                  className="h-9 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none cursor-pointer"
                 >
                   <option value="all">ทุกหมวดหมู่งาน</option>
                   {Object.entries(CATEGORY_NAME_MAP).map(([key, label]) => (
@@ -765,21 +854,46 @@ export default function ReportsDashboardPage() {
               {/* Agency Dropdown */}
               <div className="flex items-center gap-1.5">
                 <span className="text-muted-foreground font-mono text-xs">หน่วยงาน:</span>
-                <select
+                <Listbox
                   value={selectedAgency}
-                  onChange={(e) => {
-                    setSelectedAgency(e.target.value);
+                  onChange={(value) => {
+                    setSelectedAgency(value);
                     setCurrentPage(1);
                   }}
-                  className="max-w-[160px] truncate rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
                 >
-                  <option value="all">ทุกหน่วยงาน</option>
-                  {availableAgencies.map((agency) => (
-                    <option key={agency} value={agency}>
-                      {agency}
-                    </option>
-                  ))}
-                </select>
+                  <div className="relative">
+                    <ListboxButton className="flex h-9 w-[180px] items-center justify-between gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-left text-xs font-medium focus:border-primary focus:outline-none cursor-pointer">
+                      <span className="block truncate">
+                        {selectedAgency === "all" ? "ทุกหน่วยงาน" : selectedAgency}
+                      </span>
+                      <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                    </ListboxButton>
+
+                    <ListboxOptions
+                      anchor="bottom end"
+                      transition
+                      className="z-50 mt-1 max-h-52 w-[220px] overflow-y-auto rounded-xl border border-border bg-background p-1 shadow-lg focus:outline-none transition duration-100 ease-out data-[closed]:scale-95 data-[closed]:opacity-0 [--anchor-gap:4px]"
+                    >
+                      <ListboxOption
+                        value="all"
+                        className="cursor-pointer rounded-lg px-3 py-2 text-xs data-[focus]:bg-muted data-[selected]:font-semibold"
+                      >
+                        ทุกหน่วยงาน
+                      </ListboxOption>
+
+                      {availableAgencies.map((agency) => (
+                        <ListboxOption
+                          key={agency}
+                          value={agency}
+                          className="cursor-pointer rounded-lg px-3 py-2 text-xs data-[focus]:bg-muted data-[selected]:font-semibold truncate"
+                          title={agency}
+                        >
+                          {agency}
+                        </ListboxOption>
+                      ))}
+                    </ListboxOptions>
+                  </div>
+                </Listbox>
               </div>
 
               {/* Discount Bracket Filter */}
@@ -791,9 +905,9 @@ export default function ReportsDashboardPage() {
                     setSelectedBracket(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none"
+                  className="h-9 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none cursor-pointer"
                 >
-                  <option value="all">ทุกช่วงส่วนลด</option>
+                  <option value="all">ทุกช่วงส่วนต่างจากราคากลาง</option>
                   <option value=">15">ประหยัดสูง (&gt; 15%)</option>
                   <option value="10-15">ประหยัดดี (10 - 15%)</option>
                   <option value="5-10">ประหยัดปานกลาง (5 - 10%)</option>
@@ -806,10 +920,10 @@ export default function ReportsDashboardPage() {
                 selectedCategory !== "all" ||
                 selectedAgency !== "all" ||
                 selectedBracket !== "all" ||
-                searchQuery) && (
+                Boolean(searchQuery)) && (
                 <button
                   onClick={handleResetFilters}
-                  className="rounded-xl bg-surface-2 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  className="h-9 rounded-xl bg-surface-2 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-surface-3"
                 >
                   ล้างตัวกรอง
                 </button>
@@ -821,7 +935,7 @@ export default function ReportsDashboardPage() {
         {/* ── Visual Charts Section ── */}
         <section className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Chart 1: Bar Chart comparing ราคากลาง vs ราคาที่ชนะ by Category (8 cols) */}
-          <div className="panel p-5 lg:col-span-8">
+          <div className="panel p-5 lg:col-span-8 print:break-inside-avoid">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border pb-3.5">
               <div>
                 <h3 className="font-display text-base font-semibold text-foreground">
@@ -853,7 +967,7 @@ export default function ReportsDashboardPage() {
           </div>
 
           {/* Chart 2: Discount Brackets Breakdown (4 cols) */}
-          <div className="panel p-5 lg:col-span-4 flex flex-col justify-between">
+          <div className="panel p-5 lg:col-span-4 flex flex-col justify-between print:break-inside-avoid">
             <div>
               <div className="border-b border-border pb-3.5">
                 <h3 className="font-display text-base font-semibold text-foreground">
@@ -888,30 +1002,67 @@ export default function ReportsDashboardPage() {
             </div>
           </div>
 
-          {/* Chart 3: Top Agencies with highest budget savings (12 cols) */}
-          <div className="panel p-5 lg:col-span-12">
+          {/* Chart 3: Timeline Area / Line Chart comparing Budget vs Winning Price & Savings */}
+          <div className="panel p-5 lg:col-span-12 print:break-inside-avoid">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border pb-3.5">
               <div>
                 <h3 className="font-display text-base font-semibold text-foreground">
-                  ท็อปหน่วยงานที่มีมูลค่าการประหยัดงบประมาณสูงสุด
+                  {selectedAgency === "all"
+                    ? "แนวโน้มงบประมาณและการประหยัดตามช่วงเวลา (Budget & Savings Timeline)"
+                    : `แนวโน้มงบประมาณและการประหยัด — ${selectedAgency}`}
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  จัดอันดับองค์กรภาครัฐที่มีการต่อรองราคาและประหยัดงบประมาณจากการประมูลสูงสุด
+                  {selectedAgency === "all"
+                    ? "วิเคราะห์เส้นทางมูลค่าราคากลาง เปรียบเทียบกับราคาชนะการประมูล และมูลค่าเงินงบประมาณที่ประหยัดได้ตามลำดับเวลาโครงการ"
+                    : `สถิติมูลค่าโครงการ ราคากลาง และเงินงบประมาณที่ประหยัดได้ตามลำดับเวลาของ ${selectedAgency}`}
                 </p>
               </div>
-              <span className="text-xs font-mono text-muted-foreground">
-                แสดงผล 6 ลำดับแรก
-              </span>
+              <div className="flex items-center gap-2.5 self-start sm:self-auto text-xs font-mono text-muted-foreground">
+                <span className="bg-surface-2 px-2.5 py-1 rounded-md">
+                  หน่วย: ล้านบาท (THB)
+                </span>
+                <span className="bg-surface-2 px-2.5 py-1 rounded-md">
+                  {timelineData.length} ช่วงเวลา
+                </span>
+              </div>
             </div>
 
-            <div className="mt-4">
-              <DynamicAgencyBarChart data={topAgencies} />
+            <div className="mt-4 pt-1">
+              <DynamicTimelineAreaChart data={timelineData} />
+            </div>
+
+            {/* Timeline Summary Quick Stats Footer */}
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-border text-xs">
+              <div className="rounded-lg bg-surface-2/60 p-2.5">
+                <p className="text-muted-foreground">ราคากลางรวม</p>
+                <p className="mt-0.5 font-display text-sm font-semibold text-foreground font-mono">
+                  {formatBahtCurrency(summary.totalMedianPrice)}
+                </p>
+              </div>
+              <div className="rounded-lg bg-surface-2/60 p-2.5">
+                <p className="text-muted-foreground">ราคาชนะประมูลรวม</p>
+                <p className="mt-0.5 font-display text-sm font-semibold text-emerald-700 font-mono">
+                  {formatBahtCurrency(summary.totalWinningPrice)}
+                </p>
+              </div>
+              <div className="rounded-lg bg-surface-2/60 p-2.5">
+                <p className="text-muted-foreground">งบประมาณที่ประหยัดได้</p>
+                <p className="mt-0.5 font-display text-sm font-semibold text-emerald-800 font-mono">
+                  {formatBahtCurrency(summary.totalSavings)}
+                </p>
+              </div>
+              <div className="rounded-lg bg-surface-2/60 p-2.5">
+                <p className="text-muted-foreground">อัตราประหยัดเฉลี่ย</p>
+                <p className="mt-0.5 font-display text-sm font-semibold text-primary font-mono">
+                  {summary.avgDiscountPct}%
+                </p>
+              </div>
             </div>
           </div>
         </section>
 
         {/* ── Key Takeaways & Analytical Insights Callout ── */}
-        <section className="mt-6 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/5 via-surface to-accent/5 p-5 shadow-sm">
+        <section className="mt-6 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/5 via-surface to-accent/5 p-5 shadow-sm print:break-inside-avoid">
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-primary/15 p-2 text-primary">
               <SparklesIcon className="size-5" />
@@ -1050,7 +1201,7 @@ export default function ReportsDashboardPage() {
                   paginatedItems.map((item) => (
                     <tr
                       key={item.id}
-                      className="hover:bg-surface-2/40 transition-colors group"
+                      className="hover:bg-surface-2/40 transition-colors group print:break-inside-avoid"
                     >
                       {/* Project Title & Category */}
                       <td className="px-5 py-4 max-w-sm">
@@ -1116,7 +1267,7 @@ export default function ReportsDashboardPage() {
                           href={`/tor/${encodeURIComponent(item.id)}`}
                           className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium hover:bg-surface-2 hover:border-primary transition-colors text-foreground"
                         >
-                          <span>ดู TOR</span>
+                          <span className="whitespace-nowrap">ดูรายละเอียด</span>
                           <span aria-hidden="true">→</span>
                         </Link>
                       </td>
