@@ -37,3 +37,6 @@ ehthumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Claude Code local config
+.claude/

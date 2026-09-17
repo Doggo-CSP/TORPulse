@@ -9,7 +9,8 @@ import { TorModel } from './tor.model.js'
 // Category derivation (pure, no DB) — shared with homepage.controller.ts
 // ---------------------------------------------------------------------------
 
-export type TorCategory = 'mobile_app' | 'data_bi' | 'web_application' | 'enterprise_system'
+export type TorCategory =
+  'mobile_app' | 'data_bi' | 'web_application' | 'enterprise_system' | 'consulting_architecture'
 
 const MOBILE_APP_KEYWORDS = ['flutter', 'react native', 'swift', 'kotlin', 'android', 'ios']
 const DATA_BI_KEYWORDS = [
@@ -28,6 +29,15 @@ const WEB_APPLICATION_KEYWORDS = [
   'node.js',
   'express',
   'django',
+]
+const CONSULTING_ARCHITECTURE_KEYWORDS = [
+  'consulting',
+  'advisory',
+  'enterprise architecture',
+  'business analysis',
+  'it strategy',
+  'it governance',
+  'togaf',
 ]
 
 const matchesAny = (technologies: string[], keywords: string[]): boolean =>
@@ -49,7 +59,19 @@ export function deriveCategory(technologies: string[]): TorCategory {
     return 'web_application'
   }
 
+  if (matchesAny(normalized, CONSULTING_ARCHITECTURE_KEYWORDS)) {
+    return 'consulting_architecture'
+  }
+
   return 'enterprise_system'
+}
+
+export const CATEGORY_LABELS: Record<TorCategory, string> = {
+  web_application: 'งานพัฒนาเว็บไซต์',
+  data_bi: 'งานข้อมูลและวิเคราะห์',
+  mobile_app: 'งานแอปพลิเคชันมือถือ',
+  enterprise_system: 'งานระบบองค์กร',
+  consulting_architecture: 'Consulting / Architecture',
 }
 
 // ---------------------------------------------------------------------------
@@ -210,12 +232,17 @@ export async function getTorByIdHandler(req: Request, res: Response): Promise<vo
     detailUrl: tor.detailUrl,
     projectTitle: tor.projectTitle,
     agencyName: tor.agencyName ?? null,
+    departmentName: tor.departmentName ?? null,
+    departmentSubName: tor.departmentSubName ?? null,
+    projectStatus: tor.projectStatus ?? null,
     summary: tor.summary ?? null,
     objectives: tor.objectives,
     requirements: tor.requirements,
     bidderQualifications: tor.bidderQualifications,
     technologies: tor.technologies,
     budgetBaht: tor.budgetBaht ?? null,
+    midPriceBaht: tor.midPriceBaht ?? null,
+    awardedPriceBaht: tor.awardedPriceBaht ?? null,
     submissionDeadline: tor.submissionDeadline ?? null,
     contactInformation: tor.contactInformation,
     classificationReason: tor.classificationReason,

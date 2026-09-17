@@ -5,7 +5,12 @@ import express from 'express'
 import { Types } from 'mongoose'
 import request from 'supertest'
 
-import { calculateInterestScore, deriveCategory, getRecommendationsHandler } from './tor.controller.js'
+import {
+  calculateInterestScore,
+  deriveCategory,
+  getRecommendationsHandler,
+  getTorByIdHandler,
+} from './tor.controller.js'
 import { TorModel } from './tor.model.js'
 
 // --- deriveCategory (pure) -------------------------------------------------
@@ -30,6 +35,16 @@ const categoryCases: Array<{ name: string; technologies: string[]; expected: str
     name: 'enterprise keywords explicit',
     technologies: ['.NET', 'SAP'],
     expected: 'enterprise_system',
+  },
+  {
+    name: 'consulting/architecture keyword',
+    technologies: ['IT Consulting'],
+    expected: 'consulting_architecture',
+  },
+  {
+    name: 'web keyword takes priority over consulting/architecture keyword',
+    technologies: ['React', 'Consulting'],
+    expected: 'web_application',
   },
   {
     name: 'empty technologies falls back to enterprise_system',
@@ -73,6 +88,51 @@ test('calculateInterestScore typically differs across different tor ids', () => 
   )
 
   assert.ok(scores.size > 1, 'expected scores to vary across different tor ids')
+})
+
+test('GET /tors/:id returns authoritative e-GP details', async (context) => {
+  const id = new Types.ObjectId()
+  context.mock.method(TorModel, 'findById', () => ({
+    lean: async () => ({
+      _id: id,
+      externalId: '68089351005',
+      sourceAdapter: 'central_egp',
+      sourceVersion: 'initial',
+      detailUrl: 'https://example.com',
+      projectTitle: 'Project',
+      agencyName: 'AI agency',
+      departmentName: 'กรมชลประทาน',
+      departmentSubName: 'สำนักบริหารจัดการน้ำและอุทกวิทยา',
+      projectStatus: 'จัดทำสัญญา/บริหารสัญญา',
+      summary: null,
+      objectives: [],
+      requirements: [],
+      bidderQualifications: [],
+      technologies: [],
+      budgetBaht: 10_000_000,
+      midPriceBaht: 9_014_000,
+      awardedPriceBaht: 9_000_000,
+      submissionDeadline: null,
+      contactInformation: [],
+      classificationReason: 'Software project',
+      confidence: 0.9,
+      analyzedAt: new Date('2026-09-01T00:00:00Z'),
+      documents: [],
+      createdAt: new Date('2026-09-01T00:00:00Z'),
+      updatedAt: new Date('2026-09-02T00:00:00Z'),
+    }),
+  }))
+  const app = express()
+  app.get('/tors/:id', getTorByIdHandler)
+
+  const response = await request(app).get(`/tors/${id}`)
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.departmentName, 'กรมชลประทาน')
+  assert.equal(response.body.departmentSubName, 'สำนักบริหารจัดการน้ำและอุทกวิทยา')
+  assert.equal(response.body.projectStatus, 'จัดทำสัญญา/บริหารสัญญา')
+  assert.equal(response.body.midPriceBaht, 9_014_000)
+  assert.equal(response.body.awardedPriceBaht, 9_000_000)
 })
 
 // --- getRecommendationsHandler (mocked TorModel.find) -----------------------
