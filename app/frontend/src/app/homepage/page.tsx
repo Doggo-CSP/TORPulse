@@ -3,6 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
+import { useDebounce } from "use-debounce";
 import { SiteNav } from "@/app/components/site_nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserProfile } from "@/hooks/use-user-profile";
@@ -171,10 +172,17 @@ export default function HomePage() {
 
   const [filtersOpen, setFiltersOpen] = useState(true);
 
-  const [name, setName] = useState("");
+  // Immediate (UI-bound) states
+  const [nameInput, setNameInput] = useState("");
+  const [budgetMinInput, setBudgetMinInput] = useState("");
+  const [budgetMaxInput, setBudgetMaxInput] = useState("");
+
+  // Debounced values — these drive the API request (400 ms delay)
+  const [debouncedName] = useDebounce(nameInput, 800);
+  const [debouncedBudgetMin] = useDebounce(budgetMinInput, 800);
+  const [debouncedBudgetMax] = useDebounce(budgetMaxInput, 800);
+
   const [budgetYear, setBudgetYear] = useState("ทั้งหมด");
-  const [budgetMin, setBudgetMin] = useState("");
-  const [budgetMax, setBudgetMax] = useState("");
   const [agency, setAgency] = useState("ทั้งหมด"); // not sent to API yet — see note below
   const [status, setStatus] = useState("ทั้งหมด"); // not sent to API yet — see note below
   const [egpOnly, setEgpOnly] = useState(false); // not sent to API yet — see note below
@@ -212,18 +220,19 @@ export default function HomePage() {
     }));
   }, [isLoggedIn, recommendedTors]);
 
-  // live search + filter against the real API
+  // live search + filter against the real API — uses debounced text values to avoid
+  // firing a request on every keystroke in the name / budget inputs
   const requestParams = useMemo(
     () => ({
-      q: name || undefined,
+      q: debouncedName || undefined,
       year: budgetYear === "ทั้งหมด" ? undefined : Number(budgetYear),
-      budget_min: budgetMin ? Number(budgetMin) * 1_000_000 : undefined,
-      budget_max: budgetMax ? Number(budgetMax) * 1_000_000 : undefined,
+      budget_min: debouncedBudgetMin ? Number(debouncedBudgetMin) * 1_000_000 : undefined,
+      budget_max: debouncedBudgetMax ? Number(debouncedBudgetMax) * 1_000_000 : undefined,
       technologies: techs.length > 0 ? techs.join(",") : undefined, // needs backend $in support — see below
       page: currentPage,
       limit: ITEMS_PER_PAGE,
     }),
-    [name, budgetYear, budgetMin, budgetMax, techs, currentPage],
+    [debouncedName, budgetYear, debouncedBudgetMin, debouncedBudgetMax, techs, currentPage],
   );
 
   const { data, isLoading: searching, error: searchError } = useTors(requestParams);
@@ -232,10 +241,10 @@ export default function HomePage() {
   const visiblePage = Math.min(currentPage, totalPages);
 
   const clearFilters = () => {
-    setName("");
+    setNameInput("");
+    setBudgetMinInput("");
+    setBudgetMaxInput("");
     setBudgetYear("ทั้งหมด");
-    setBudgetMin("");
-    setBudgetMax("");
     setAgency("ทั้งหมด");
     setStatus("ทั้งหมด");
     setEgpOnly(false);
@@ -361,8 +370,8 @@ export default function HomePage() {
                     ชื่อรายการ
                   </label>
                   <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
                     placeholder="ระบุชื่อรายการ"
                     className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
                   />
@@ -389,16 +398,16 @@ export default function HomePage() {
                   </label>
                   <div className="flex items-center gap-2">
                     <input
-                      value={budgetMin}
-                      onChange={(e) => setBudgetMin(e.target.value)}
+                      value={budgetMinInput}
+                      onChange={(e) => setBudgetMinInput(e.target.value)}
                       placeholder="Min"
                       type="number"
                       className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
                     />
                     <span className="text-muted-foreground">-</span>
                     <input
-                      value={budgetMax}
-                      onChange={(e) => setBudgetMax(e.target.value)}
+                      value={budgetMaxInput}
+                      onChange={(e) => setBudgetMaxInput(e.target.value)}
                       placeholder="Max"
                       type="number"
                       className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"

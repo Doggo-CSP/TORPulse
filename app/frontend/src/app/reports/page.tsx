@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useDebounce } from "use-debounce";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { SiteNav } from "@/app/components/site_nav";
@@ -509,7 +510,9 @@ export default function ReportsDashboardPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedAgency, setSelectedAgency] = useState<string>("all");
   const [selectedBracket, setSelectedBracket] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchInput, setSearchInput] = useState<string>("");
+  // Debounce search by 300ms — avoids recomputing charts on every keystroke
+  const [debouncedSearchQuery] = useDebounce(searchInput, 400);
 
   // Table pagination & sorting state
   const [sortKey, setSortKey] = useState<SortKey>("savingsAmount");
@@ -576,8 +579,8 @@ export default function ReportsDashboardPage() {
         if (selectedBracket === "10-15" && (item.discountPct <= 10 || item.discountPct > 15)) return false;
         if (selectedBracket === ">15" && item.discountPct <= 15) return false;
       }
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
+      if (debouncedSearchQuery.trim()) {
+        const q = debouncedSearchQuery.trim().toLowerCase();
         const matchesTitle = item.projectTitle.toLowerCase().includes(q);
         const matchesAgency = item.agencyName.toLowerCase().includes(q);
         const matchesTech = item.technologies.some((t) => t.toLowerCase().includes(q));
@@ -588,7 +591,7 @@ export default function ReportsDashboardPage() {
       }
       return true;
     });
-  }, [allAnalysisItems, selectedYear, selectedCategory, selectedAgency, selectedBracket, searchQuery]);
+  }, [allAnalysisItems, selectedYear, selectedCategory, selectedAgency, selectedBracket, debouncedSearchQuery]);
 
   // Compute summary stats & metrics based on filtered data
   const summary = useMemo(() => computePriceReportSummary(filteredItems), [filteredItems]);
@@ -632,7 +635,7 @@ export default function ReportsDashboardPage() {
     setSelectedCategory("all");
     setSelectedAgency("all");
     setSelectedBracket("all");
-    setSearchQuery("");
+    setSearchInput("");
     setCurrentPage(1);
   };
 
@@ -786,21 +789,15 @@ export default function ReportsDashboardPage() {
               <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <input
                 type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                }}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="ค้นหาชื่อโครงการ, รหัสจัดซื้อ, หรือหน่วยงาน..."
                 className="h-9 w-full rounded-xl border border-border bg-background pl-9 pr-8 text-xs placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
               />
-              {searchQuery && (
+              {searchInput && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchQuery("");
-                    setCurrentPage(1);
-                  }}
+                  onClick={() => setSearchInput("")}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
                   title="ล้างคำค้นหา"
                 >
@@ -920,7 +917,7 @@ export default function ReportsDashboardPage() {
                 selectedCategory !== "all" ||
                 selectedAgency !== "all" ||
                 selectedBracket !== "all" ||
-                Boolean(searchQuery)) && (
+                Boolean(searchInput)) && (
                 <button
                   onClick={handleResetFilters}
                   className="h-9 rounded-xl bg-surface-2 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-surface-3"
