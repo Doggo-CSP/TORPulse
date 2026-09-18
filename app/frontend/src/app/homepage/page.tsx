@@ -112,6 +112,9 @@ const categorySplit = [
 const totalBudgetAmount = 6_128_192;
 const totalProjectCount = 51_800;
 
+// Fallback stats/chart data — shown only until /api/v1/homepage/analytics
+// (priceComparison / priceSummary) has loaded, or if a category has no
+// priced TORs yet. Kept as a static illustrative example.
 const homeStats = {
   avgMid: 21_400_000,
   avgAwarded: 18_900_000,
@@ -156,6 +159,41 @@ export default function HomePage() {
       }));
     }
     return categorySplit;
+  }, [analytics]);
+
+  // Price comparison chart (ราคากลาง vs ราคาที่ชนะ) by category — sourced from
+  // analytics.priceComparison once loaded, only including categories that have
+  // at least one TOR with both a mid price and an awarded price recorded.
+  // Falls back to the static example data otherwise.
+  const displayedPriceComparison = useMemo(() => {
+    if (analytics?.priceComparison && analytics.priceComparison.length > 0) {
+      const rows = analytics.priceComparison
+        .filter(
+          (p) => p.avgMidPriceBaht !== null && p.avgAwardedPriceBaht !== null,
+        )
+        .map((p) => ({
+          category: p.label,
+          midPrice: Number(toMillion(p.avgMidPriceBaht as number)),
+          awardedPrice: Number(toMillion(p.avgAwardedPriceBaht as number)),
+        }));
+      if (rows.length > 0) return rows;
+    }
+    return priceComparisonData;
+  }, [analytics]);
+
+  // Overall avg mid price / avg awarded price / avg discount % stat cards —
+  // sourced from analytics.priceSummary once loaded (computed only over TORs
+  // that have both prices recorded, so the discount % is like-for-like).
+  const displayedHomeStats = useMemo(() => {
+    const s = analytics?.priceSummary;
+    if (s && s.avgMidPriceBaht !== null && s.avgAwardedPriceBaht !== null) {
+      return {
+        avgMid: s.avgMidPriceBaht,
+        avgAwarded: s.avgAwardedPriceBaht,
+        avgDiscountPct: s.avgDiscountPct ?? 0,
+      };
+    }
+    return homeStats;
   }, [analytics]);
 
   const currentUser = user || (profile ? {
@@ -810,7 +848,7 @@ export default function HomePage() {
               <div className="rounded-xl bg-surface-2 p-4">
                 <p className="text-xs text-muted-foreground">ราคากลางเฉลี่ย</p>
                 <p className="mt-1 font-display text-xl font-semibold">
-                  ฿{toMillion(homeStats.avgMid)} ล้าน
+                  ฿{toMillion(displayedHomeStats.avgMid)} ล้าน
                 </p>
               </div>
               <div className="rounded-xl bg-surface-2 p-4">
@@ -818,20 +856,20 @@ export default function HomePage() {
                   ราคาที่ชนะเฉลี่ย
                 </p>
                 <p className="mt-1 font-display text-xl font-semibold">
-                  ฿{toMillion(homeStats.avgAwarded)} ล้าน
+                  ฿{toMillion(displayedHomeStats.avgAwarded)} ล้าน
                 </p>
               </div>
               <div className="rounded-xl bg-surface-2 p-4">
                 <p className="text-xs text-muted-foreground">ส่วนต่างเฉลี่ย</p>
                 <p className="mt-1 font-display text-xl font-semibold text-primary">
-                  {homeStats.avgDiscountPct.toFixed(1)}%
+                  {displayedHomeStats.avgDiscountPct.toFixed(1)}%
                 </p>
               </div>
             </div>
 
             <div className="mt-5" style={{ height: 280 }}>
               <PriceComparisonChart
-                data={priceComparisonData}
+                data={displayedPriceComparison}
                 series={priceChartSeries}
               />
             </div>
