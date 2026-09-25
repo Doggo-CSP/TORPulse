@@ -144,7 +144,7 @@ const DynamicPriceBarChart = dynamic(
               <Bar
                 dataKey="medianPriceMillion"
                 name="ราคากลาง (ล้านบาท)"
-                fill="#b0a898"
+                fill="#e2904dff"
                 radius={[5, 5, 0, 0]}
               />
               <Bar
@@ -279,10 +279,10 @@ const DynamicTimelineAreaChart = dynamic(
                 type="monotone"
                 dataKey="medianPriceMillion"
                 name="ราคากลาง (ล้านบาท)"
-                stroke="#8c827a"
+                stroke="#e19b62ff"
                 strokeWidth={2.5}
                 fill="url(#colorMedian)"
-                dot={{ r: 5, fill: "#8c827a" }}
+                dot={{ r: 5, fill: "#d7945eff" }}
                 activeDot={{ r: 7 }}
               />
               <Area

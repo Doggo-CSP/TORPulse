@@ -131,7 +131,7 @@ const priceComparisonData = [
 ];
 
 const priceChartSeries = [
-  { key: "midPrice", label: "ราคากลาง", color: "#b0a898" },
+  { key: "midPrice", label: "ราคากลาง", color: "#d18f5dff" },
   { key: "awardedPrice", label: "ราคาที่ชนะ", color: "#4a7c59" },
 ];
 

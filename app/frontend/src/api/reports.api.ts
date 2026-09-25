@@ -299,9 +299,9 @@ export function computeTopAgencySavings(items: TorPriceAnalysisItem[], limit = 6
 export function computeDiscountBrackets(items: TorPriceAnalysisItem[]): DiscountBracketDistribution[] {
   const brackets = [
     { bracket: "< 5%", label: "ประหยัด < 5%", count: 0, color: "#9ca3af" },
-    { bracket: "5% - 10%", label: "ประหยัด 5% - 10%", count: 0, color: "#60a5fa" },
+    { bracket: "5% - 10%", label: "ประหยัด 5% - 10%", count: 0, color: "#f99940ff" },
     { bracket: "10% - 15%", label: "ประหยัด 10% - 15%", count: 0, color: "#4a7c59" },
-    { bracket: "> 15%", label: "ประหยัดสูง > 15%", count: 0, color: "#16a34a" },
+    { bracket: "> 15%", label: "ประหยัดสูง > 15%", count: 0, color: "#3172ceff" },
   ];
 
   if (!items.length) return brackets.map((b) => ({ ...b, percentage: 0 }));
