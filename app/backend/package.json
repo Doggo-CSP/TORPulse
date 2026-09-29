@@ -21,6 +21,7 @@
     "test:report": "tsx --test src/modules/report/report.controller.test.ts",
     "repair:missing-tors": "tsx src/scripts/repair-missing-tors.ts",
     "backfill:egp-details": "tsx src/scripts/backfill-central-egp-details.ts",
+    "set-admin": "tsx src/scripts/set-admin.ts",
     "type-check": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

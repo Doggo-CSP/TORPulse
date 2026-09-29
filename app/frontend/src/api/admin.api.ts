@@ -110,7 +110,7 @@ export const INITIAL_USERS: AdminUserItem[] = [
   {
     _id: "usr-01",
     name: "Kantapon Hemmadhun",
-    displayName: "กันตพล เหมมัณฑิณ",
+    displayName: "กันตพล เหมธัญ",
     email: "kantapon.h@torpulse.gov.th",
     role: "admin",
     status: "active",

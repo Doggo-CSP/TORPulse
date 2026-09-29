@@ -66,6 +66,8 @@ test('GET /auth/me exposes only the public authenticated-user fields', async () 
       name: 'Test User',
       email: 'test@example.com',
       image: null,
+      role: 'user',
+      status: 'active',
     },
   })
 })

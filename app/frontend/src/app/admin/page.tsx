@@ -23,8 +23,6 @@ import {
   DocumentTextIcon,
   UserGroupIcon,
   ClockIcon,
-  UserIcon,
-  TagIcon,
   Cog6ToothIcon,
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -46,8 +44,6 @@ type AdminMenuTab =
   | "tor_management"
   | "user_roles"
   | "activity_feed"
-  | "user_profile"
-  | "interests"
   | "settings";
 
 const ROLE_CONFIG: Record<
@@ -251,16 +247,6 @@ export default function AdminPage() {
       id: "activity_feed" as AdminMenuTab,
       label: "ฟีดกิจกรรม",
       icon: ClockIcon,
-    },
-    {
-      id: "user_profile" as AdminMenuTab,
-      label: "โปรไฟล์ผู้ใช้",
-      icon: UserIcon,
-    },
-    {
-      id: "interests" as AdminMenuTab,
-      label: "หมวดหมู่ความสนใจ",
-      icon: TagIcon,
     },
     {
       id: "settings" as AdminMenuTab,
@@ -1018,43 +1004,6 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* VIEW 5: USER PROFILE (โปรไฟล์ผู้ใช้) */}
-            {activeTab === "user_profile" && (
-              <div className="rounded-3xl border border-[#e8e0d0] bg-white p-8 shadow-sm text-center">
-                <UserIcon className="mx-auto size-12 text-[#4a7c59]" />
-                <h2 className="mt-3 text-lg font-bold text-[#2d2d2d]">
-                  การตั้งค่าโปรไฟล์ผู้ดูแลระบบ
-                </h2>
-                <p className="mt-1 text-sm text-[#7a8b6f]">
-                  คุณสามารถแก้ไขข้อมูลโปรไฟล์ รายละเอียดส่วนตัว และการแจ้งเตือนได้ที่หน้าโปรไฟล์หลัก
-                </p>
-                <Link
-                  href="/profile"
-                  className="mt-5 inline-block rounded-xl bg-[#4a7c59] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#3b6647]"
-                >
-                  ไปยังหน้าโปรไฟล์ของฉัน →
-                </Link>
-              </div>
-            )}
-
-            {/* VIEW 6: INTERESTS (หมวดหมู่ความสนใจ) */}
-            {activeTab === "interests" && (
-              <div className="rounded-3xl border border-[#e8e0d0] bg-white p-8 shadow-sm text-center">
-                <TagIcon className="mx-auto size-12 text-[#4a7c59]" />
-                <h2 className="mt-3 text-lg font-bold text-[#2d2d2d]">
-                  การตั้งค่าหมวดหมู่ความสนใจ
-                </h2>
-                <p className="mt-1 text-sm text-[#7a8b6f]">
-                  จัดการหมวดหมู่เทคโนโลยีและคำสำคัญสำหรับระบบแนะนำประกาศ TOR
-                </p>
-                <Link
-                  href="/profile"
-                  className="mt-5 inline-block rounded-xl bg-[#4a7c59] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#3b6647]"
-                >
-                  จัดการความสนใจในโปรไฟล์ →
-                </Link>
-              </div>
-            )}
 
             {/* VIEW 7: SYSTEM SETTINGS (ตั้งค่าระบบ) */}
             {activeTab === "settings" && (
