@@ -20,6 +20,8 @@
     "test:homepage": "tsx --test src/modules/tor/tor.controller.test.ts && tsx --test src/modules/homepage/homepage.routes.test.ts && tsx --test src/modules/tor/tor.routes.test.ts",
     "test:report": "tsx --test src/modules/report/report.controller.test.ts",
     "test:admin": "tsx --test src/modules/admin/audit-log.repository.test.ts src/modules/admin/admin.routes.test.ts",
+    "test:category": "tsx --test src/modules/category/category.routes.test.ts src/scripts/migrate-categories.test.ts",
+    "migrate:categories": "tsx src/scripts/migrate-categories.ts",
     "repair:missing-tors": "tsx src/scripts/repair-missing-tors.ts",
     "backfill:egp-details": "tsx src/scripts/backfill-central-egp-details.ts",
     "set-admin": "tsx src/scripts/set-admin.ts",

@@ -84,11 +84,19 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
     assert.equal(response.status, 400)
   })
 
-  await t.test('PUT /user/interests saves a valid interests array', async () => {
+  await t.test('PUT /user/interests rejects values that are not category keys', async () => {
     const response = await request(app).put('/user/interests').send({ interests: ['web', 'data'] })
 
+    assert.equal(response.status, 400)
+  })
+
+  await t.test('PUT /user/interests saves a valid interests array', async () => {
+    const response = await request(app)
+      .put('/user/interests')
+      .send({ interests: ['web_application', 'ai_ml'] })
+
     assert.equal(response.status, 200)
-    assert.deepEqual(response.body.interests, ['web', 'data'])
+    assert.deepEqual(response.body.interests, ['web_application', 'ai_ml'])
   })
 
   await t.test('POST /user/bookmarks/:torId toggles a bookmark on, then off', async () => {

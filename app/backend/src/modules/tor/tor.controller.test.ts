@@ -10,6 +10,7 @@ import {
   deriveCategory,
   getRecommendationsHandler,
   getTorByIdHandler,
+  resolveTorCategory,
 } from './tor.controller.js'
 import { TorModel } from './tor.model.js'
 
@@ -56,7 +57,51 @@ const categoryCases: Array<{ name: string; technologies: string[]; expected: str
     technologies: ['COBOL'],
     expected: 'enterprise_system',
   },
+  { name: 'AI keyword', technologies: ['Machine Learning'], expected: 'ai_ml' },
+  { name: 'OCR maps to AI/ML', technologies: ['OCR'], expected: 'ai_ml' },
+  { name: 'short AI token must be the whole name', technologies: ['AI'], expected: 'ai_ml' },
+  {
+    name: 'short AI token inside another word does not match',
+    technologies: ['Email Gateway'],
+    expected: 'enterprise_system',
+  },
+  {
+    name: 'AI/ML takes priority over web',
+    technologies: ['React', 'LLM'],
+    expected: 'ai_ml',
+  },
+  {
+    name: 'cybersecurity keyword',
+    technologies: ['Penetration Testing'],
+    expected: 'cybersecurity',
+  },
+  { name: 'SOC as a whole name', technologies: ['SOC'], expected: 'cybersecurity' },
+  {
+    name: 'SOC inside another word does not match',
+    technologies: ['Social Listening'],
+    expected: 'enterprise_system',
+  },
+  { name: 'cloud keyword', technologies: ['AWS', 'Kubernetes'], expected: 'cloud_infrastructure' },
+  {
+    name: 'SQL Server stays data/BI even though it contains "server"',
+    technologies: ['SQL Server'],
+    expected: 'data_bi',
+  },
+  {
+    name: 'web takes priority over cloud',
+    technologies: ['React', 'Docker'],
+    expected: 'web_application',
+  },
 ]
+
+test('resolveTorCategory prefers a stored category over the keyword rules', () => {
+  assert.equal(
+    resolveTorCategory({ category: 'cybersecurity', technologies: ['React'] }),
+    'cybersecurity',
+  )
+  assert.equal(resolveTorCategory({ category: null, technologies: ['React'] }), 'web_application')
+  assert.equal(resolveTorCategory({ technologies: [] }), 'enterprise_system')
+})
 
 for (const { name, technologies, expected } of categoryCases) {
   test(`deriveCategory: ${name}`, () => {

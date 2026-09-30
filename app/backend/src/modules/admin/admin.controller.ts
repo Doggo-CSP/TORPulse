@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
 import { User, type UserDocument } from '../auth/user.model.js'
-import { CATEGORY_LABELS, deriveCategory } from '../tor/tor.controller.js'
+import { CATEGORY_LABELS } from '../category/category.constants.js'
+import { deriveCategory, resolveTorCategory } from '../tor/tor.controller.js'
 import { TorModel, type Tor, type TorReviewStatus } from '../tor/tor.model.js'
 import { UserBookmarkModel } from '../user/user-bookmark.model.js'
 import type { TorChangeOutcome, UserChangeOutcome } from './admin.types.js'
@@ -446,7 +447,7 @@ const TOR_STATUS_TRANSITIONS: Record<'verified' | 'archived' | 'deleted', TorRev
 }
 
 const toAdminTorListItem = (tor: AdminTorLean) => {
-  const category = deriveCategory(tor.technologies ?? [])
+  const category = resolveTorCategory(tor)
   return {
     id: tor._id.toString(),
     externalId: tor.externalId,
@@ -604,14 +605,26 @@ export const updateAdminTor = async (req: Request, res: Response): Promise<void>
           return
         }
 
-        const current = tor as unknown as Record<string, unknown>
+        const current: Record<string, unknown> = {
+          ...(tor as unknown as Record<string, unknown>),
+          category: resolveTorCategory(tor),
+        }
         const before = Object.fromEntries(
           Object.keys(changes).map((key) => [key, current[key] ?? null]),
         )
 
+        // An explicit category pins it; otherwise new technologies re-derive it unless an
+        // admin pinned it earlier. lastEditedAt stops ingestion from overwriting the edit.
+        const update: Record<string, unknown> = { ...changes, lastEditedAt: new Date() }
+        if (changes.category) {
+          update.categoryOverridden = true
+        } else if (changes.technologies && !tor.categoryOverridden) {
+          update.category = deriveCategory(changes.technologies)
+        }
+
         updated = await TorModel.findByIdAndUpdate(
           torId,
-          { $set: changes },
+          { $set: update },
           { new: true, runValidators: true, session },
         ).lean()
         if (!updated) return

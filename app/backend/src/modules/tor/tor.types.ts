@@ -1,5 +1,7 @@
 import { Types } from 'mongoose'
 
+import type { TorCategory } from '../category/category.constants.js'
+
 export interface TorSourceDocumentInput {
   fileName: string
   mimeType: string
@@ -23,6 +25,7 @@ export interface UpsertTorInput {
   requirements: string[]
   bidderQualifications: string[]
   technologies: string[]
+  category: TorCategory
   budgetBaht: number | null
   midPriceBaht?: number | null
   awardedPriceBaht?: number | null

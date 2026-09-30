@@ -1,17 +1,11 @@
-import { CATEGORY_LABELS, type TorCategory } from '../tor/tor.controller.js'
+import { CATEGORY_KEYS, CATEGORY_LABELS, type TorCategory } from '../category/category.constants.js'
 
 export const UNKNOWN_DEPARTMENT_LABEL = 'อื่นๆ'
 
 export const REPORT_CATEGORY_LABELS = CATEGORY_LABELS
 
-// Fixed display order for endpoint C, which must always emit all 5 categories.
-export const REPORT_CATEGORY_ORDER: TorCategory[] = [
-  'consulting_architecture',
-  'data_bi',
-  'web_application',
-  'mobile_app',
-  'enterprise_system',
-]
+// Display order for endpoint C, which must always emit every category.
+export const REPORT_CATEGORY_ORDER: readonly TorCategory[] = CATEGORY_KEYS
 
 export const CATEGORY_LABEL_TO_KEY: Record<string, TorCategory> = Object.fromEntries(
   (Object.entries(REPORT_CATEGORY_LABELS) as [TorCategory, string][]).map(([key, label]) => [

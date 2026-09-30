@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 
-import { deriveCategory, type TorCategory } from '../tor/tor.controller.js'
+import type { TorCategory } from '../category/category.constants.js'
+import { resolveTorCategory } from '../tor/tor.controller.js'
 import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 import {
   CATEGORY_LABEL_TO_KEY,
@@ -31,6 +32,7 @@ interface PricedProjectLean {
   referencePriceBaht: number
   winningPriceBaht: number
   technologies: string[]
+  category: string | null
 }
 
 function toMillionRound2(baht: number): number {
@@ -63,21 +65,21 @@ async function validateAgencyName(agencyName: string | undefined, res: Response)
   return false
 }
 
-function filterByCategory<T extends { technologies: string[] }>(
+function filterByCategory<T extends { technologies: string[]; category: string | null }>(
   projects: T[],
   categoryLabel: string | undefined,
 ): T[] {
   if (!categoryLabel) return projects
   const category = CATEGORY_LABEL_TO_KEY[categoryLabel]
-  return projects.filter((p) => deriveCategory(p.technologies ?? []) === category)
+  return projects.filter((p) => resolveTorCategory(p) === category)
 }
 
-function groupByCategory<T extends { technologies: string[] }>(
+function groupByCategory<T extends { technologies: string[]; category: string | null }>(
   projects: T[],
 ): Map<TorCategory, T[]> {
   const byCategory = new Map<TorCategory, T[]>()
   for (const project of projects) {
-    const category = deriveCategory(project.technologies ?? [])
+    const category = resolveTorCategory(project)
     const bucket = byCategory.get(category)
     if (bucket) {
       bucket.push(project)
@@ -108,6 +110,7 @@ export async function priceOverviewHandler(req: Request, res: Response): Promise
     midPriceBaht: 1,
     awardedPriceBaht: 1,
     technologies: 1,
+    category: 1,
   }).lean()
 
   const projects: PricedProjectLean[] = filterByCategory(
@@ -115,6 +118,7 @@ export async function priceOverviewHandler(req: Request, res: Response): Promise
       referencePriceBaht: p.midPriceBaht!,
       winningPriceBaht: p.awardedPriceBaht!,
       technologies: p.technologies ?? [],
+      category: p.category ?? null,
     })),
     category,
   )
@@ -172,6 +176,7 @@ export async function savingsDistributionHandler(req: Request, res: Response): P
     midPriceBaht: 1,
     awardedPriceBaht: 1,
     technologies: 1,
+    category: 1,
   }).lean()
 
   const projects: PricedProjectLean[] = filterByCategory(
@@ -179,6 +184,7 @@ export async function savingsDistributionHandler(req: Request, res: Response): P
       referencePriceBaht: p.midPriceBaht!,
       winningPriceBaht: p.awardedPriceBaht!,
       technologies: p.technologies ?? [],
+      category: p.category ?? null,
     })),
     category,
   )
@@ -229,12 +235,14 @@ export async function categoryComparisonHandler(req: Request, res: Response): Pr
     midPriceBaht: 1,
     awardedPriceBaht: 1,
     technologies: 1,
+    category: 1,
   }).lean()
 
   const projects: PricedProjectLean[] = rawProjects.map((p) => ({
     referencePriceBaht: p.midPriceBaht!,
     winningPriceBaht: p.awardedPriceBaht!,
     technologies: p.technologies ?? [],
+    category: p.category ?? null,
   }))
 
   const byCategory = groupByCategory(projects)
@@ -343,19 +351,18 @@ export async function procurementListHandler(req: Request, res: Response): Promi
     midPriceBaht: 1,
     awardedPriceBaht: 1,
     technologies: 1,
+    category: 1,
     detailUrl: 1,
   }).lean()
 
   const filtered = category
-    ? rawProjects.filter(
-        (p) => deriveCategory(p.technologies ?? []) === CATEGORY_LABEL_TO_KEY[category],
-      )
+    ? rawProjects.filter((p) => resolveTorCategory(p) === CATEGORY_LABEL_TO_KEY[category])
     : rawProjects
 
   const rows: ProcurementListRow[] = filtered.map((p) => {
     const midPriceBaht = round2(p.midPriceBaht!)
     const awardedPriceBaht = round2(p.awardedPriceBaht!)
-    const cat = deriveCategory(p.technologies ?? [])
+    const cat = resolveTorCategory(p)
     return {
       id: String(p._id),
       external_id: p.externalId,

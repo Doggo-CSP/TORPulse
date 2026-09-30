@@ -156,7 +156,7 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
   )
 
   await t.test(
-    'GET /reports/category-comparison for Seed Agency Alpha returns all 5 categories, 2 empty',
+    'GET /reports/category-comparison for Seed Agency Alpha returns all 8 categories, 5 empty',
     async () => {
       const response = await request(app)
         .get('/reports/category-comparison')
@@ -164,7 +164,7 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
 
       assert.equal(response.status, 200)
       const categories: Record<string, unknown>[] = response.body.data.categories
-      assert.equal(categories.length, 5)
+      assert.equal(categories.length, 8)
       const byCategory = Object.fromEntries(categories.map((c) => [c.category, c]))
 
       assert.deepEqual(byCategory.mobile_app, {
@@ -201,12 +201,28 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
       })
       assert.deepEqual(byCategory.consulting_architecture, {
         category: 'consulting_architecture',
-        category_label: 'Consulting / Architecture',
+        category_label: 'งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ',
         total_mid_price: 0,
         total_awarded_price: 0,
         avg_savings_pct: null,
         project_count: 0,
       })
+      for (const key of ['cybersecurity', 'ai_ml', 'cloud_infrastructure']) {
+        assert.equal(byCategory[key]!.project_count, 0)
+      }
+      assert.deepEqual(
+        categories.map((c) => c.category),
+        [
+          'web_application',
+          'data_bi',
+          'mobile_app',
+          'enterprise_system',
+          'consulting_architecture',
+          'cybersecurity',
+          'ai_ml',
+          'cloud_infrastructure',
+        ],
+      )
     },
   )
 
@@ -233,7 +249,7 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
       })
       assert.deepEqual(byCategory.consulting_architecture, {
         category: 'consulting_architecture',
-        category_label: 'Consulting / Architecture',
+        category_label: 'งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ',
         total_mid_price: 20.0,
         total_awarded_price: 16.6,
         avg_savings_pct: 17.0,

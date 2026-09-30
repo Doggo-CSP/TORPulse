@@ -1,5 +1,7 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
+import { CATEGORY_KEYS } from '../category/category.constants.js'
+
 export const TOR_REVIEW_STATUSES = ['unverified', 'verified', 'archived', 'deleted'] as const
 export type TorReviewStatus = (typeof TOR_REVIEW_STATUSES)[number]
 
@@ -152,6 +154,20 @@ const torSchema = new Schema(
       required: true,
       enum: TOR_REVIEW_STATUSES,
       default: 'unverified',
+    },
+    category: {
+      type: String,
+      enum: [...CATEGORY_KEYS, null],
+      default: null,
+    },
+    categoryOverridden: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+    lastEditedAt: {
+      type: Date,
+      default: null,
     },
     contactInformation: {
       type: [String],

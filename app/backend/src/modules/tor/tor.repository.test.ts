@@ -59,6 +59,7 @@ function createTorInput(): UpsertTorInput {
     requirements: [],
     bidderQualifications: [],
     technologies: [],
+    category: 'enterprise_system',
     budgetBaht: 1000,
     submissionDeadline: null,
     contactInformation: [],

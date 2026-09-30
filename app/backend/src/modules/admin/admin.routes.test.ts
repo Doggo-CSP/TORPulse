@@ -606,6 +606,32 @@ test('admin routes: TOR management (UC-14)', async (t) => {
     },
   )
 
+  await t.test(
+    'PATCH category pins it; new technologies re-derive it only when not pinned',
+    async () => {
+      const pin = await request(app).patch(torUrl(webTor._id)).send({ category: 'cybersecurity' })
+      assert.equal(pin.status, 200)
+      assert.equal(pin.body.tor.category, 'cybersecurity')
+
+      const techAfterPin = await request(app)
+        .patch(torUrl(webTor._id))
+        .send({ technologies: ['Flutter'] })
+      assert.equal(techAfterPin.body.tor.category, 'cybersecurity')
+
+      const unpinned = await request(app)
+        .patch(torUrl(mobileTor._id))
+        .send({ technologies: ['AWS'] })
+      assert.equal(unpinned.body.tor.category, 'cloud_infrastructure')
+
+      const stored = await TorModel.findById(webTor._id).lean()
+      assert.equal(stored?.categoryOverridden, true)
+      assert.ok(stored?.lastEditedAt instanceof Date)
+
+      const badCategory = await request(app).patch(torUrl(webTor._id)).send({ category: 'web' })
+      assert.equal(badCategory.status, 400)
+    },
+  )
+
   await t.test('POST verify marks the TOR verified once', async () => {
     const first = await request(app).post(`${torUrl(webTor._id)}/verify`)
     const second = await request(app).post(`${torUrl(webTor._id)}/verify`)

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { CATEGORY_KEYS } from '../category/category.constants.js'
+
 export const updateProfileSchema = z.object({
   accountType: z.enum(['personal', 'company', 'agency']).optional(),
   displayName: z.string().trim().optional(),
@@ -19,6 +21,8 @@ export const updateProfileSchema = z.object({
   website: z.string().trim().optional(),
 })
 
+// TODO(QUESTION-4): the profile page still sends its own ids ("web", "ai", ...); those are now
+// rejected until it switches to GET /categories keys; see QUESTIONS.md
 export const updateInterestsSchema = z.object({
-  interests: z.array(z.string().trim()),
+  interests: z.array(z.enum(CATEGORY_KEYS)),
 })

@@ -1,10 +1,8 @@
 import { isObjectIdOrHexString } from 'mongoose'
 import { z } from 'zod'
 
-import { CATEGORY_LABELS } from '../tor/tor.controller.js'
+import { CATEGORY_KEYS } from '../category/category.constants.js'
 import { TOR_REVIEW_STATUSES } from '../tor/tor.model.js'
-
-const categoryKeys = Object.keys(CATEGORY_LABELS) as [string, ...string[]]
 
 const stringList = z.array(z.string().trim().min(1))
 
@@ -14,7 +12,7 @@ export const adminTorListQuerySchema = z.object({
     .enum([...TOR_REVIEW_STATUSES, 'all'])
     .optional()
     .default('all'),
-  category: z.enum(categoryKeys).optional(),
+  category: z.enum(CATEGORY_KEYS).optional(),
   confidence_min: z.coerce.number().min(0).max(1).optional(),
   confidence_max: z.coerce.number().min(0).max(1).optional(),
   data_source_id: z
@@ -38,6 +36,7 @@ export const updateAdminTorSchema = z
     deliverables: stringList.optional(),
     timeline: stringList.optional(),
     evaluationCriteria: stringList.optional(),
+    category: z.enum(CATEGORY_KEYS).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0)

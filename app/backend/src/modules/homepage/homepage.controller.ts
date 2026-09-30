@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 
-import { CATEGORY_LABELS, deriveCategory, type TorCategory } from '../tor/tor.controller.js'
+import { CATEGORY_KEYS, CATEGORY_LABELS, type TorCategory } from '../category/category.constants.js'
+import { resolveTorCategory } from '../tor/tor.controller.js'
 import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000
@@ -84,29 +85,25 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
       { $sort: { count: -1, _id: 1 } },
       { $limit: 10 },
     ]),
-    TorModel.find(
-      PUBLIC_TOR_FILTER,
-      { technologies: 1, midPriceBaht: 1, awardedPriceBaht: 1, _id: 0 },
-    ).lean(),
+    TorModel.find(PUBLIC_TOR_FILTER, {
+      technologies: 1,
+      category: 1,
+      midPriceBaht: 1,
+      awardedPriceBaht: 1,
+      _id: 0,
+    }).lean(),
   ])
 
   const totalTors = torDocs.length
-  const counts: Record<TorCategory, number> = {
-    web_application: 0,
-    data_bi: 0,
-    mobile_app: 0,
-    enterprise_system: 0,
-    consulting_architecture: 0,
-  }
+  const counts = Object.fromEntries(CATEGORY_KEYS.map((key) => [key, 0])) as Record<
+    TorCategory,
+    number
+  >
 
   type PriceAccumulator = { midSum: number; midCount: number; awardedSum: number; awardedCount: number }
-  const priceSums: Record<TorCategory, PriceAccumulator> = {
-    web_application: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-    data_bi: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-    mobile_app: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-    enterprise_system: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-    consulting_architecture: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-  }
+  const priceSums = Object.fromEntries(
+    CATEGORY_KEYS.map((key) => [key, { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 }]),
+  ) as Record<TorCategory, PriceAccumulator>
 
   // overall (cross-category) stats — only over TORs where both prices are known,
   // so the discount % is comparing like-for-like
@@ -115,7 +112,7 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
   let overallPairedCount = 0
 
   for (const doc of torDocs) {
-    const category = deriveCategory(doc.technologies ?? [])
+    const category = resolveTorCategory(doc)
     counts[category] += 1
 
     if (doc.midPriceBaht != null) {
