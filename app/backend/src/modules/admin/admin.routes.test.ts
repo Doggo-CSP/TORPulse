@@ -1103,3 +1103,86 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
     assert.equal(sync.status, 403)
   })
 })
+
+test('admin routes: GET /admin/stats overview numbers', async (t) => {
+  await database.connect()
+
+  const createdUserIds: Types.ObjectId[] = []
+  const createdTorIds: Types.ObjectId[] = []
+
+  t.after(async () => {
+    await TorModel.deleteMany({ _id: { $in: createdTorIds } })
+    await User.deleteMany({ _id: { $in: createdUserIds } })
+    await database.disconnect()
+  })
+
+  const app = express()
+  app.use((req, _res, next) => {
+    req.user = makeUser({ role: 'editor', status: 'active' })
+    next()
+  })
+  app.use('/admin', router)
+
+  const before = await request(app).get('/admin/stats')
+  assert.equal(before.status, 200)
+
+  for (const [key, status] of [
+    ['stats-pending', 'pending'],
+    ['stats-suspended', 'suspended'],
+  ] as const) {
+    const user = await User.create({
+      googleId: `${SEED_PREFIX}${key}`,
+      name: key,
+      email: `${SEED_PREFIX}${key}@example.com`,
+      image: null,
+      role: 'user',
+      status,
+    })
+    createdUserIds.push(user._id)
+  }
+
+  for (const [key, reviewStatus] of [
+    ['stats-live', 'unverified'],
+    ['stats-deleted', 'deleted'],
+  ] as const) {
+    const tor = await TorModel.create({
+      dataSourceId: new Types.ObjectId(),
+      ingestionJobId: new Types.ObjectId(),
+      externalId: `${SEED_PREFIX}${key}`,
+      sourceVersion: 'v1',
+      sourceAdapter: 'central_egp',
+      detailUrl: 'https://example.com/tor',
+      projectTitle: key,
+      classificationReason: 'test',
+      confidence: 0.9,
+      analysisModel: 'test-model',
+      analysisVersion: 'v1',
+      analyzedAt: new Date(),
+      reviewStatus,
+    })
+    createdTorIds.push(tor._id)
+  }
+
+  const after = await request(app).get('/admin/stats')
+  assert.equal(after.status, 200)
+
+  // Deleted TORs are not counted; a TOR created now counts as new this week
+  assert.equal(after.body.tors.total - before.body.tors.total, 1)
+  assert.equal(after.body.tors.newThisWeek - before.body.tors.newThisWeek, 1)
+  assert.equal(after.body.tors.awarded, null)
+
+  // pending is a status, so pending users are also counted in byRole
+  assert.equal(after.body.users.byStatus.pending - before.body.users.byStatus.pending, 1)
+  assert.equal(after.body.users.byStatus.suspended - before.body.users.byStatus.suspended, 1)
+  assert.equal(after.body.users.byRole.user - before.body.users.byRole.user, 2)
+  assert.equal(after.body.users.total - before.body.users.total, 2)
+
+  assert.equal(typeof after.body.savedTors.total, 'number')
+  for (const key of ['queued', 'processing', 'completed', 'failed', 'rejected', 'reviewRequired']) {
+    assert.equal(typeof after.body.ingestionJobs[key], 'number')
+  }
+
+  // Legacy keys used by the current admin page are still present
+  assert.equal(typeof after.body.stats.total_tors, 'number')
+  assert.equal(typeof after.body.role_counts.pending, 'number')
+})

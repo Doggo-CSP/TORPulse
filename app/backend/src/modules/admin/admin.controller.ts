@@ -7,10 +7,12 @@ import {
 } from '../../apps/queue-producer/queue-producer.js'
 import { env } from '../../config/env.js'
 import { GovSpendingDiscoveryAdapter } from '../ingestion/adapters/govspending-discovery.adapter.js'
+import { getBangkokWeekRange } from '../homepage/homepage.controller.js'
 import {
   findLatestCollectionRun,
   hasRunningCollectionRun,
 } from '../ingestion/collection-run.repository.js'
+import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
 import { User, type UserDocument } from '../auth/user.model.js'
 import { CATEGORY_LABELS } from '../category/category.constants.js'
@@ -79,6 +81,24 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
     const newThisWeek = await TorModel.countDocuments({ createdAt: { $gte: oneWeekAgo } })
 
+    // Numbers for the current admin pages. `stats` / `role_counts` above are kept unchanged
+    // for the existing frontend until it moves to these keys.
+    const notDeleted = { reviewStatus: { $ne: 'deleted' as const } }
+    const { start: weekStart, end: weekEnd } = getBangkokWeekRange(new Date())
+    const [torsTotal, torsNewThisWeek, suspendedUsers, savedTors, jobStatusRows] =
+      await Promise.all([
+        TorModel.countDocuments(notDeleted),
+        // TODO(QUESTION-15): TORs have no announcement date, so the date they entered the
+        // system is used; see QUESTIONS.md
+        TorModel.countDocuments({ ...notDeleted, createdAt: { $gte: weekStart, $lt: weekEnd } }),
+        User.countDocuments({ status: 'suspended' }),
+        UserBookmarkModel.countDocuments(),
+        IngestionJobModel.aggregate<{ _id: string; count: number }>([
+          { $group: { _id: '$status', count: { $sum: 1 } } },
+        ]),
+      ])
+    const jobsByStatus = Object.fromEntries(jobStatusRows.map((row) => [row._id, row.count]))
+
     res.json({
       stats: {
         total_tors: totalTors,
@@ -91,6 +111,27 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
         editors: editorCount,
         users: userCount,
         pending: pendingUsers,
+      },
+      tors: {
+        total: torsTotal,
+        newThisWeek: torsNewThisWeek,
+        // TODO(QUESTION-14): GovSpending has no "results announced" field; see QUESTIONS.md
+        awarded: null,
+      },
+      users: {
+        total: totalUsers,
+        // Roles are counted regardless of status, so pending users also appear here
+        byRole: { admin: adminCount, editor: editorCount, user: userCount },
+        byStatus: { active: activeUsers, pending: pendingUsers, suspended: suspendedUsers },
+      },
+      savedTors: { total: savedTors },
+      ingestionJobs: {
+        queued: jobsByStatus.queued ?? 0,
+        processing: jobsByStatus.processing ?? 0,
+        completed: jobsByStatus.completed ?? 0,
+        failed: jobsByStatus.failed ?? 0,
+        rejected: jobsByStatus.rejected ?? 0,
+        reviewRequired: jobsByStatus.review_required ?? 0,
       },
     })
   } catch (error) {
@@ -534,7 +575,11 @@ export const getAdminActivity = async (req: Request, res: Response): Promise<voi
           log.actorType === 'system'
             ? { type: 'system' }
             : { type: 'user', id: log.actorId?.toString() ?? null, name: log.actorName ?? null },
-        target: { type: log.targetType, id: log.targetId.toString(), label: log.targetLabel ?? null },
+        target: {
+          type: log.targetType,
+          id: log.targetId.toString(),
+          label: log.targetLabel ?? null,
+        },
         metadata: {
           ...((log.metadata as Record<string, unknown> | null) ?? {}),
           ...(changes ? { changes } : {}),
