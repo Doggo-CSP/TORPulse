@@ -133,6 +133,11 @@ test('GET /tors/:id returns authoritative e-GP details', async (context) => {
   assert.equal(response.body.projectStatus, 'จัดทำสัญญา/บริหารสัญญา')
   assert.equal(response.body.midPriceBaht, 9_014_000)
   assert.equal(response.body.awardedPriceBaht, 9_000_000)
+  // A TOR stored before scope/deliverables/timeline/evaluationCriteria existed gets safe defaults
+  assert.equal(response.body.scope, null)
+  assert.deepEqual(response.body.deliverables, [])
+  assert.deepEqual(response.body.timeline, [])
+  assert.deepEqual(response.body.evaluationCriteria, [])
 })
 
 // --- getRecommendationsHandler (mocked TorModel.find) -----------------------
