@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { setTimeout as delay } from 'node:timers/promises'
-import test from 'node:test'
+import test, { before } from 'node:test'
 
 import express from 'express'
 import request from 'supertest'
@@ -35,6 +35,14 @@ const makeUser = (overrides: Partial<Express.User> = {}): Express.User => ({
   email: `${SEED_PREFIX}user@example.com`,
   image: null,
   ...overrides,
+})
+
+// Each suite deletes what it creates, but a run that dies mid-setup leaves seed users behind
+// (their unique googleId/email would then break the next run), so clear them once up front.
+before(async () => {
+  await database.connect()
+  await User.deleteMany({ googleId: { $regex: `^${SEED_PREFIX}` } })
+  await database.disconnect()
 })
 
 test('admin routes: requireAdmin guard', async (t) => {
