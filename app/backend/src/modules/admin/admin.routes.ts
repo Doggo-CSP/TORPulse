@@ -1,9 +1,10 @@
 import { Router } from 'express'
-import { requireAdmin } from '../../middleware/admin.middleware.js'
+import { requireAdmin, requireRole } from '../../middleware/admin.middleware.js'
 import {
   getAdminStats,
   getAdminUserById,
   getAdminUsers,
+  updateAdminUser,
   updateUserRole,
   updateUserStatus,
   getAdminActivities,
@@ -17,14 +18,17 @@ import {
 
 const router = Router()
 
-router.use(requireAdmin)
+// Admins and editors reach /admin; user, activity and settings routes are admin-only.
+// TODO(QUESTION-9): should editors also see the activity feed? see QUESTIONS.md
+router.use(requireRole('admin', 'editor'))
 
 router.get('/stats', getAdminStats)
-router.get('/users', getAdminUsers)
-router.get('/users/:userId', getAdminUserById)
-router.patch('/users/:userId/role', updateUserRole)
-router.patch('/users/:userId/status', updateUserStatus)
-router.get('/activities', getAdminActivities)
+router.get('/users', requireAdmin, getAdminUsers)
+router.get('/users/:userId', requireAdmin, getAdminUserById)
+router.patch('/users/:userId', requireAdmin, updateAdminUser)
+router.patch('/users/:userId/role', requireAdmin, updateUserRole)
+router.patch('/users/:userId/status', requireAdmin, updateUserStatus)
+router.get('/activities', requireAdmin, getAdminActivities)
 router.get('/tors', getAdminTors)
 router.get('/tors/:torId', getAdminTorById)
 router.patch('/tors/:torId', updateAdminTor)

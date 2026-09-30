@@ -6,7 +6,11 @@ import { deriveCategory, resolveTorCategory } from '../tor/tor.controller.js'
 import { TorModel, type Tor, type TorReviewStatus } from '../tor/tor.model.js'
 import { UserBookmarkModel } from '../user/user-bookmark.model.js'
 import type { TorChangeOutcome, UserChangeOutcome } from './admin.types.js'
-import { adminTorListQuerySchema, updateAdminTorSchema } from './admin.validation.js'
+import {
+  adminTorListQuerySchema,
+  updateAdminTorSchema,
+  updateAdminUserSchema,
+} from './admin.validation.js'
 import { createAuditLog, listRecentAuditLogs } from './audit-log.repository.js'
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -81,7 +85,9 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
 
 export const getAdminUsers = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { q, role, status } = req.query
+    const { role, status } = req.query
+    // `q` is the older name the current admin page still sends
+    const q = req.query.search ?? req.query.q
     const conditions: Record<string, unknown>[] = []
 
     if (role && role !== 'all') {
@@ -133,9 +139,76 @@ export const getAdminUsers = async (req: Request, res: Response): Promise<void> 
       lastActive: 'ออนไลน์ขณะนี้',
     }))
 
-    res.json({ users })
+    res.json({ users, total: users.length })
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch users', error: (error as Error).message })
+  }
+}
+
+export const updateAdminUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params
+
+    if (!isObjectIdOrHexString(userId)) {
+      res.status(400).json({ success: false, message: 'รหัสผู้ใช้งานไม่ถูกต้อง' })
+      return
+    }
+
+    const parsed = updateAdminUserSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'ข้อมูลที่แก้ไขไม่ถูกต้อง' })
+      return
+    }
+
+    const changes = parsed.data
+    const actorId = req.user!._id
+    let updated = null as UserDocument | null
+
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        const target = await User.findById(userId).session(session).lean()
+        if (!target) {
+          updated = null
+          return
+        }
+
+        const current = target as unknown as Record<string, unknown>
+        const before = Object.fromEntries(
+          Object.keys(changes).map((key) => [key, current[key] ?? null]),
+        )
+
+        updated = await User.findByIdAndUpdate(
+          userId,
+          { $set: changes },
+          { new: true, runValidators: true, session },
+        )
+        if (!updated) return
+
+        await createAuditLog(
+          {
+            actorId,
+            action: 'user.updated',
+            targetType: 'user',
+            targetId: updated._id,
+            before,
+            after: changes,
+          },
+          session,
+        )
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    if (!updated) {
+      res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งาน' })
+      return
+    }
+
+    res.json({ success: true, message: 'แก้ไขข้อมูลผู้ใช้งานสำเร็จ', user: updated })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
   }
 }
 
@@ -225,6 +298,11 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
         }
 
         const previousRole = target.role || 'user'
+        if (previousRole === role) {
+          outcome = 'unchanged'
+          return
+        }
+
         updated = await User.findByIdAndUpdate(userId, { role }, { new: true, session })
         if (!updated) return
 
@@ -232,7 +310,7 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
         await createAuditLog(
           {
             actorId,
-            action: 'user.role.update',
+            action: 'user.role_changed',
             targetType: 'user',
             targetId: updated._id,
             before: { role: previousRole },
@@ -258,6 +336,11 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
 
     if (outcome === 'last_admin') {
       res.status(400).json({ success: false, message: 'ไม่สามารถลดสิทธิ์ผู้ดูแลระบบคนสุดท้ายได้' })
+      return
+    }
+
+    if (outcome === 'unchanged') {
+      res.status(400).json({ success: false, message: 'ผู้ใช้งานมีบทบาทนี้อยู่แล้ว' })
       return
     }
 
@@ -287,7 +370,9 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
       return
     }
 
-    if (!['active', 'pending', 'suspended'].includes(status)) {
+    // Admins can approve (pending -> active), suspend (-> suspended) and reactivate
+    // (suspended -> active). Nobody is moved back to pending by hand.
+    if (!['active', 'suspended'].includes(status)) {
       res.status(400).json({ success: false, message: 'สถานะไม่ถูกต้อง' })
       return
     }
@@ -318,6 +403,19 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
         }
 
         const previousStatus = target.status || 'active'
+        if (previousStatus === status) {
+          outcome = 'unchanged'
+          return
+        }
+
+        // TODO(QUESTION-7): rejecting a pending user is recorded as a suspension; see QUESTIONS.md
+        const action =
+          status === 'suspended'
+            ? 'user.suspended'
+            : previousStatus === 'pending'
+              ? 'user.approved'
+              : 'user.reactivated'
+
         updated = await User.findByIdAndUpdate(userId, { status }, { new: true, session })
         if (!updated) return
 
@@ -325,7 +423,7 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
         await createAuditLog(
           {
             actorId,
-            action: 'user.status.update',
+            action,
             targetType: 'user',
             targetId: updated._id,
             before: { status: previousStatus },
@@ -356,6 +454,11 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
       return
     }
 
+    if (outcome === 'unchanged') {
+      res.status(400).json({ success: false, message: 'ผู้ใช้งานมีสถานะนี้อยู่แล้ว' })
+      return
+    }
+
     const statusMap: Record<string, string> = {
       active: 'ใช้งานอยู่',
       pending: 'รอการอนุมัติ',
@@ -375,8 +478,11 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
 const ACTIVITY_LIMIT = 20
 
 const ACTIVITY_TITLES: Record<string, string> = {
-  'user.role.update': 'เปลี่ยนบทบาทผู้ใช้งาน',
-  'user.status.update': 'เปลี่ยนสถานะผู้ใช้งาน',
+  'user.role_changed': 'เปลี่ยนบทบาทผู้ใช้งาน',
+  'user.approved': 'อนุมัติบัญชีผู้ใช้งาน',
+  'user.suspended': 'ระงับบัญชีผู้ใช้งาน',
+  'user.reactivated': 'เปิดใช้งานบัญชีอีกครั้ง',
+  'user.updated': 'แก้ไขข้อมูลผู้ใช้งาน',
   'tor.update': 'แก้ไขข้อมูล TOR',
   'tor.verify': 'ยืนยันความถูกต้องของ TOR',
   'tor.archive': 'เก็บ TOR เข้าคลัง',

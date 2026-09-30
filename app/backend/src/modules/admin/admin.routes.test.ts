@@ -58,12 +58,30 @@ test('admin routes: requireAdmin guard', async (t) => {
     assert.equal(response.body.success, false)
   })
 
-  await t.test('GET /admin/stats rejects an editor with 403', async () => {
+  await t.test('an editor can read stats but not users, activity, or user changes', async () => {
     currentUser = makeUser({ role: 'editor', status: 'active' })
 
-    const response = await request(app).get('/admin/stats')
+    const stats = await request(app).get('/admin/stats')
+    const users = await request(app).get('/admin/users')
+    const activities = await request(app).get('/admin/activities')
+    const role = await request(app)
+      .patch(`/admin/users/${new Types.ObjectId().toString()}/role`)
+      .send({ role: 'admin' })
 
-    assert.equal(response.status, 403)
+    assert.equal(stats.status, 200)
+    assert.equal(users.status, 403)
+    assert.equal(activities.status, 403)
+    assert.equal(role.status, 403)
+  })
+
+  await t.test('a suspended or pending editor is rejected', async () => {
+    currentUser = makeUser({ role: 'editor', status: 'suspended' })
+    const suspended = await request(app).get('/admin/stats')
+    currentUser = makeUser({ role: 'editor', status: 'pending' })
+    const pending = await request(app).get('/admin/stats')
+
+    assert.equal(suspended.status, 403)
+    assert.equal(pending.status, 403)
   })
 
   await t.test('GET /admin/stats rejects a suspended admin with 403', async () => {
@@ -138,7 +156,15 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     role: 'admin',
     status: 'active',
   })
-  const seededIds = [actor._id, target._id, otherAdmin._id]
+  const pendingUser = await User.create({
+    googleId: `${SEED_PREFIX}pending`,
+    name: 'Seed Pending',
+    email: `${SEED_PREFIX}pending@example.com`,
+    image: null,
+    role: 'user',
+    status: 'pending',
+  })
+  const seededIds = [actor._id, target._id, otherAdmin._id, pendingUser._id]
 
   t.after(async () => {
     await AuditLogModel.deleteMany({ targetId: { $in: seededIds } })
@@ -240,13 +266,21 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
 
     const log = await AuditLogModel.findOne({
       targetId: target._id,
-      action: 'user.role.update',
+      action: 'user.role_changed',
     }).lean()
     assert.ok(log)
-    assert.equal(log.actorId.toString(), actor._id.toString())
+    assert.equal(log.actorId?.toString(), actor._id.toString())
     assert.equal(log.targetType, 'user')
     assert.deepEqual(log.before, { role: 'user' })
     assert.deepEqual(log.after, { role: 'editor' })
+  })
+
+  await t.test('PATCH role rejects setting the role the user already has', async () => {
+    const response = await request(app)
+      .patch(`${targetUrl(target._id)}/role`)
+      .send({ role: 'editor' })
+
+    assert.equal(response.status, 400)
   })
 
   await t.test('PATCH status suspends and reactivates with an audit log each time', async () => {
@@ -262,20 +296,98 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     assert.equal(reactivate.status, 200)
     assert.equal((await User.findById(target._id).lean())?.status, 'active')
 
-    const logs = await AuditLogModel.find({ targetId: target._id, action: 'user.status.update' })
-      .sort({ createdAt: 1 })
-      .lean()
-    assert.equal(logs.length, 2)
-    assert.deepEqual(logs[0]?.after, { status: 'suspended' })
-    assert.deepEqual(logs[1]?.before, { status: 'suspended' })
+    const suspended = await AuditLogModel.findOne({
+      targetId: target._id,
+      action: 'user.suspended',
+    }).lean()
+    const reactivated = await AuditLogModel.findOne({
+      targetId: target._id,
+      action: 'user.reactivated',
+    }).lean()
+    assert.deepEqual(suspended?.after, { status: 'suspended' })
+    assert.deepEqual(reactivated?.before, { status: 'suspended' })
   })
 
-  await t.test('PATCH status rejects an invalid status', async () => {
-    const response = await request(app)
+  await t.test('PATCH status approves a pending user and can reject another', async () => {
+    await User.updateOne({ _id: pendingUser._id }, { $set: { status: 'pending' } })
+    const approve = await request(app)
+      .patch(`${targetUrl(pendingUser._id)}/status`)
+      .send({ status: 'active' })
+    assert.equal(approve.status, 200)
+    assert.ok(await AuditLogModel.exists({ targetId: pendingUser._id, action: 'user.approved' }))
+
+    await User.updateOne({ _id: pendingUser._id }, { $set: { status: 'pending' } })
+    const reject = await request(app)
+      .patch(`${targetUrl(pendingUser._id)}/status`)
+      .send({ status: 'suspended' })
+    assert.equal(reject.status, 200)
+    assert.equal((await User.findById(pendingUser._id).lean())?.status, 'suspended')
+  })
+
+  await t.test('PATCH status rejects invalid, pending, and unchanged statuses', async () => {
+    const invalid = await request(app)
       .patch(`${targetUrl(target._id)}/status`)
       .send({ status: 'deleted' })
+    const toPending = await request(app)
+      .patch(`${targetUrl(target._id)}/status`)
+      .send({ status: 'pending' })
+    const unchanged = await request(app)
+      .patch(`${targetUrl(target._id)}/status`)
+      .send({ status: 'active' })
 
-    assert.equal(response.status, 400)
+    assert.equal(invalid.status, 400)
+    assert.equal(toPending.status, 400)
+    assert.equal(unchanged.status, 400)
+  })
+
+  await t.test('PATCH /admin/users/:userId edits profile fields with an audit log', async () => {
+    const response = await request(app).patch(targetUrl(target._id)).send({
+      name: 'Renamed Target',
+      jobTitle: 'Procurement Officer',
+      agencyName: 'Seed Agency',
+      accountType: 'agency',
+    })
+
+    assert.equal(response.status, 200)
+    const stored = await User.findById(target._id).lean()
+    assert.equal(stored?.name, 'Renamed Target')
+    assert.equal(stored?.jobTitle, 'Procurement Officer')
+    assert.equal(stored?.accountType, 'agency')
+
+    const log = await AuditLogModel.findOne({ targetId: target._id, action: 'user.updated' }).lean()
+    assert.deepEqual(log?.before, {
+      name: 'Seed Target',
+      jobTitle: '',
+      agencyName: '',
+      accountType: 'personal',
+    })
+  })
+
+  await t.test('PATCH /admin/users/:userId refuses email, role, and status', async () => {
+    const email = await request(app).patch(targetUrl(target._id)).send({ email: 'x@example.com' })
+    const role = await request(app).patch(targetUrl(target._id)).send({ role: 'admin' })
+    const status = await request(app).patch(targetUrl(target._id)).send({ status: 'suspended' })
+    const badType = await request(app)
+      .patch(targetUrl(target._id))
+      .send({ accountType: 'government' })
+    const missing = await request(app)
+      .patch(targetUrl(new Types.ObjectId()))
+      .send({ name: 'Nobody' })
+
+    assert.equal(email.status, 400)
+    assert.equal(role.status, 400)
+    assert.equal(status.status, 400)
+    assert.equal(badType.status, 400)
+    assert.equal(missing.status, 404)
+    assert.equal((await User.findById(target._id).lean())?.role, 'editor')
+  })
+
+  await t.test('GET /admin/users searches by organization and returns total', async () => {
+    const response = await request(app).get('/admin/users').query({ search: 'Seed Agency' })
+
+    assert.equal(response.status, 200)
+    assert.ok(response.body.users.some((u: { _id: string }) => u._id === target._id.toString()))
+    assert.equal(response.body.total, response.body.users.length)
   })
 
   await t.test('an admin cannot change their own role or status', async () => {
@@ -415,7 +527,7 @@ test('admin routes: transactional role changes and the audit activity feed', asy
     assert.equal(response.status, 200)
     const latest = response.body.activities[0]
     assert.equal(latest.type, 'user_role')
-    assert.equal(latest.title, 'เปลี่ยนสถานะผู้ใช้งาน')
+    assert.equal(latest.title, 'ระงับบัญชีผู้ใช้งาน')
     assert.equal(latest.target, member.email)
     assert.equal(latest.description, 'status: active → suspended')
     assert.equal(latest.actor, `Seed race-admin-${actorId.equals(adminA._id) ? 'a' : 'b'}`)

@@ -40,3 +40,18 @@ export const updateAdminTorSchema = z
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0)
+
+// Profile fields an admin may fix. Uses the existing User field names:
+// organization -> agencyName / companyName, position -> jobTitle, government -> 'agency'.
+// email, role and status are rejected here (role/status have their own endpoints).
+// TODO(QUESTION-6): confirm the field-name mapping and whether 'personal' stays; see QUESTIONS.md
+export const updateAdminUserSchema = z
+  .object({
+    name: z.string().trim().min(1).optional(),
+    jobTitle: z.string().trim().optional(),
+    agencyName: z.string().trim().optional(),
+    companyName: z.string().trim().optional(),
+    accountType: z.enum(['personal', 'company', 'agency']).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0)

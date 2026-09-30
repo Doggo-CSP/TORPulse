@@ -9,6 +9,6 @@ export interface CreateAuditLogInput {
   after?: unknown
 }
 
-export type UserChangeOutcome = 'updated' | 'not_found' | 'self' | 'last_admin'
+export type UserChangeOutcome = 'updated' | 'not_found' | 'self' | 'last_admin' | 'unchanged'
 
 export type TorChangeOutcome = 'updated' | 'not_found' | 'deleted' | 'invalid_transition'

@@ -72,6 +72,7 @@ export type TorMigrationPlan =
   | { type: 'unchanged'; category: TorCategory }
   | { type: 'update'; from: TorCategory; to: TorCategory }
 
+// TODO(QUESTION-3): protected TORs with no stored category still resolve with the new rules; see QUESTIONS.md
 export function planTorCategory(tor: TorForMigration): TorMigrationPlan {
   if (tor.categoryOverridden) return { type: 'skip', reason: 'overridden' }
   if (tor.lastEditedAt) return { type: 'skip', reason: 'edited' }
