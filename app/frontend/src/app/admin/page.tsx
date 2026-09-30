@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import Link from "next/link";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { SiteNav } from "@/app/components/site_nav";
 import {
   AdminUserItem,
@@ -14,10 +13,17 @@ import {
   fetchAdminActivities,
   updateUserRoleApi,
   updateUserStatusApi,
+  InterestCategory,
+  fetchInterestCategories,
+  createInterestCategoryApi,
+  updateInterestCategoryApi,
+  deleteInterestCategoryApi,
+  INITIAL_CATEGORIES,
   INITIAL_ADMIN_STATS,
   INITIAL_ACTIVITIES,
   INITIAL_USERS,
 } from "@/api/admin.api";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Squares2X2Icon,
   DocumentTextIcon,
@@ -25,18 +31,16 @@ import {
   ClockIcon,
   Cog6ToothIcon,
   MagnifyingGlassIcon,
-  FunnelIcon,
   CheckCircleIcon,
   ArrowPathIcon,
   ShieldCheckIcon,
-  ExclamationCircleIcon,
   PencilSquareIcon,
-  ChevronDownIcon,
   XMarkIcon,
   CheckIcon,
   SparklesIcon,
-  ArrowTopRightOnSquareIcon,
+  TagIcon,
   PlusIcon,
+  TrashIcon,
 } from "@heroicons/react/24/outline";
 
 type AdminMenuTab =
@@ -44,6 +48,7 @@ type AdminMenuTab =
   | "tor_management"
   | "user_roles"
   | "activity_feed"
+  | "categories"
   | "settings";
 
 const ROLE_CONFIG: Record<
@@ -55,12 +60,6 @@ const ROLE_CONFIG: Record<
     badgeBg: "bg-emerald-50 border-emerald-200",
     badgeText: "text-emerald-800",
     desc: "สิทธิ์สูงสุด จัดการระบบ ผู้ใช้งาน และตั้งค่าแพลตฟอร์มทั้งหมด",
-  },
-  editor: {
-    label: "บรรณาธิการ",
-    badgeBg: "bg-blue-50 border-blue-200",
-    badgeText: "text-blue-800",
-    desc: "จัดการประกาศ TOR ตรวจสอบข้อมูลราคากลาง และออกรายงาน",
   },
   user: {
     label: "ผู้ใช้งานทั่วไป",
@@ -95,11 +94,13 @@ const STATUS_CONFIG: Record<
 };
 
 export default function AdminPage() {
+  const { user: authUser, loading: authLoading } = useAuth();
+  const isAdmin = !!authUser && authUser.role === "admin";
+
   const [activeTab, setActiveTab] = useState<AdminMenuTab>("overview");
   const [stats, setStats] = useState<AdminStats>(INITIAL_ADMIN_STATS);
   const [users, setUsers] = useState<AdminUserItem[]>(INITIAL_USERS);
   const [activities, setActivities] = useState<ActivityItem[]>(INITIAL_ACTIVITIES);
-  const [loading, setLoading] = useState(false);
 
   // Search and filter states for user role management
   const [searchQuery, setSearchQuery] = useState("");
@@ -114,92 +115,52 @@ export default function AdminPage() {
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<AdminUserItem | null>(null);
   const [tempRole, setTempRole] = useState<UserRole>("user");
 
-  // Load initial data
+  // Interest category management
+  const [categories, setCategories] = useState<InterestCategory[]>(INITIAL_CATEGORIES);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<InterestCategory | null>(null);
+  const [categoryForm, setCategoryForm] = useState({ name: "", description: "", keywords: "" });
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<InterestCategory | null>(null);
+
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load initial data (only for admins, after auth has resolved)
   useEffect(() => {
+    if (authLoading || !isAdmin) return;
+
     let isMounted = true;
     async function loadData() {
-      setLoading(true);
       try {
-        const [statsData, usersData, actData] = await Promise.all([
+        const [statsData, usersData, actData, catData] = await Promise.all([
           fetchAdminStats(),
           fetchAdminUsers(),
           fetchAdminActivities(),
+          fetchInterestCategories(),
         ]);
         if (isMounted) {
           setStats(statsData);
           setUsers(usersData);
           setActivities(actData);
+          setCategories(catData);
         }
       } catch (err) {
         console.error("Error loading admin data:", err);
-      } finally {
-        if (isMounted) setLoading(false);
       }
     }
     void loadData();
     return () => {
       isMounted = false;
     };
+  }, [authLoading, isAdmin]);
+
+  // Clear pending toast timer on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
   }, []);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3500);
-  };
-
-  // Handle direct role update
-  const handleRoleChange = async (userId: string, newRole: UserRole) => {
-    const targetUser = users.find((u) => u._id === userId);
-    if (!targetUser) return;
-
-    // Optimistic UI update
-    setUsers((prev) =>
-      prev.map((u) => (u._id === userId ? { ...u, role: newRole } : u))
-    );
-
-    const res = await updateUserRoleApi(userId, newRole);
-
-    // Add activity entry
-    const newActivity: ActivityItem = {
-      id: `act-${Date.now()}`,
-      title: `เปลี่ยนบทบาทของ ${targetUser.displayName} เป็น ${ROLE_CONFIG[newRole].label}`,
-      description: `ปรับเปลี่ยนสิทธิ์การเข้าถึงระบบโดยผู้ดูแลระบบ`,
-      type: "user_role",
-      actor: "ผู้ดูแลระบบ",
-      target: targetUser.displayName,
-      createdAt: new Date().toISOString(),
-    };
-    setActivities((prev) => [newActivity, ...prev]);
-
-    showToast(res.message);
-  };
-
-  // Handle user status toggle
-  const handleStatusChange = async (userId: string, newStatus: UserStatus) => {
-    const targetUser = users.find((u) => u._id === userId);
-    if (!targetUser) return;
-
-    setUsers((prev) =>
-      prev.map((u) => (u._id === userId ? { ...u, status: newStatus } : u))
-    );
-
-    const res = await updateUserStatusApi(userId, newStatus);
-
-    const newActivity: ActivityItem = {
-      id: `act-${Date.now()}`,
-      title: `ปรับสถานะของ ${targetUser.displayName} เป็น ${STATUS_CONFIG[newStatus].label}`,
-      description: `อัปเดตสถานะบัญชีผู้ใช้งาน`,
-      type: "user_role",
-      actor: "ผู้ดูแลระบบ",
-      target: targetUser.displayName,
-      createdAt: new Date().toISOString(),
-    };
-    setActivities((prev) => [newActivity, ...prev]);
-
-    showToast(res.message);
-  };
 
   // Filtered users
   const filteredUsers = useMemo(() => {
@@ -225,34 +186,268 @@ export default function AdminPage() {
     return activities.filter((a) => a.type === activityTypeFilter);
   }, [activities, activityTypeFilter]);
 
+  // Filtered interest categories
+  const filteredCategories = useMemo(() => {
+    const q = categorySearch.toLowerCase().trim();
+    if (!q) return categories;
+    return categories.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.description ?? "").toLowerCase().includes(q) ||
+        c.keywords.some((k) => k.toLowerCase().includes(q))
+    );
+  }, [categories, categorySearch]);
+
+  // ───────── ALL HOOKS ARE ABOVE THIS LINE. Early returns are safe below. ─────────
+
+  // Admin-only access guard
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#faf7f2]">
+        <div className="text-center">
+          <ArrowPathIcon className="mx-auto size-8 animate-spin text-[#4a7c59]" />
+          <p className="mt-3 text-sm text-[#7a8b6f]">กำลังตรวจสอบสิทธิ์การเข้าถึง...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#faf7f2]">
+        <div className="text-center">
+          <ShieldCheckIcon className="mx-auto size-14 text-rose-400" />
+          <h1 className="mt-4 text-xl font-bold text-[#2d2d2d]">ไม่มีสิทธิ์เข้าถึง</h1>
+          <p className="mt-2 text-sm text-[#7a8b6f]">หน้านี้สำหรับผู้ดูแลระบบ (Admin) เท่านั้น</p>
+          <a
+            href="/homepage"
+            className="mt-5 inline-block rounded-xl bg-[#4a7c59] px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-[#3b6647]"
+          >
+            กลับหน้าหลัก
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  const showToast = (msg: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToastMessage(msg);
+    toastTimer.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimer.current = null;
+    }, 3500);
+  };
+
+  const pushActivity = (activity: Omit<ActivityItem, "id" | "createdAt">) => {
+    setActivities((prev) => [
+      {
+        ...activity,
+        id: `act-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+  };
+
+  // Handle role update (optimistic, with rollback on failure)
+  const handleRoleChange = async (userId: string, newRole: UserRole) => {
+    const targetUser = users.find((u) => u._id === userId);
+    if (!targetUser || targetUser.role === newRole) return;
+
+    const previousRole = targetUser.role;
+
+    setUsers((prev) =>
+      prev.map((u) => (u._id === userId ? { ...u, role: newRole } : u))
+    );
+
+    try {
+      const res = await updateUserRoleApi(userId, newRole);
+
+      pushActivity({
+        title: `เปลี่ยนบทบาทของ ${targetUser.displayName} เป็น ${ROLE_CONFIG[newRole].label}`,
+        description: `ปรับเปลี่ยนสิทธิ์การเข้าถึงระบบโดยผู้ดูแลระบบ`,
+        type: "user_role",
+        actor: "ผู้ดูแลระบบ",
+        target: targetUser.displayName,
+      });
+
+      showToast(res.message);
+    } catch (err) {
+      console.error("Failed to update role:", err);
+      setUsers((prev) =>
+        prev.map((u) => (u._id === userId ? { ...u, role: previousRole } : u))
+      );
+      showToast("เปลี่ยนบทบาทไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    }
+  };
+
+  // Handle user status change (optimistic, with rollback on failure)
+  const handleStatusChange = async (userId: string, newStatus: UserStatus) => {
+    const targetUser = users.find((u) => u._id === userId);
+    if (!targetUser || targetUser.status === newStatus) return;
+
+    const previousStatus = targetUser.status;
+
+    setUsers((prev) =>
+      prev.map((u) => (u._id === userId ? { ...u, status: newStatus } : u))
+    );
+
+    try {
+      const res = await updateUserStatusApi(userId, newStatus);
+
+      pushActivity({
+        title: `ปรับสถานะของ ${targetUser.displayName} เป็น ${STATUS_CONFIG[newStatus].label}`,
+        description: `อัปเดตสถานะบัญชีผู้ใช้งาน`,
+        type: "user_role",
+        actor: "ผู้ดูแลระบบ",
+        target: targetUser.displayName,
+      });
+
+      showToast(res.message);
+    } catch (err) {
+      console.error("Failed to update status:", err);
+      setUsers((prev) =>
+        prev.map((u) => (u._id === userId ? { ...u, status: previousStatus } : u))
+      );
+      showToast("ปรับสถานะไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    }
+  };
+
+  // ───────── Interest category handlers ─────────
+  const openCategoryModal = (cat?: InterestCategory) => {
+    setEditingCategory(cat ?? null);
+    setCategoryForm({
+      name: cat?.name ?? "",
+      description: cat?.description ?? "",
+      keywords: cat ? cat.keywords.join(", ") : "",
+    });
+    setCategoryModalOpen(true);
+  };
+
+  const closeCategoryModal = () => {
+    setCategoryModalOpen(false);
+    setEditingCategory(null);
+  };
+
+  const handleSaveCategory = async () => {
+    const name = categoryForm.name.trim();
+    if (!name) {
+      showToast("กรุณากรอกชื่อหมวดหมู่");
+      return;
+    }
+    const duplicated = categories.some(
+      (c) =>
+        c._id !== editingCategory?._id &&
+        c.name.trim().toLowerCase() === name.toLowerCase()
+    );
+    if (duplicated) {
+      showToast("มีหมวดหมู่ชื่อนี้อยู่แล้ว");
+      return;
+    }
+
+    const keywords = Array.from(
+      new Set(
+        categoryForm.keywords
+          .split(/[,\n]/)
+          .map((k) => k.trim())
+          .filter(Boolean)
+      )
+    );
+    const payload = {
+      name,
+      description: categoryForm.description.trim(),
+      keywords,
+    };
+
+    setCategorySaving(true);
+    try {
+      if (editingCategory) {
+        const updated = await updateInterestCategoryApi(editingCategory._id, payload);
+        setCategories((prev) =>
+          prev.map((c) => (c._id === editingCategory._id ? { ...c, ...updated } : c))
+        );
+        pushActivity({
+          title: `แก้ไขหมวดหมู่ความสนใจ "${name}"`,
+          description: "ปรับปรุงข้อมูลหมวดหมู่ที่ใช้จับคู่ TOR",
+          type: "system",
+          actor: "ผู้ดูแลระบบ",
+          target: name,
+        });
+        showToast("บันทึกการแก้ไขหมวดหมู่แล้ว");
+      } else {
+        const created = await createInterestCategoryApi(payload);
+        setCategories((prev) => [...prev, created]);
+        pushActivity({
+          title: `เพิ่มหมวดหมู่ความสนใจ "${name}"`,
+          description: "เพิ่มหมวดหมู่ใหม่ให้ผู้ใช้เลือกในหน้าโปรไฟล์",
+          type: "system",
+          actor: "ผู้ดูแลระบบ",
+          target: name,
+        });
+        showToast("เพิ่มหมวดหมู่ใหม่แล้ว");
+      }
+      closeCategoryModal();
+    } catch (err) {
+      console.error("Failed to save category:", err);
+      showToast("บันทึกหมวดหมู่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleToggleCategory = async (cat: InterestCategory) => {
+    const nextActive = !cat.active;
+    setCategories((prev) =>
+      prev.map((c) => (c._id === cat._id ? { ...c, active: nextActive } : c))
+    );
+    try {
+      await updateInterestCategoryApi(cat._id, { active: nextActive });
+      showToast(nextActive ? `เปิดใช้งาน "${cat.name}" แล้ว` : `ซ่อน "${cat.name}" จากหน้าโปรไฟล์แล้ว`);
+    } catch (err) {
+      console.error("Failed to toggle category:", err);
+      setCategories((prev) =>
+        prev.map((c) => (c._id === cat._id ? { ...c, active: cat.active } : c))
+      );
+      showToast("เปลี่ยนสถานะหมวดหมู่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    }
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    const target = categoryToDelete;
+    try {
+      await deleteInterestCategoryApi(target._id);
+      setCategories((prev) => prev.filter((c) => c._id !== target._id));
+      pushActivity({
+        title: `ลบหมวดหมู่ความสนใจ "${target.name}"`,
+        description: "นำหมวดหมู่ออกจากรายการที่ผู้ใช้เลือกได้",
+        type: "system",
+        actor: "ผู้ดูแลระบบ",
+        target: target.name,
+      });
+      showToast(`ลบหมวดหมู่ "${target.name}" แล้ว`);
+    } catch (err) {
+      console.error("Failed to delete category:", err);
+      showToast("ลบหมวดหมู่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setCategoryToDelete(null);
+    }
+  };
+
   // Sidebar Menu Items
   const menuItems = [
-    {
-      id: "overview" as AdminMenuTab,
-      label: "ภาพรวม",
-      icon: Squares2X2Icon,
-    },
-    {
-      id: "tor_management" as AdminMenuTab,
-      label: "จัดการประกาศ TOR",
-      icon: DocumentTextIcon,
-    },
+    { id: "overview" as AdminMenuTab, label: "ภาพรวม", icon: Squares2X2Icon },
+    { id: "tor_management" as AdminMenuTab, label: "จัดการประกาศ TOR", icon: DocumentTextIcon },
     {
       id: "user_roles" as AdminMenuTab,
       label: "จัดการสิทธิ์ผู้ใช้งาน",
       icon: UserGroupIcon,
       badge: `${users.length}`,
     },
-    {
-      id: "activity_feed" as AdminMenuTab,
-      label: "ฟีดกิจกรรม",
-      icon: ClockIcon,
-    },
-    {
-      id: "settings" as AdminMenuTab,
-      label: "ตั้งค่าระบบ",
-      icon: Cog6ToothIcon,
-    },
+    { id: "activity_feed" as AdminMenuTab, label: "ฟีดกิจกรรม", icon: ClockIcon },
+    { id: "categories" as AdminMenuTab, label: "หมวดหมู่ความสนใจ", icon: TagIcon },
+    { id: "settings" as AdminMenuTab, label: "ตั้งค่าระบบ", icon: Cog6ToothIcon },
   ];
 
   return (
@@ -354,7 +549,7 @@ export default function AdminPage() {
                   </p>
                 </div>
 
-                {/* 4 Stats Cards (Styled exactly as in the user screenshot) */}
+                {/* 4 Stats Cards */}
                 <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                   {/* Card 1: TOR ทั้งหมด */}
                   <div className="rounded-3xl border border-[#e8e0d0] bg-white p-5 shadow-sm transition hover:shadow-md">
@@ -403,7 +598,7 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Recent Activities Card (กิจกรรมล่าสุด) - exactly matching screenshot */}
+                {/* Recent Activities Card (กิจกรรมล่าสุด) */}
                 <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm">
                   <div className="mb-4 flex items-center justify-between">
                     <h2 className="text-base font-bold text-[#2d2d2d]">
@@ -475,21 +670,13 @@ export default function AdminPage() {
                   </div>
 
                   {/* Summary of Roles */}
-                  <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-3 text-center">
                       <p className="text-xs font-medium text-emerald-800">
                         ผู้ดูแลระบบ (Admin)
                       </p>
                       <p className="mt-1 text-xl font-bold text-emerald-900">
                         {users.filter((u) => u.role === "admin").length}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-3 text-center">
-                      <p className="text-xs font-medium text-blue-800">
-                        บรรณาธิการ (Editor)
-                      </p>
-                      <p className="mt-1 text-xl font-bold text-blue-900">
-                        {users.filter((u) => u.role === "editor").length}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-stone-200 bg-stone-50/50 p-3 text-center">
@@ -534,7 +721,7 @@ export default function AdminPage() {
                 </div>
 
                 {/* Role Privilege Explainer Cards */}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-xs">
                     <div className="flex items-center justify-between">
                       <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
@@ -549,23 +736,6 @@ export default function AdminPage() {
                     </h3>
                     <p className="mt-1 text-xs text-[#7a8b6f]">
                       เข้าถึงทุกฟังก์ชัน จัดการสิทธิ์ผู้ใช้งาน ดูแลระบบ และวิเคราะห์ข้อมูลระดับองค์กร
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-blue-200 bg-white p-4 shadow-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-bold text-blue-800">
-                        Editor
-                      </span>
-                      <span className="text-xs font-semibold text-blue-700">
-                        {users.filter((u) => u.role === "editor").length} บัญชี
-                      </span>
-                    </div>
-                    <h3 className="mt-2 text-sm font-bold text-[#2d2d2d]">
-                      บรรณาธิการ
-                    </h3>
-                    <p className="mt-1 text-xs text-[#7a8b6f]">
-                      จัดการประกาศ TOR ตรวจสอบข้อมูลราคากลาง จัดหมวดหมู่ และนำเข้าข้อมูล e-GP
                     </p>
                   </div>
 
@@ -619,7 +789,6 @@ export default function AdminPage() {
                       >
                         <option value="all">ทุกบทบาท (All Roles)</option>
                         <option value="admin">ผู้ดูแลระบบ (Admin)</option>
-                        <option value="editor">บรรณาธิการ (Editor)</option>
                         <option value="user">ผู้ใช้งานทั่วไป (User)</option>
                       </select>
 
@@ -733,9 +902,6 @@ export default function AdminPage() {
                                     >
                                       <option value="admin">
                                         ผู้ดูแลระบบ (Admin)
-                                      </option>
-                                      <option value="editor">
-                                        บรรณาธิการ (Editor)
                                       </option>
                                       <option value="user">
                                         ผู้ใช้งานทั่วไป (User)
@@ -1004,8 +1170,146 @@ export default function AdminPage() {
               </div>
             )}
 
+            {/* VIEW 4.5: INTEREST CATEGORIES (หมวดหมู่ความสนใจ) */}
+            {activeTab === "categories" && (
+              <div className="space-y-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h1 className="text-2xl font-bold tracking-tight text-[#2d2d2d] md:text-3xl">
+                      หมวดหมู่ความสนใจ
+                    </h1>
+                    <p className="text-sm text-[#7a8b6f]">
+                      จัดการหมวดหมู่ที่ผู้ใช้เลือกได้ในหน้าโปรไฟล์ ซึ่งใช้จับคู่กับ TOR ที่แนะนำ
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => openCategoryModal()}
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#4a7c59] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#3b6647] transition"
+                  >
+                    <PlusIcon className="size-4" />
+                    เพิ่มหมวดหมู่
+                  </button>
+                </div>
 
-            {/* VIEW 7: SYSTEM SETTINGS (ตั้งค่าระบบ) */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-[#eaf1ec] px-3 py-1 text-xs font-semibold text-[#4a7c59]">
+                    ทั้งหมด: {categories.length} หมวด
+                  </span>
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                    เปิดใช้งาน: {categories.filter((c) => c.active).length} หมวด
+                  </span>
+                </div>
+
+                <div className="rounded-3xl border border-[#e8e0d0] bg-white p-4 shadow-sm">
+                  <div className="relative">
+                    <MagnifyingGlassIcon className="pointer-events-none absolute left-3.5 top-1/2 size-4.5 -translate-y-1/2 text-[#8a8070]" />
+                    <input
+                      type="text"
+                      value={categorySearch}
+                      onChange={(e) => setCategorySearch(e.target.value)}
+                      placeholder="ค้นหาตามชื่อหมวดหมู่หรือคำสำคัญ..."
+                      className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] py-2 pl-10 pr-4 text-sm text-[#2d2d2d] placeholder-[#998f80] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                    />
+                  </div>
+                </div>
+
+                {filteredCategories.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-[#e8e0d0] bg-white py-14 text-center">
+                    <TagIcon className="mx-auto size-10 text-[#c9bfae]" />
+                    <p className="mt-3 text-sm text-[#8a8070]">
+                      {categories.length === 0
+                        ? "ยังไม่มีหมวดหมู่ความสนใจ เริ่มต้นด้วยการเพิ่มหมวดหมู่แรก"
+                        : "ไม่พบหมวดหมู่ที่ตรงกับคำค้นหา"}
+                    </p>
+                    {categories.length === 0 && (
+                      <button
+                        onClick={() => openCategoryModal()}
+                        className="mt-4 rounded-xl bg-[#4a7c59] px-4 py-2 text-xs font-semibold text-white hover:bg-[#3b6647]"
+                      >
+                        เพิ่มหมวดหมู่
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {filteredCategories.map((cat) => (
+                      <div
+                        key={cat._id}
+                        className={`rounded-3xl border bg-white p-5 shadow-sm transition ${
+                          cat.active ? "border-[#e8e0d0]" : "border-[#e8e0d0] opacity-70"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="truncate text-sm font-bold text-[#2d2d2d]">
+                              {cat.name}
+                            </h3>
+                            {typeof cat.userCount === "number" && (
+                              <p className="mt-0.5 text-[11px] text-[#998f80]">
+                                ผู้ใช้เลือกไว้ {cat.userCount.toLocaleString()} ราย
+                              </p>
+                            )}
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                              cat.active
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-stone-100 text-stone-600"
+                            }`}
+                          >
+                            {cat.active ? "เปิดใช้งาน" : "ซ่อนอยู่"}
+                          </span>
+                        </div>
+
+                        {cat.description && (
+                          <p className="mt-2 text-xs text-[#6e6456]">{cat.description}</p>
+                        )}
+
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {cat.keywords.length === 0 ? (
+                            <span className="text-[11px] text-[#998f80]">ยังไม่มีคำสำคัญ</span>
+                          ) : (
+                            cat.keywords.map((k) => (
+                              <span
+                                key={k}
+                                className="rounded-full bg-[#f5f0e8] px-2.5 py-0.5 text-[11px] font-medium text-[#5c5446]"
+                              >
+                                {k}
+                              </span>
+                            ))
+                          )}
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-end gap-1.5 border-t border-[#f0e8dc] pt-3">
+                          <button
+                            onClick={() => void handleToggleCategory(cat)}
+                            className="rounded-lg border border-[#e8e0d0] px-2.5 py-1 text-xs font-semibold text-[#5c5446] hover:bg-[#faf7f2]"
+                          >
+                            {cat.active ? "ซ่อน" : "เปิดใช้งาน"}
+                          </button>
+                          <button
+                            onClick={() => openCategoryModal(cat)}
+                            className="rounded-lg border border-[#e8e0d0] p-1.5 text-[#7a8b6f] hover:bg-[#faf7f2] hover:text-[#2d2d2d]"
+                            title="แก้ไขหมวดหมู่"
+                          >
+                            <PencilSquareIcon className="size-4" />
+                          </button>
+                          <button
+                            onClick={() => setCategoryToDelete(cat)}
+                            className="rounded-lg border border-rose-200 p-1.5 text-rose-600 hover:bg-rose-50"
+                            title="ลบหมวดหมู่"
+                          >
+                            <TrashIcon className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* VIEW 5: SYSTEM SETTINGS (ตั้งค่าระบบ) */}
             {activeTab === "settings" && (
               <div className="space-y-6">
                 <div>
@@ -1066,6 +1370,118 @@ export default function AdminPage() {
         </div>
       </main>
 
+      {/* Add / Edit Category Modal */}
+      {categoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-lg rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#f0e8dc] pb-4">
+              <h3 className="text-lg font-bold text-[#2d2d2d]">
+                {editingCategory ? "แก้ไขหมวดหมู่ความสนใจ" : "เพิ่มหมวดหมู่ความสนใจ"}
+              </h3>
+              <button
+                onClick={closeCategoryModal}
+                className="rounded-lg p-1 text-[#8a8070] hover:bg-[#faf7f2] hover:text-[#2d2d2d]"
+              >
+                <XMarkIcon className="size-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-bold text-[#7a8b6f]">
+                  ชื่อหมวดหมู่
+                </label>
+                <input
+                  type="text"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="เช่น ก่อสร้างและโครงสร้างพื้นฐาน"
+                  className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-2 text-sm text-[#2d2d2d] placeholder-[#998f80] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-bold text-[#7a8b6f]">
+                  คำอธิบาย (ไม่บังคับ)
+                </label>
+                <textarea
+                  value={categoryForm.description}
+                  onChange={(e) =>
+                    setCategoryForm((f) => ({ ...f, description: e.target.value }))
+                  }
+                  rows={2}
+                  placeholder="อธิบายสั้น ๆ ว่าหมวดหมู่นี้ครอบคลุมโครงการประเภทใด"
+                  className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-2 text-sm text-[#2d2d2d] placeholder-[#998f80] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-bold text-[#7a8b6f]">
+                  คำสำคัญสำหรับจับคู่ TOR
+                </label>
+                <textarea
+                  value={categoryForm.keywords}
+                  onChange={(e) =>
+                    setCategoryForm((f) => ({ ...f, keywords: e.target.value }))
+                  }
+                  rows={3}
+                  placeholder="คั่นด้วยเครื่องหมายจุลภาค เช่น ถนน, สะพาน, ระบบประปา"
+                  className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-2 text-sm text-[#2d2d2d] placeholder-[#998f80] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
+                />
+                <p className="mt-1 text-[11px] text-[#998f80]">
+                  ระบบใช้คำเหล่านี้เทียบกับชื่อและรายละเอียดของ TOR เพื่อแนะนำให้ผู้ใช้ที่เลือกหมวดหมู่นี้
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-[#f0e8dc] pt-4">
+              <button
+                onClick={closeCategoryModal}
+                className="rounded-xl border border-[#e8e0d0] px-4 py-2 text-sm font-medium text-[#5c5446] hover:bg-[#faf7f2]"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={() => void handleSaveCategory()}
+                disabled={categorySaving}
+                className="rounded-xl bg-[#4a7c59] px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-[#3b6647] disabled:opacity-60"
+              >
+                {categorySaving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Category Confirm */}
+      {categoryToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-md rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-[#2d2d2d]">
+              ลบหมวดหมู่ "{categoryToDelete.name}"
+            </h3>
+            <p className="mt-2 text-sm text-[#6e6456]">
+              หมวดหมู่นี้จะหายจากรายการที่ผู้ใช้เลือกได้ในหน้าโปรไฟล์ และจะไม่ถูกใช้จับคู่ TOR อีก
+              หากต้องการเก็บไว้ก่อน ให้เลือก "ซ่อน" แทนการลบ
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setCategoryToDelete(null)}
+                className="rounded-xl border border-[#e8e0d0] px-4 py-2 text-sm font-medium text-[#5c5446] hover:bg-[#faf7f2]"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={() => void handleDeleteCategory()}
+                className="rounded-xl bg-rose-600 px-5 py-2 text-sm font-bold text-white shadow-sm hover:bg-rose-700"
+              >
+                ลบหมวดหมู่
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Role Modal */}
       {selectedUserForEdit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs animate-fade-in">
@@ -1101,7 +1517,7 @@ export default function AdminPage() {
                   เลือกบทบาทใหม่ (Select Role):
                 </label>
                 <div className="space-y-2">
-                  {(["admin", "editor", "user"] as UserRole[]).map((r) => {
+                  {(["admin", "user"] as UserRole[]).map((r) => {
                     const cfg = ROLE_CONFIG[r];
                     const isSelected = tempRole === r;
                     return (

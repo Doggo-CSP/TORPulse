@@ -9,7 +9,6 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
       activeUsers,
       pendingUsers,
       adminCount,
-      editorCount,
       userCount,
       totalTors,
       awardedCount,
@@ -18,7 +17,6 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
       User.countDocuments({ $or: [{ status: 'active' }, { status: { $exists: false } }] }),
       User.countDocuments({ status: 'pending' }),
       User.countDocuments({ role: 'admin' }),
-      User.countDocuments({ role: 'editor' }),
       User.countDocuments({ $or: [{ role: 'user' }, { role: { $exists: false } }] }),
       TorModel.countDocuments(),
       TorModel.countDocuments({ awardedPriceBaht: { $ne: null } }),
@@ -36,7 +34,6 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
       },
       role_counts: {
         admins: adminCount,
-        editors: editorCount,
         users: userCount,
         pending: pendingUsers,
       },
@@ -111,7 +108,7 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
     const { userId } = req.params
     const { role } = req.body
 
-    if (!['admin', 'editor', 'user'].includes(role)) {
+    if (!['admin', 'user'].includes(role)) {
       res.status(400).json({ success: false, message: 'บทบาทไม่ถูกต้อง' })
       return
     }
@@ -124,7 +121,6 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
 
     const roleMap: Record<string, string> = {
       admin: 'ผู้ดูแลระบบ (Admin)',
-      editor: 'บรรณาธิการ (Editor)',
       user: 'ผู้ใช้งานทั่วไป (User)',
     }
 

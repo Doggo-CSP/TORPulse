@@ -1,6 +1,6 @@
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
-export type UserRole = "admin" | "editor" | "user";
+export type UserRole = "admin" | "user";
 export type UserStatus = "active" | "pending" | "suspended";
 export type AccountType = "personal" | "company" | "agency";
 
@@ -38,7 +38,6 @@ export interface AdminStats {
   awarded_projects: number;
   role_counts?: {
     admins: number;
-    editors: number;
     users: number;
     pending: number;
   };
@@ -52,7 +51,6 @@ export const INITIAL_ADMIN_STATS: AdminStats = {
   awarded_projects: 6,
   role_counts: {
     admins: 4,
-    editors: 12,
     users: 196,
     pending: 2,
   },
@@ -126,7 +124,7 @@ export const INITIAL_USERS: AdminUserItem[] = [
     name: "Somchai Prasert",
     displayName: "สมชาย ประเสริฐยิ่ง",
     email: "somchai.p@bma.go.th",
-    role: "editor",
+    role: "user",
     status: "active",
     accountType: "agency",
     agencyName: "กรุงเทพมหานคร (BMA)",
@@ -168,7 +166,7 @@ export const INITIAL_USERS: AdminUserItem[] = [
     name: "Pattarapon Chuenjit",
     displayName: "ภัทรพล ชื่นจิตร์",
     email: "pattarapon.c@nectec.or.th",
-    role: "editor",
+    role: "user",
     status: "active",
     accountType: "agency",
     agencyName: "NECTEC สวทช.",
@@ -306,7 +304,6 @@ export async function updateUserRoleApi(
   } catch {
     const roleMap: Record<UserRole, string> = {
       admin: "ผู้ดูแลระบบ (Admin)",
-      editor: "บรรณาธิการ (Editor)",
       user: "ผู้ใช้งานทั่วไป (User)",
     };
     return {
@@ -339,5 +336,130 @@ export async function updateUserStatusApi(
       success: true,
       message: `ปรับสถานะเป็น ${statusMap[status]} สำเร็จ`,
     };
+  }
+}
+
+export interface InterestCategory {
+  _id: string;
+  name: string;
+  description?: string;
+  keywords: string[];
+  active: boolean;
+  userCount?: number; // จำนวนผู้ใช้ที่เลือกหมวดนี้ (backend ส่งมาหรือไม่ก็ได้)
+}
+
+export type InterestCategoryInput = Partial<
+  Pick<InterestCategory, "name" | "description" | "keywords" | "active">
+>;
+
+export const INITIAL_CATEGORIES: InterestCategory[] = [
+  {
+    _id: "cat-01",
+    name: "ก่อสร้างและโครงสร้างพื้นฐาน",
+    description: "งานก่อสร้างอาคาร ถนน สะพาน และระบบสาธารณูปโภค",
+    keywords: ["ก่อสร้าง", "ถนน", "สะพาน", "ประปา"],
+    active: true,
+    userCount: 64,
+  },
+  {
+    _id: "cat-02",
+    name: "เทคโนโลยีสารสนเทศ",
+    description: "ระบบซอฟต์แวร์ ฮาร์ดแวร์ เครือข่าย และบริการคลาวด์",
+    keywords: ["ซอฟต์แวร์", "คอมพิวเตอร์", "เครือข่าย", "คลาวด์"],
+    active: true,
+    userCount: 88,
+  },
+  {
+    _id: "cat-03",
+    name: "ที่ปรึกษาและบริการวิชาชีพ",
+    description: "งานจ้างที่ปรึกษา ศึกษา วิจัย และออกแบบ",
+    keywords: ["ที่ปรึกษา", "ออกแบบ", "วิจัย"],
+    active: true,
+    userCount: 41,
+  },
+  {
+    _id: "cat-04",
+    name: "ครุภัณฑ์ทางการแพทย์",
+    description: "เครื่องมือแพทย์ ยา และเวชภัณฑ์",
+    keywords: ["เครื่องมือแพทย์", "เวชภัณฑ์"],
+    active: false,
+    userCount: 12,
+  },
+];
+
+// สำเนาในหน่วยความจำ ใช้เฉพาะตอนเชื่อมต่อ backend ไม่ได้
+let mockCategories: InterestCategory[] = [...INITIAL_CATEGORIES];
+
+export async function fetchInterestCategories(): Promise<InterestCategory[]> {
+  try {
+    const res = await fetch(`${apiUrl}/api/v1/admin/interest-categories`, {
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Backend unavailable");
+    const data = await res.json();
+    return data.categories;
+  } catch {
+    return [...mockCategories];
+  }
+}
+
+export async function createInterestCategoryApi(
+  input: InterestCategoryInput
+): Promise<InterestCategory> {
+  try {
+    const res = await fetch(`${apiUrl}/api/v1/admin/interest-categories`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ active: true, ...input }),
+    });
+    if (!res.ok) throw new Error("Backend error");
+    const data = await res.json();
+    return data.category ?? data;
+  } catch {
+    const created: InterestCategory = {
+      _id: `cat-${Date.now()}`,
+      name: input.name ?? "",
+      description: input.description ?? "",
+      keywords: input.keywords ?? [],
+      active: input.active ?? true,
+      userCount: 0,
+    };
+    mockCategories = [...mockCategories, created];
+    return created;
+  }
+}
+
+export async function updateInterestCategoryApi(
+  id: string,
+  input: InterestCategoryInput
+): Promise<InterestCategory> {
+  try {
+    const res = await fetch(`${apiUrl}/api/v1/admin/interest-categories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error("Backend error");
+    const data = await res.json();
+    return data.category ?? data;
+  } catch {
+    const current = mockCategories.find((c) => c._id === id);
+    const updated = { ...(current as InterestCategory), ...input, _id: id };
+    mockCategories = mockCategories.map((c) => (c._id === id ? updated : c));
+    return updated;
+  }
+}
+
+export async function deleteInterestCategoryApi(id: string): Promise<void> {
+  try {
+    const res = await fetch(`${apiUrl}/api/v1/admin/interest-categories/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error("Backend error");
+  } catch {
+    mockCategories = mockCategories.filter((c) => c._id !== id);
   }
 }
