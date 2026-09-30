@@ -1,9 +1,11 @@
 import type { Request, Response } from 'express'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
 import { User, type UserDocument } from '../auth/user.model.js'
-import { TorModel } from '../tor/tor.model.js'
+import { CATEGORY_LABELS, deriveCategory } from '../tor/tor.controller.js'
+import { TorModel, type Tor, type TorReviewStatus } from '../tor/tor.model.js'
 import { UserBookmarkModel } from '../user/user-bookmark.model.js'
-import type { UserChangeOutcome } from './admin.types.js'
+import type { TorChangeOutcome, UserChangeOutcome } from './admin.types.js'
+import { adminTorListQuerySchema, updateAdminTorSchema } from './admin.validation.js'
 import { createAuditLog, listRecentAuditLogs } from './audit-log.repository.js'
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -374,6 +376,10 @@ const ACTIVITY_LIMIT = 20
 const ACTIVITY_TITLES: Record<string, string> = {
   'user.role.update': 'เปลี่ยนบทบาทผู้ใช้งาน',
   'user.status.update': 'เปลี่ยนสถานะผู้ใช้งาน',
+  'tor.update': 'แก้ไขข้อมูล TOR',
+  'tor.verify': 'ยืนยันความถูกต้องของ TOR',
+  'tor.archive': 'เก็บ TOR เข้าคลัง',
+  'tor.delete': 'ลบ TOR',
 }
 
 const toActivityType = (action: string): string => {
@@ -399,10 +405,16 @@ export const getAdminActivities = async (_req: Request, res: Response): Promise<
     const users = await User.find({ _id: { $in: userIds } }, { name: 1, displayName: 1, email: 1 })
       .lean()
     const userById = new Map(users.map((u) => [u._id.toString(), u]))
+    const torIds = logs.filter((log) => log.targetType === 'tor').map((log) => log.targetId)
+    const tors = await TorModel.find({ _id: { $in: torIds } }, { projectTitle: 1 }).lean()
+    const torTitleById = new Map(tors.map((tor) => [tor._id.toString(), tor.projectTitle]))
 
     const activities = logs.map((log) => {
       const actor = userById.get(log.actorId.toString())
-      const target = log.targetType === 'user' ? userById.get(log.targetId.toString()) : undefined
+      const target =
+        log.targetType === 'user'
+          ? userById.get(log.targetId.toString())?.email
+          : torTitleById.get(log.targetId.toString())
 
       return {
         id: log._id.toString(),
@@ -410,7 +422,7 @@ export const getAdminActivities = async (_req: Request, res: Response): Promise<
         description: describeChange(log.before, log.after),
         type: toActivityType(log.action),
         actor: actor ? actor.displayName || actor.name : 'ไม่ทราบผู้ใช้งาน',
-        target: target?.email ?? log.targetId.toString(),
+        target: target ?? log.targetId.toString(),
         createdAt: new Date(log.createdAt).toISOString(),
       }
     })
@@ -420,3 +432,311 @@ export const getAdminActivities = async (_req: Request, res: Response): Promise<
     res.status(500).json({ message: 'Failed to fetch activities', error: (error as Error).message })
   }
 }
+
+// ---------------------------------------------------------------------------
+// TOR management (UC-14)
+// ---------------------------------------------------------------------------
+
+type AdminTorLean = Tor & { _id: Types.ObjectId }
+
+const TOR_STATUS_TRANSITIONS: Record<'verified' | 'archived' | 'deleted', TorReviewStatus[]> = {
+  verified: ['unverified', 'archived'],
+  archived: ['unverified', 'verified'],
+  deleted: ['unverified', 'verified', 'archived'],
+}
+
+const toAdminTorListItem = (tor: AdminTorLean) => {
+  const category = deriveCategory(tor.technologies ?? [])
+  return {
+    id: tor._id.toString(),
+    externalId: tor.externalId,
+    projectTitle: tor.projectTitle,
+    agencyName: tor.agencyName ?? null,
+    sourceAdapter: tor.sourceAdapter,
+    dataSourceId: tor.dataSourceId.toString(),
+    category,
+    categoryLabel: CATEGORY_LABELS[category],
+    confidence: tor.confidence,
+    reviewStatus: tor.reviewStatus ?? 'unverified',
+    budgetBaht: tor.budgetBaht ?? null,
+    createdAt: tor.createdAt,
+    updatedAt: tor.updatedAt,
+  }
+}
+
+const toAdminTorDetail = (tor: AdminTorLean) => ({
+  ...toAdminTorListItem(tor),
+  ingestionJobId: tor.ingestionJobId.toString(),
+  sourceVersion: tor.sourceVersion,
+  detailUrl: tor.detailUrl,
+  documents: tor.documents ?? [],
+  departmentName: tor.departmentName ?? null,
+  departmentSubName: tor.departmentSubName ?? null,
+  projectStatus: tor.projectStatus ?? null,
+  summary: tor.summary ?? null,
+  scope: tor.scope ?? null,
+  objectives: tor.objectives ?? [],
+  requirements: tor.requirements ?? [],
+  technologies: tor.technologies ?? [],
+  bidderQualifications: tor.bidderQualifications ?? [],
+  deliverables: tor.deliverables ?? [],
+  timeline: tor.timeline ?? [],
+  evaluationCriteria: tor.evaluationCriteria ?? [],
+  midPriceBaht: tor.midPriceBaht ?? null,
+  awardedPriceBaht: tor.awardedPriceBaht ?? null,
+  submissionDeadline: tor.submissionDeadline ?? null,
+  contactInformation: tor.contactInformation ?? [],
+  classificationReason: tor.classificationReason,
+  analysisModel: tor.analysisModel,
+  analysisVersion: tor.analysisVersion,
+  analyzedAt: tor.analyzedAt,
+})
+
+export const getAdminTors = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = adminTorListQuerySchema.safeParse(req.query)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'พารามิเตอร์ไม่ถูกต้อง' })
+      return
+    }
+
+    const {
+      q,
+      status,
+      category,
+      confidence_min: confidenceMin,
+      confidence_max: confidenceMax,
+      data_source_id: dataSourceId,
+      date_from: dateFrom,
+      date_to: dateTo,
+      page,
+      page_size: pageSize,
+    } = parsed.data
+
+    const filter: Record<string, unknown> = {}
+    if (status === 'all') {
+      filter.reviewStatus = { $ne: 'deleted' }
+    } else if (status === 'unverified') {
+      filter.reviewStatus = { $in: ['unverified', null] }
+    } else {
+      filter.reviewStatus = status
+    }
+    if (q) filter.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
+    if (confidenceMin !== undefined || confidenceMax !== undefined) {
+      const confidence: Record<string, number> = {}
+      if (confidenceMin !== undefined) confidence.$gte = confidenceMin
+      if (confidenceMax !== undefined) confidence.$lte = confidenceMax
+      filter.confidence = confidence
+    }
+    if (dataSourceId) filter.dataSourceId = dataSourceId
+    if (dateFrom || dateTo) {
+      const createdAt: Record<string, Date> = {}
+      if (dateFrom) createdAt.$gte = dateFrom
+      if (dateTo) createdAt.$lte = dateTo
+      filter.createdAt = createdAt
+    }
+
+    const docs = await TorModel.find(filter).sort({ createdAt: -1 }).lean()
+    const items = docs
+      .map(toAdminTorListItem)
+      .filter((item) => !category || item.category === category)
+
+    const total = items.length
+    const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize)
+    const tors = items.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
+
+    res.json({ tors, total, page, totalPages })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+export const getAdminTorById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { torId } = req.params
+
+    if (!isObjectIdOrHexString(torId)) {
+      res.status(400).json({ success: false, message: 'รหัส TOR ไม่ถูกต้อง' })
+      return
+    }
+
+    const tor = await TorModel.findById(torId).lean()
+    if (!tor) {
+      res.status(404).json({ success: false, message: 'ไม่พบ TOR' })
+      return
+    }
+
+    res.json({ tor: toAdminTorDetail(tor) })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+export const updateAdminTor = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { torId } = req.params
+
+    if (!isObjectIdOrHexString(torId)) {
+      res.status(400).json({ success: false, message: 'รหัส TOR ไม่ถูกต้อง' })
+      return
+    }
+
+    const parsed = updateAdminTorSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'ข้อมูลที่แก้ไขไม่ถูกต้อง' })
+      return
+    }
+
+    const changes = parsed.data
+    const actorId = req.user!._id
+    let outcome = 'not_found' as TorChangeOutcome
+    let updated = null as AdminTorLean | null
+
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        outcome = 'not_found'
+        const tor = await TorModel.findById(torId).session(session).lean()
+        if (!tor) return
+
+        if (tor.reviewStatus === 'deleted') {
+          outcome = 'deleted'
+          return
+        }
+
+        const current = tor as unknown as Record<string, unknown>
+        const before = Object.fromEntries(
+          Object.keys(changes).map((key) => [key, current[key] ?? null]),
+        )
+
+        updated = await TorModel.findByIdAndUpdate(
+          torId,
+          { $set: changes },
+          { new: true, runValidators: true, session },
+        ).lean()
+        if (!updated) return
+
+        await createAuditLog(
+          {
+            actorId,
+            action: 'tor.update',
+            targetType: 'tor',
+            targetId: updated._id,
+            before,
+            after: changes,
+          },
+          session,
+        )
+        outcome = 'updated'
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    if (outcome === 'deleted') {
+      res.status(400).json({ success: false, message: 'TOR นี้ถูกลบแล้ว' })
+      return
+    }
+
+    if (outcome === 'not_found' || !updated) {
+      res.status(404).json({ success: false, message: 'ไม่พบ TOR' })
+      return
+    }
+
+    res.json({ success: true, message: 'แก้ไขข้อมูล TOR สำเร็จ', tor: toAdminTorDetail(updated) })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+const changeTorReviewStatus = async (
+  req: Request,
+  res: Response,
+  nextStatus: 'verified' | 'archived' | 'deleted',
+  action: string,
+  successMessage: string,
+): Promise<void> => {
+  try {
+    const { torId } = req.params
+
+    if (!isObjectIdOrHexString(torId)) {
+      res.status(400).json({ success: false, message: 'รหัส TOR ไม่ถูกต้อง' })
+      return
+    }
+
+    const actorId = req.user!._id
+    let outcome = 'not_found' as TorChangeOutcome
+    let previousStatus = 'unverified' as TorReviewStatus
+
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        outcome = 'not_found'
+        const tor = await TorModel.findById(torId).session(session).lean()
+        if (!tor) return
+
+        previousStatus = tor.reviewStatus ?? 'unverified'
+        if (previousStatus === 'deleted') {
+          outcome = 'deleted'
+          return
+        }
+
+        if (!TOR_STATUS_TRANSITIONS[nextStatus].includes(previousStatus)) {
+          outcome = 'invalid_transition'
+          return
+        }
+
+        await TorModel.updateOne(
+          { _id: tor._id },
+          { $set: { reviewStatus: nextStatus } },
+          { session },
+        )
+        await createAuditLog(
+          {
+            actorId,
+            action,
+            targetType: 'tor',
+            targetId: tor._id,
+            before: { reviewStatus: previousStatus },
+            after: { reviewStatus: nextStatus },
+          },
+          session,
+        )
+        outcome = 'updated'
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    if (outcome === 'not_found') {
+      res.status(404).json({ success: false, message: 'ไม่พบ TOR' })
+      return
+    }
+
+    if (outcome === 'deleted') {
+      res.status(400).json({ success: false, message: 'TOR นี้ถูกลบแล้ว' })
+      return
+    }
+
+    if (outcome === 'invalid_transition') {
+      res.status(400).json({
+        success: false,
+        message: `ไม่สามารถเปลี่ยนสถานะจาก ${previousStatus} เป็น ${nextStatus} ได้`,
+      })
+      return
+    }
+
+    res.json({ success: true, message: successMessage, reviewStatus: nextStatus })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+export const verifyAdminTor = (req: Request, res: Response): Promise<void> =>
+  changeTorReviewStatus(req, res, 'verified', 'tor.verify', 'ยืนยันความถูกต้องของ TOR สำเร็จ')
+
+export const archiveAdminTor = (req: Request, res: Response): Promise<void> =>
+  changeTorReviewStatus(req, res, 'archived', 'tor.archive', 'เก็บ TOR เข้าคลังสำเร็จ')
+
+export const deleteAdminTor = (req: Request, res: Response): Promise<void> =>
+  changeTorReviewStatus(req, res, 'deleted', 'tor.delete', 'ลบ TOR สำเร็จ')

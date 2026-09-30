@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import type { Request, Response } from 'express'
 import { isObjectIdOrHexString } from 'mongoose'
 
-import { TorModel } from './tor.model.js'
+import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from './tor.model.js'
 
 // ---------------------------------------------------------------------------
 // Category derivation (pure, no DB) — shared with homepage.controller.ts
@@ -136,10 +136,11 @@ export function toTorListItem(tor: TorLeanFields) {
 export async function getFilterOptionsHandler(_req: Request, res: Response): Promise<void> {
   const [yearRows, technologies] = await Promise.all([
     TorModel.aggregate<{ _id: number }>([
+      { $match: PUBLIC_TOR_FILTER },
       { $group: { _id: { $year: '$updatedAt' } } },
       { $sort: { _id: -1 } },
     ]),
-    TorModel.distinct('technologies'),
+    TorModel.distinct('technologies', PUBLIC_TOR_FILTER),
   ])
 
   res.json({
@@ -178,7 +179,7 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
   const page = Math.max(1, parseNumberParam(req.query.page) ?? 1)
   const limit = Math.min(MAX_LIMIT, Math.max(1, parseNumberParam(req.query.limit) ?? DEFAULT_LIMIT))
 
-  const query: Record<string, unknown> = {}
+  const query: Record<string, unknown> = { ...PUBLIC_TOR_FILTER }
   if (q) query.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
   if (technology && technology !== 'all') {
     const techList = technology
@@ -219,7 +220,7 @@ export async function getTorByIdHandler(req: Request, res: Response): Promise<vo
   }
 
   const tor = await TorModel.findById(id).lean()
-  if (!tor) {
+  if (!tor || (tor.reviewStatus && HIDDEN_TOR_REVIEW_STATUSES.includes(tor.reviewStatus))) {
     res.status(404).json({ message: 'TOR not found' })
     return
   }
@@ -268,7 +269,10 @@ export async function getRecommendationsHandler(req: Request, res: Response): Pr
   }
 
   const profile: UserInterestProfile = { userId: req.user._id.toString() }
-  const candidates = await TorModel.find().sort({ createdAt: -1 }).limit(CANDIDATE_POOL_SIZE).lean()
+  const candidates = await TorModel.find(PUBLIC_TOR_FILTER)
+    .sort({ createdAt: -1 })
+    .limit(CANDIDATE_POOL_SIZE)
+    .lean()
 
   const items = candidates
     .map((tor) => ({

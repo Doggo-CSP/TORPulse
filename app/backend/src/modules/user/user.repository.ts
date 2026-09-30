@@ -1,6 +1,7 @@
 import type { Types } from 'mongoose'
 
 import { User } from '../auth/user.model.js'
+import { PUBLIC_TOR_FILTER } from '../tor/tor.model.js'
 import { UserBookmarkModel } from './user-bookmark.model.js'
 import type { UpdateProfileInput } from './user.types.js'
 
@@ -34,7 +35,9 @@ export async function removeBookmark(userId: Types.ObjectId | string, torId: str
 }
 
 export async function listBookmarksByUser(userId: Types.ObjectId | string) {
-  return UserBookmarkModel.find({ userId }).populate('torId').sort({ createdAt: -1 })
+  return UserBookmarkModel.find({ userId })
+    .populate({ path: 'torId', match: PUBLIC_TOR_FILTER })
+    .sort({ createdAt: -1 })
 }
 
 export async function countBookmarksByUser(userId: Types.ObjectId | string) {

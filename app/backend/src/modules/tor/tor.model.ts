@@ -1,5 +1,13 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
+export const TOR_REVIEW_STATUSES = ['unverified', 'verified', 'archived', 'deleted'] as const
+export type TorReviewStatus = (typeof TOR_REVIEW_STATUSES)[number]
+
+// Archived and soft-deleted TORs stay in the database but are hidden from public endpoints.
+// Records created before reviewStatus existed have no value and stay visible.
+export const HIDDEN_TOR_REVIEW_STATUSES: TorReviewStatus[] = ['archived', 'deleted']
+export const PUBLIC_TOR_FILTER = { reviewStatus: { $nin: HIDDEN_TOR_REVIEW_STATUSES } }
+
 const sourceDocumentSchema = new Schema(
   {
     fileName: {
@@ -119,6 +127,31 @@ const torSchema = new Schema(
     submissionDeadline: {
       type: String,
       default: null,
+    },
+    scope: {
+      type: String,
+      default: null,
+    },
+    deliverables: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    timeline: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    evaluationCriteria: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    reviewStatus: {
+      type: String,
+      required: true,
+      enum: TOR_REVIEW_STATUSES,
+      default: 'unverified',
     },
     contactInformation: {
       type: [String],

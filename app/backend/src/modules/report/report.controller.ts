@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express'
 
 import { deriveCategory, type TorCategory } from '../tor/tor.controller.js'
-import { TorModel } from '../tor/tor.model.js'
+import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 import {
   CATEGORY_LABEL_TO_KEY,
   REPORT_CATEGORY_LABELS,
@@ -50,7 +50,7 @@ function savingsPct(referencePriceBaht: number, winningPriceBaht: number): numbe
 }
 
 function baseMatch(cutoff: Date | null, agencyName?: string): Record<string, unknown> {
-  const match: Record<string, unknown> = { awardedPriceBaht: { $ne: null } }
+  const match: Record<string, unknown> = { ...PUBLIC_TOR_FILTER, awardedPriceBaht: { $ne: null } }
   if (cutoff) match.analyzedAt = { $gte: cutoff }
   if (agencyName) Object.assign(match, agencyNameMatchForDepartment(agencyName))
   return match

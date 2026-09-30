@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express'
 
 import { CATEGORY_LABELS, deriveCategory, type TorCategory } from '../tor/tor.controller.js'
-import { TorModel } from '../tor/tor.model.js'
+import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000
 
@@ -37,6 +37,7 @@ export async function getSummaryHandler(_req: Request, res: Response): Promise<v
     new_this_week: Array<{ count: number }>
     last_updated: Array<{ updatedAt: Date }>
   }>([
+    { $match: PUBLIC_TOR_FILTER },
     {
       $facet: {
         total_tors: [{ $count: 'count' }],
@@ -69,6 +70,7 @@ export async function getSummaryHandler(_req: Request, res: Response): Promise<v
 export async function getAnalyticsHandler(_req: Request, res: Response): Promise<void> {
   const [topTechnologies, torDocs] = await Promise.all([
     TorModel.aggregate<{ _id: string; count: number; percentage: number }>([
+      { $match: PUBLIC_TOR_FILTER },
       { $unwind: '$technologies' },
       { $group: { _id: '$technologies', count: { $sum: 1 } } },
       { $setWindowFields: { output: { total: { $sum: '$count' } } } },
@@ -83,7 +85,7 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
       { $limit: 10 },
     ]),
     TorModel.find(
-      {},
+      PUBLIC_TOR_FILTER,
       { technologies: 1, midPriceBaht: 1, awardedPriceBaht: 1, _id: 0 },
     ).lean(),
   ])
