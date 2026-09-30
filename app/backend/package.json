@@ -11,6 +11,7 @@
     "start:ingestion": "node dist/apps/ingestion-worker/main.js",
     "dev:producer": "tsx watch src/apps/queue-producer/main.ts",
     "start:producer": "node dist/apps/queue-producer/main.js",
+    "test": "npm run test:central-egp && npm run test:producer && npm run test:tor && npm run test:auth && npm run test:user && npm run test:homepage && npm run test:report",
     "test:queue-upsert": "tsx src/scripts/test-ingestion-queue.ts",
     "test:central-egp": "tsx --test src/modules/ingestion/adapters/central-egp.adapters.test.ts",
     "test:producer": "tsx --test src/modules/ingestion/adapters/govspending-discovery.adapter.test.ts src/apps/queue-producer/queue-producer.test.ts",

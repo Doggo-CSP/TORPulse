@@ -5,7 +5,10 @@ const mongodbDatabase = process.env.MONGODB_DATABASE
 const deepseekApiKey = process.env.DEEPSEEK_API_KEY
 const deepseekModel = process.env.DEEPSEEK_MODEL ?? 'deepseek-v4-flash'
 const aiProviderValue = process.env.AI_PROVIDER ?? 'deepseek'
-const geminiModel = process.env.GEMINI_MODEL ?? 'gemini-3.8-flash'
+const geminiModel = process.env.GEMINI_MODEL ?? 'gemini-3-flash-preview'
+const googleCloudProject = process.env.GOOGLE_CLOUD_PROJECT
+const googleCloudLocation = process.env.GOOGLE_CLOUD_LOCATION ?? 'global'
+const googleApiKey = process.env.GOOGLE_API_KEY
 const govSpendingApiKey = process.env.GOVSPENDING_API_KEY
 const govSpendingSyncIntervalMs = Number(process.env.GOVSPENDING_SYNC_INTERVAL_MS ?? 600_000)
 const govSpendingFiscalYear = process.env.GOVSPENDING_FISCAL_YEAR
@@ -58,6 +61,9 @@ export const env = {
   DEEPSEEK_MODEL: deepseekModel,
   AI_PROVIDER: aiProvider,
   GEMINI_MODEL: geminiModel,
+  GOOGLE_CLOUD_PROJECT: googleCloudProject,
+  GOOGLE_CLOUD_LOCATION: googleCloudLocation,
+  GOOGLE_API_KEY: googleApiKey,
   GOVSPENDING_API_KEY: govSpendingApiKey,
   GOVSPENDING_SYNC_INTERVAL_MS: govSpendingSyncIntervalMs,
   GOVSPENDING_FISCAL_YEAR: govSpendingFiscalYear,
