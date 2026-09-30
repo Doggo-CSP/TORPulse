@@ -24,3 +24,17 @@ export const CATEGORY_LABELS: Record<TorCategory, string> = {
   ai_ml: 'งานปัญญาประดิษฐ์และแมชชีนเลิร์นนิง',
   cloud_infrastructure: 'งานคลาวด์และโครงสร้างพื้นฐาน',
 }
+
+// TODO(LEGACY-INTEREST-IDS): the profile page still sends its own ids instead of category keys.
+// PUT /user/interests converts them with this map, and scripts/migrate-categories.ts rewrites
+// stored values. Remove this map (and its uses) once the frontend sends category keys.
+export const LEGACY_INTEREST_IDS: Record<string, TorCategory> = {
+  web: 'web_application',
+  data: 'data_bi',
+  mobile: 'mobile_app',
+  enterprise: 'enterprise_system',
+  consulting: 'consulting_architecture',
+  cybersecurity: 'cybersecurity',
+  ai: 'ai_ml',
+  cloud: 'cloud_infrastructure',
+}

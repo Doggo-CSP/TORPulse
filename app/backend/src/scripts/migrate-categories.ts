@@ -2,14 +2,20 @@ import { pathToFileURL } from 'node:url'
 
 import { database } from '../config/mongoose.js'
 import { User } from '../modules/auth/user.model.js'
-import { CATEGORY_KEYS, type TorCategory } from '../modules/category/category.constants.js'
+import {
+  CATEGORY_KEYS,
+  LEGACY_INTEREST_IDS,
+  type TorCategory,
+} from '../modules/category/category.constants.js'
 import { deriveCategory } from '../modules/tor/tor.controller.js'
 import { TorModel } from '../modules/tor/tor.model.js'
 
 // Moves existing data onto the 8-category set. Safe to re-run.
-//   npm run migrate:categories            -> dry run (default), prints what would change
-//   npm run migrate:categories -- --apply -> writes the changes
-// Never run --apply against the shared/production database without the team's approval.
+//   npm run migrate:categories                          -> dry run of user interests (default)
+//   npm run migrate:categories -- --apply               -> rewrites user interests only
+//   npm run migrate:categories -- --include-tors        -> also plans TOR categories (dry run)
+// TOR categorisation from real data is next sprint's work: do not combine --include-tors with
+// --apply on a shared or production database.
 
 // Frozen copy of the 5-category rules that existed before the 8-category change, used only to
 // report "old -> new" for TORs that never had a stored category. Do not update this list.
@@ -46,19 +52,6 @@ export function deriveOldCategory(technologies: string[]): TorCategory {
   return 'enterprise_system'
 }
 
-// Ids the profile page stored before interests used category keys.
-// TODO(QUESTION-5): confirm this mapping; see QUESTIONS.md
-export const LEGACY_INTEREST_MAP: Record<string, TorCategory> = {
-  web: 'web_application',
-  data: 'data_bi',
-  mobile: 'mobile_app',
-  enterprise: 'enterprise_system',
-  consulting: 'consulting_architecture',
-  cybersecurity: 'cybersecurity',
-  ai: 'ai_ml',
-  cloud: 'cloud_infrastructure',
-}
-
 interface TorForMigration {
   category?: string | null
   categoryOverridden?: boolean
@@ -72,7 +65,6 @@ export type TorMigrationPlan =
   | { type: 'unchanged'; category: TorCategory }
   | { type: 'update'; from: TorCategory; to: TorCategory }
 
-// TODO(QUESTION-3): protected TORs with no stored category still resolve with the new rules; see QUESTIONS.md
 export function planTorCategory(tor: TorForMigration): TorMigrationPlan {
   if (tor.categoryOverridden) return { type: 'skip', reason: 'overridden' }
   if (tor.lastEditedAt) return { type: 'skip', reason: 'edited' }
@@ -97,7 +89,7 @@ export function mapInterests(interests: string[]): {
   const unmapped: string[] = []
 
   for (const value of interests) {
-    const key = keys.includes(value) ? (value as TorCategory) : LEGACY_INTEREST_MAP[value]
+    const key = keys.includes(value) ? (value as TorCategory) : LEGACY_INTEREST_IDS[value]
     if (key) {
       if (!mapped.includes(key)) mapped.push(key)
     } else {
@@ -111,17 +103,19 @@ export function mapInterests(interests: string[]): {
   return { mapped, unmapped, changed }
 }
 
-async function migrateCategories(apply: boolean): Promise<void> {
+async function migrateCategories(apply: boolean, includeTors: boolean): Promise<void> {
   await database.connect()
 
   try {
     console.log(apply ? '=== APPLY: writing changes ===' : '=== DRY RUN: nothing is written ===')
 
-    // --- TORs -------------------------------------------------------------
-    const tors = await TorModel.find(
-      {},
-      { category: 1, categoryOverridden: 1, reviewStatus: 1, lastEditedAt: 1, technologies: 1 },
-    ).lean()
+    // --- TORs (only with --include-tors) -----------------------------------
+    const tors = includeTors
+      ? await TorModel.find(
+          {},
+          { category: 1, categoryOverridden: 1, reviewStatus: 1, lastEditedAt: 1, technologies: 1 },
+        ).lean()
+      : []
 
     const moves = new Map<string, number>()
     const skipped = { edited: 0, verified: 0, overridden: 0 }
@@ -141,14 +135,18 @@ async function migrateCategories(apply: boolean): Promise<void> {
       }
     }
 
-    console.log(`TORs scanned: ${tors.length}`)
-    console.log(`  already correct: ${unchanged}`)
-    console.log(
-      `  skipped: edited=${skipped.edited} verified=${skipped.verified} overridden=${skipped.overridden}`,
-    )
-    console.log(`  to write: ${torWrites.length} (old -> new)`)
-    for (const [pair, count] of [...moves.entries()].sort()) {
-      console.log(`    ${pair}: ${count}`)
+    if (!includeTors) {
+      console.log('TORs: skipped (pass --include-tors to plan them)')
+    } else {
+      console.log(`TORs scanned: ${tors.length}`)
+      console.log(`  already correct: ${unchanged}`)
+      console.log(
+        `  skipped: edited=${skipped.edited} verified=${skipped.verified} overridden=${skipped.overridden}`,
+      )
+      console.log(`  to write: ${torWrites.length} (old -> new)`)
+      for (const [pair, count] of [...moves.entries()].sort()) {
+        console.log(`    ${pair}: ${count}`)
+      }
     }
 
     // --- User interests ---------------------------------------------------
@@ -167,6 +165,7 @@ async function migrateCategories(apply: boolean): Promise<void> {
         console.log(`  UNMAPPED interests for ${user.email}: ${unmapped.join(', ')} (left as is)`)
       } else if (changed) {
         userWrites.push({ _id: user._id, interests: mapped })
+        console.log(`  ${user.email}: ${(user.interests ?? []).join(', ')} -> ${mapped.join(', ')}`)
       }
     }
 
@@ -202,7 +201,10 @@ async function migrateCategories(apply: boolean): Promise<void> {
 const isMainModule =
   process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
 if (isMainModule) {
-  migrateCategories(process.argv.includes('--apply')).catch((error: unknown) => {
+  migrateCategories(
+    process.argv.includes('--apply'),
+    process.argv.includes('--include-tors'),
+  ).catch((error: unknown) => {
     console.error('Category migration failed:', error)
     process.exitCode = 1
   })

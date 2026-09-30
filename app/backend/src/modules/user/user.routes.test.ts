@@ -84,10 +84,22 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
     assert.equal(response.status, 400)
   })
 
-  await t.test('PUT /user/interests rejects values that are not category keys', async () => {
-    const response = await request(app).put('/user/interests').send({ interests: ['web', 'data'] })
+  await t.test('PUT /user/interests rejects values that are neither keys nor legacy ids', async () => {
+    const response = await request(app)
+      .put('/user/interests')
+      .send({ interests: ['web_application', 'blockchain'] })
 
     assert.equal(response.status, 400)
+  })
+
+  // TODO(LEGACY-INTEREST-IDS): remove with the legacy id support
+  await t.test('PUT /user/interests converts the profile page legacy ids to keys', async () => {
+    const response = await request(app)
+      .put('/user/interests')
+      .send({ interests: ['web', 'ai', 'web_application'] })
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(response.body.interests, ['web_application', 'ai_ml'])
   })
 
   await t.test('PUT /user/interests saves a valid interests array', async () => {
