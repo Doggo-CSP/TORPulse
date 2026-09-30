@@ -11,8 +11,8 @@ import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from './tor.m
 // ---------------------------------------------------------------------------
 
 const MOBILE_APP_KEYWORDS = ['flutter', 'react native', 'swift', 'kotlin', 'android', 'ios']
-// Provisional keyword rules. Categorising TORs from real data (titles, summaries, AI) is next
-// sprint's work; see "Sprint หน้า" in QUESTIONS.md.
+// Provisional keyword rules. Categorising TORs from real data (titles, summaries, AI) is
+// planned for next sprint.
 const AI_ML_KEYWORDS = [
   'artificial intelligence',
   'machine learning',

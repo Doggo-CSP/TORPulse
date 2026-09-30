@@ -81,7 +81,7 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
       await Promise.all([
         TorModel.countDocuments(notDeleted),
         // TORs have no announcement date yet, so the date they entered the system is used.
-        // Storing the e-GP announcement date is future work (QUESTIONS.md).
+        // Storing the e-GP announcement date is future work.
         TorModel.countDocuments({ ...notDeleted, createdAt: { $gte: weekStart, $lt: weekEnd } }),
         // A TOR counts as awarded once the source reports an agreed (winning) price
         TorModel.countDocuments({ ...notDeleted, awardedPriceBaht: { $ne: null } }),
