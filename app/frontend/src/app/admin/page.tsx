@@ -79,12 +79,6 @@ const STATUS_CONFIG: Record<
     badgeText: "text-green-700",
     dot: "bg-green-500",
   },
-  pending: {
-    label: "รอการอนุมัติ",
-    badgeBg: "bg-amber-50 text-amber-700 border-amber-200",
-    badgeText: "text-amber-700",
-    dot: "bg-amber-500 animate-pulse",
-  },
   suspended: {
     label: "ระงับการใช้งาน",
     badgeBg: "bg-rose-50 text-rose-700 border-rose-200",
@@ -670,7 +664,7 @@ export default function AdminPage() {
                   </div>
 
                   {/* Summary of Roles */}
-                  <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className="mt-5 grid grid-cols-2 gap-3">
                     <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-3 text-center">
                       <p className="text-xs font-medium text-emerald-800">
                         ผู้ดูแลระบบ (Admin)
@@ -685,14 +679,6 @@ export default function AdminPage() {
                       </p>
                       <p className="mt-1 text-xl font-bold text-stone-800">
                         {users.filter((u) => u.role === "user").length}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-amber-100 bg-amber-50/50 p-3 text-center">
-                      <p className="text-xs font-medium text-amber-800">
-                        รอการอนุมัติ (Pending)
-                      </p>
-                      <p className="mt-1 text-xl font-bold text-amber-900">
-                        {users.filter((u) => u.status === "pending").length}
                       </p>
                     </div>
                   </div>
@@ -800,7 +786,6 @@ export default function AdminPage() {
                       >
                         <option value="all">ทุกสถานะ (All Statuses)</option>
                         <option value="active">ใช้งานอยู่ (Active)</option>
-                        <option value="pending">รอการอนุมัติ (Pending)</option>
                         <option value="suspended">ระงับการใช้งาน (Suspended)</option>
                       </select>
                     </div>
@@ -925,18 +910,6 @@ export default function AdminPage() {
                                 {/* Actions Column */}
                                 <td className="px-5 py-4 text-right">
                                   <div className="flex items-center justify-end gap-1.5">
-                                    {user.status === "pending" && (
-                                      <button
-                                        onClick={() =>
-                                          void handleStatusChange(user._id, "active")
-                                        }
-                                        title="อนุมัติบัญชี"
-                                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700"
-                                      >
-                                        อนุมัติ
-                                      </button>
-                                    )}
-
                                     <button
                                       onClick={() => {
                                         setSelectedUserForEdit(user);
