@@ -22,6 +22,18 @@ test('homepage summary and analytics endpoints, against a deterministic seeded d
     await database.disconnect()
   })
 
+  // The database is shared, so scope every TOR query to this test's own seeded records;
+  // otherwise unrelated TORs change the hand-computed totals below.
+  const seedScope = { externalId: { $regex: `^${SEED_PREFIX}` } }
+  const originalAggregate = TorModel.aggregate.bind(TorModel)
+  const originalFind = TorModel.find.bind(TorModel)
+  t.mock.method(TorModel, 'aggregate', (pipeline: object[]) =>
+    originalAggregate([{ $match: seedScope }, ...pipeline] as never),
+  )
+  t.mock.method(TorModel, 'find', (filter: object = {}, ...rest: unknown[]) =>
+    (originalFind as (...args: unknown[]) => unknown)({ $and: [filter, seedScope] }, ...rest),
+  )
+
   const app = express()
   app.use('/homepage', router)
 
