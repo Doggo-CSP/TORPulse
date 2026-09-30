@@ -7,7 +7,7 @@ import {
   updateAdminUser,
   updateUserRole,
   updateUserStatus,
-  getAdminActivities,
+  getAdminActivity,
   getAdminTors,
   getAdminTorById,
   updateAdminTor,
@@ -30,7 +30,7 @@ router.get('/users/:userId', requireAdmin, getAdminUserById)
 router.patch('/users/:userId', requireAdmin, updateAdminUser)
 router.patch('/users/:userId/role', requireAdmin, updateUserRole)
 router.patch('/users/:userId/status', requireAdmin, updateUserStatus)
-router.get('/activities', requireAdmin, getAdminActivities)
+router.get('/activity', requireAdmin, getAdminActivity)
 router.get('/settings', requireAdmin, getAdminSettings)
 router.patch('/settings', requireAdmin, updateAdminSettings)
 router.get('/tors', getAdminTors)

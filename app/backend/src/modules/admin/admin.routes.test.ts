@@ -65,7 +65,7 @@ test('admin routes: requireAdmin guard', async (t) => {
 
     const stats = await request(app).get('/admin/stats')
     const users = await request(app).get('/admin/users')
-    const activities = await request(app).get('/admin/activities')
+    const activities = await request(app).get('/admin/activity')
     const role = await request(app)
       .patch(`/admin/users/${new Types.ObjectId().toString()}/role`)
       .send({ role: 'admin' })
@@ -513,26 +513,84 @@ test('admin routes: transactional role changes and the audit activity feed', asy
     assert.equal(remainingAdmins, 1)
   })
 
-  await t.test('GET /admin/activities lists audit log entries, newest first', async () => {
+  await t.test('GET /admin/activity returns one item per event, newest first', async () => {
     const actorId = (await User.findOne({ _id: { $in: [adminA._id, adminB._id] }, role: 'admin' }))!
       ._id
     const actorHeader = actorId.toString()
+    const actorName = `Seed race-admin-${actorId.equals(adminA._id) ? 'a' : 'b'}`
 
-    const change = await request(app)
+    const suspend = await request(app)
       .patch(`/admin/users/${member._id.toString()}/status`)
       .set('x-test-actor', actorHeader)
       .send({ status: 'suspended' })
-    assert.equal(change.status, 200)
+    const reactivate = await request(app)
+      .patch(`/admin/users/${member._id.toString()}/status`)
+      .set('x-test-actor', actorHeader)
+      .send({ status: 'active' })
+    assert.equal(suspend.status, 200)
+    assert.equal(reactivate.status, 200)
 
-    const response = await request(app).get('/admin/activities').set('x-test-actor', actorHeader)
+    // Renaming the user later must not change what the feed shows
+    await User.updateOne({ _id: member._id }, { $set: { name: 'Renamed Member' } })
+
+    const response = await request(app)
+      .get('/admin/activity')
+      .query({ limit: 2 })
+      .set('x-test-actor', actorHeader)
 
     assert.equal(response.status, 200)
-    const latest = response.body.activities[0]
-    assert.equal(latest.type, 'user_role')
-    assert.equal(latest.title, 'ระงับบัญชีผู้ใช้งาน')
-    assert.equal(latest.target, member.email)
-    assert.equal(latest.description, 'status: active → suspended')
-    assert.equal(latest.actor, `Seed race-admin-${actorId.equals(adminA._id) ? 'a' : 'b'}`)
+    assert.equal(response.body.page, 1)
+    assert.equal(response.body.limit, 2)
+    assert.ok(response.body.total >= 2)
+    assert.equal(response.body.items.length, 2)
+
+    const [latest, previous] = response.body.items
+    assert.equal(latest.action, 'user.reactivated')
+    assert.equal(previous.action, 'user.suspended')
+    assert.equal(latest.group, 'users')
+    assert.deepEqual(latest.actor, { type: 'user', id: actorHeader, name: actorName })
+    assert.deepEqual(latest.target, {
+      type: 'user',
+      id: member._id.toString(),
+      label: 'Seed feed-member',
+    })
+    assert.deepEqual(latest.metadata, { changes: { status: { from: 'suspended', to: 'active' } } })
+  })
+
+  await t.test('GET /admin/activity pages and filters by group', async () => {
+    const actorHeader = (await User.findOne({
+      _id: { $in: [adminA._id, adminB._id] },
+      role: 'admin',
+    }))!._id.toString()
+
+    const page2 = await request(app)
+      .get('/admin/activity')
+      .query({ limit: 1, page: 2 })
+      .set('x-test-actor', actorHeader)
+    assert.equal(page2.body.items[0].action, 'user.suspended')
+
+    const users = await request(app)
+      .get('/admin/activity')
+      .query({ group: 'users', limit: 50 })
+      .set('x-test-actor', actorHeader)
+    assert.ok(users.body.items.every((item: { group: string }) => item.group === 'users'))
+
+    const tor = await request(app)
+      .get('/admin/activity')
+      .query({ group: 'tor', limit: 50 })
+      .set('x-test-actor', actorHeader)
+    assert.ok(tor.body.items.every((item: { action: string }) => item.action.startsWith('tor.')))
+
+    const badGroup = await request(app)
+      .get('/admin/activity')
+      .query({ group: 'backup' })
+      .set('x-test-actor', actorHeader)
+    const badLimit = await request(app)
+      .get('/admin/activity')
+      .query({ limit: 500 })
+      .set('x-test-actor', actorHeader)
+    assert.equal(badGroup.status, 400)
+    assert.equal(badLimit.status, 400)
   })
 })
 
@@ -694,7 +752,10 @@ test('admin routes: TOR management (UC-14)', async (t) => {
       assert.deepEqual(stored?.evaluationCriteria, ['Price 70%', 'Quality 30%'])
       assert.equal(stored?.detailUrl, 'https://example.com/tor-web')
 
-      const log = await AuditLogModel.findOne({ targetId: webTor._id, action: 'tor.update' }).lean()
+      const log = await AuditLogModel.findOne({
+        targetId: webTor._id,
+        action: 'tor.updated',
+      }).lean()
       assert.ok(log)
       assert.equal((log.before as Record<string, unknown>).scope, null)
       assert.equal((log.after as Record<string, unknown>).scope, 'Build the citizen portal')
@@ -759,7 +820,7 @@ test('admin routes: TOR management (UC-14)', async (t) => {
       .query({ ...seedQuery, status: 'verified' })
     assert.equal(verified.body.total, 1)
 
-    const log = await AuditLogModel.findOne({ targetId: webTor._id, action: 'tor.verify' }).lean()
+    const log = await AuditLogModel.findOne({ targetId: webTor._id, action: 'tor.verified' }).lean()
     assert.deepEqual(log?.before, { reviewStatus: 'unverified' })
     assert.deepEqual(log?.after, { reviewStatus: 'verified' })
   })

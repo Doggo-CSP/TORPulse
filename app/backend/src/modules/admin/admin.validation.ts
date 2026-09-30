@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import { CATEGORY_KEYS } from '../category/category.constants.js'
 import { TOR_REVIEW_STATUSES } from '../tor/tor.model.js'
+import { ACTIVITY_GROUPS } from './admin.types.js'
 
 const stringList = z.array(z.string().trim().min(1))
 
@@ -40,6 +41,12 @@ export const updateAdminTorSchema = z
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0)
+
+export const activityQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  group: z.enum(ACTIVITY_GROUPS).optional(),
+})
 
 // ingestionIntervalMinutes is read-only (it comes from the scheduler's env), so it is not here.
 export const updateSettingsSchema = z

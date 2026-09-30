@@ -39,6 +39,21 @@ const auditLogSchema = new Schema(
       type: Schema.Types.Mixed,
       default: null,
     },
+    // Snapshots taken when the log is written, so the feed needs no joins and still shows
+    // the name at the time even if the user or TOR is renamed later.
+    actorName: {
+      type: String,
+      default: null,
+    },
+    targetLabel: {
+      type: String,
+      default: null,
+    },
+    // Extra details for the feed text (e.g. ingestion counts, auto-approval reason)
+    metadata: {
+      type: Schema.Types.Mixed,
+      default: null,
+    },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
@@ -47,6 +62,7 @@ const auditLogSchema = new Schema(
 )
 
 auditLogSchema.index({ targetType: 1, targetId: 1, createdAt: -1 })
+auditLogSchema.index({ createdAt: -1 })
 
 export type AuditLog = InferSchemaType<typeof auditLogSchema>
 

@@ -9,7 +9,13 @@ export interface CreateAuditLogInput {
   targetId: Types.ObjectId
   before?: unknown
   after?: unknown
+  actorName?: string | null
+  targetLabel?: string | null
+  metadata?: Record<string, unknown> | null
 }
+
+export const ACTIVITY_GROUPS = ['users', 'ingestion', 'tor', 'system'] as const
+export type ActivityGroup = (typeof ACTIVITY_GROUPS)[number]
 
 export interface SystemSettings {
   ingestionEnabled: boolean

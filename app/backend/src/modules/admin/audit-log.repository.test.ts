@@ -4,7 +4,7 @@ import test from 'node:test'
 import { Types } from 'mongoose'
 
 import { AuditLogModel } from './audit-log.model.js'
-import { createAuditLog } from './audit-log.repository.js'
+import { activityGroupOf, createAuditLog } from './audit-log.repository.js'
 
 test('createAuditLog stores actor, action, target, and before/after snapshots', async (context) => {
   const actorId = new Types.ObjectId()
@@ -41,6 +41,9 @@ test('createAuditLog stores actor, action, target, and before/after snapshots', 
       targetId,
       before: { role: 'user' },
       after: { role: 'editor' },
+      actorName: null,
+      targetLabel: null,
+      metadata: null,
     },
   ])
   assert.deepEqual(capturedOptions, { session })
@@ -86,4 +89,12 @@ test('AuditLogModel accepts a system record without an actor', async () => {
   })
 
   assert.equal(doc.validateSync(), undefined)
+})
+
+test('activityGroupOf maps action prefixes to feed groups', () => {
+  assert.equal(activityGroupOf('user.approved'), 'users')
+  assert.equal(activityGroupOf('ingestion.failed'), 'ingestion')
+  assert.equal(activityGroupOf('tor.updated'), 'tor')
+  assert.equal(activityGroupOf('settings.updated'), 'system')
+  assert.equal(activityGroupOf('something.else'), null)
 })

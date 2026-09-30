@@ -8,12 +8,13 @@ import { TorModel, type Tor, type TorReviewStatus } from '../tor/tor.model.js'
 import { UserBookmarkModel } from '../user/user-bookmark.model.js'
 import type { SystemSettings, TorChangeOutcome, UserChangeOutcome } from './admin.types.js'
 import {
+  activityQuerySchema,
   adminTorListQuerySchema,
   updateAdminTorSchema,
   updateAdminUserSchema,
   updateSettingsSchema,
 } from './admin.validation.js'
-import { createAuditLog, listRecentAuditLogs } from './audit-log.repository.js'
+import { activityGroupOf, createAuditLog, listAuditLogs } from './audit-log.repository.js'
 import { getSettings, updateSettings } from './settings.repository.js'
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -194,6 +195,8 @@ export const updateAdminUser = async (req: Request, res: Response): Promise<void
             action: 'user.updated',
             targetType: 'user',
             targetId: updated._id,
+            actorName: req.user!.name,
+            targetLabel: updated.name,
             before,
             after: changes,
           },
@@ -316,6 +319,8 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
             action: 'user.role_changed',
             targetType: 'user',
             targetId: updated._id,
+            actorName: req.user!.name,
+            targetLabel: updated.name,
             before: { role: previousRole },
             after: { role },
           },
@@ -429,6 +434,8 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
             action,
             targetType: 'user',
             targetId: updated._id,
+            actorName: req.user!.name,
+            targetLabel: updated.name,
             before: { status: previousStatus },
             after: { status },
           },
@@ -478,69 +485,56 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
   }
 }
 
-const ACTIVITY_LIMIT = 20
+// ---------------------------------------------------------------------------
+// GET /api/v1/admin/activity
+// ---------------------------------------------------------------------------
 
-const ACTIVITY_TITLES: Record<string, string> = {
-  'user.role_changed': 'เปลี่ยนบทบาทผู้ใช้งาน',
-  'user.approved': 'อนุมัติบัญชีผู้ใช้งาน',
-  'user.suspended': 'ระงับบัญชีผู้ใช้งาน',
-  'user.reactivated': 'เปิดใช้งานบัญชีอีกครั้ง',
-  'user.updated': 'แก้ไขข้อมูลผู้ใช้งาน',
-  'settings.updated': 'ปรับการตั้งค่าระบบ',
-  'tor.update': 'แก้ไขข้อมูล TOR',
-  'tor.verify': 'ยืนยันความถูกต้องของ TOR',
-  'tor.archive': 'เก็บ TOR เข้าคลัง',
-  'tor.delete': 'ลบ TOR',
-}
-
-const toActivityType = (action: string): string => {
-  if (action.startsWith('user.')) return 'user_role'
-  if (action.startsWith('tor.')) return 'tor_update'
-  return 'system'
-}
-
-const describeChange = (before: unknown, after: unknown): string => {
+// One log row is one feed item; the backend never merges events ("approved 2 accounts").
+// The frontend builds the Thai sentence from `action` and `metadata`.
+const toFieldChanges = (before: unknown, after: unknown) => {
+  if (!after || typeof after !== 'object') return undefined
   const from = (before && typeof before === 'object' ? before : {}) as Record<string, unknown>
-  const to = (after && typeof after === 'object' ? after : {}) as Record<string, unknown>
-  return Object.keys(to)
-    .map((key) => `${key}: ${String(from[key] ?? '-')} → ${String(to[key])}`)
-    .join(', ')
+  return Object.fromEntries(
+    Object.entries(after as Record<string, unknown>).map(([field, to]) => [
+      field,
+      { from: from[field] ?? null, to },
+    ]),
+  )
 }
 
-export const getAdminActivities = async (_req: Request, res: Response): Promise<void> => {
+export const getAdminActivity = async (req: Request, res: Response): Promise<void> => {
   try {
-    const logs = await listRecentAuditLogs(ACTIVITY_LIMIT)
-    const userIds = logs.flatMap((log) =>
-      log.targetType === 'user' ? [log.actorId, log.targetId] : [log.actorId],
-    )
-    const users = await User.find({ _id: { $in: userIds } }, { name: 1, displayName: 1, email: 1 })
-      .lean()
-    const userById = new Map(users.map((u) => [u._id.toString(), u]))
-    const torIds = logs.filter((log) => log.targetType === 'tor').map((log) => log.targetId)
-    const tors = await TorModel.find({ _id: { $in: torIds } }, { projectTitle: 1 }).lean()
-    const torTitleById = new Map(tors.map((tor) => [tor._id.toString(), tor.projectTitle]))
+    const parsed = activityQuerySchema.safeParse(req.query)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'พารามิเตอร์ไม่ถูกต้อง' })
+      return
+    }
 
-    const activities = logs.map((log) => {
-      const actor = log.actorId ? userById.get(log.actorId.toString()) : undefined
-      const target =
-        log.targetType === 'user'
-          ? userById.get(log.targetId.toString())?.email
-          : torTitleById.get(log.targetId.toString())
+    const { page, limit, group } = parsed.data
+    const { items: logs, total } = await listAuditLogs({ page, limit, group })
 
+    const items = logs.map((log) => {
+      const changes = toFieldChanges(log.before, log.after)
       return {
         id: log._id.toString(),
-        title: ACTIVITY_TITLES[log.action] ?? log.action,
-        description: describeChange(log.before, log.after),
-        type: toActivityType(log.action),
-        actor: actor ? actor.displayName || actor.name : 'ไม่ทราบผู้ใช้งาน',
-        target: target ?? log.targetId.toString(),
+        action: log.action,
+        group: activityGroupOf(log.action),
+        actor:
+          log.actorType === 'system'
+            ? { type: 'system' }
+            : { type: 'user', id: log.actorId?.toString() ?? null, name: log.actorName ?? null },
+        target: { type: log.targetType, id: log.targetId.toString(), label: log.targetLabel ?? null },
+        metadata: {
+          ...((log.metadata as Record<string, unknown> | null) ?? {}),
+          ...(changes ? { changes } : {}),
+        },
         createdAt: new Date(log.createdAt).toISOString(),
       }
     })
 
-    res.json({ activities })
+    res.json({ items, total, page, limit })
   } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch activities', error: (error as Error).message })
+    res.status(500).json({ success: false, message: (error as Error).message })
   }
 }
 
@@ -742,9 +736,11 @@ export const updateAdminTor = async (req: Request, res: Response): Promise<void>
         await createAuditLog(
           {
             actorId,
-            action: 'tor.update',
+            action: 'tor.updated',
             targetType: 'tor',
             targetId: updated._id,
+            actorName: req.user!.name,
+            targetLabel: updated.externalId,
             before,
             after: changes,
           },
@@ -820,6 +816,8 @@ const changeTorReviewStatus = async (
             action,
             targetType: 'tor',
             targetId: tor._id,
+            actorName: req.user!.name,
+            targetLabel: tor.externalId,
             before: { reviewStatus: previousStatus },
             after: { reviewStatus: nextStatus },
           },
@@ -856,13 +854,13 @@ const changeTorReviewStatus = async (
 }
 
 export const verifyAdminTor = (req: Request, res: Response): Promise<void> =>
-  changeTorReviewStatus(req, res, 'verified', 'tor.verify', 'ยืนยันความถูกต้องของ TOR สำเร็จ')
+  changeTorReviewStatus(req, res, 'verified', 'tor.verified', 'ยืนยันความถูกต้องของ TOR สำเร็จ')
 
 export const archiveAdminTor = (req: Request, res: Response): Promise<void> =>
-  changeTorReviewStatus(req, res, 'archived', 'tor.archive', 'เก็บ TOR เข้าคลังสำเร็จ')
+  changeTorReviewStatus(req, res, 'archived', 'tor.archived', 'เก็บ TOR เข้าคลังสำเร็จ')
 
 export const deleteAdminTor = (req: Request, res: Response): Promise<void> =>
-  changeTorReviewStatus(req, res, 'deleted', 'tor.delete', 'ลบ TOR สำเร็จ')
+  changeTorReviewStatus(req, res, 'deleted', 'tor.deleted', 'ลบ TOR สำเร็จ')
 
 // ---------------------------------------------------------------------------
 // System settings
@@ -912,6 +910,8 @@ export const updateAdminSettings = async (req: Request, res: Response): Promise<
             action: 'settings.updated',
             targetType: 'settings',
             targetId: doc._id,
+            actorName: req.user!.name,
+            targetLabel: 'ตั้งค่าระบบ',
             before,
             after: changes,
           },

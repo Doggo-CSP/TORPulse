@@ -98,7 +98,9 @@ export const createPassport = (config: ApiAuthConfig): passport.Authenticator =>
                 action: 'user.approved',
                 targetType: 'user',
                 targetId: user._id,
-                after: { status: 'active', reason: 'auto_approve_gov_email' },
+                targetLabel: user.name,
+                after: { status: 'active' },
+                metadata: { reason: 'auto_approve_gov_email' },
               })
             }
 
