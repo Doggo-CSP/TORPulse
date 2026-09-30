@@ -2,8 +2,8 @@ import { Types } from 'mongoose'
 
 import { DataSourceModel } from './data-source.model.js'
 
-const GOVSPENDING_SOURCE_KEY = 'govspending-egp'
-const PRODUCER_LEASE_MS = 15 * 60_000
+export const GOVSPENDING_SOURCE_KEY = 'govspending-egp'
+export const PRODUCER_LEASE_MS = 15 * 60_000
 
 export async function ensureGovSpendingDataSource() {
   try {

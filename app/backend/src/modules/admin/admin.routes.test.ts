@@ -16,11 +16,15 @@ import { AuditLogModel } from './audit-log.model.js'
 import { SETTINGS_KEY, SettingsModel } from './settings.model.js'
 import { GovSpendingDiscoveryAdapter } from '../ingestion/adapters/govspending-discovery.adapter.js'
 import { CollectionRunModel } from '../ingestion/collection-run.model.js'
+import { DataSourceModel } from '../ingestion/data-source.model.js'
 import {
   claimProducerLease,
   ensureGovSpendingDataSource,
+  GOVSPENDING_SOURCE_KEY,
   releaseProducerLease,
 } from '../ingestion/data-source.repository.js'
+import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
+import { enqueueDiscoveredProjects } from '../ingestion/ingestion-job.repository.js'
 
 const SEED_PREFIX = 'seed-admin-routes-test-'
 
@@ -943,6 +947,22 @@ test('admin routes: system settings', async (t) => {
 test('admin routes: e-GP sync status and manual sync', async (t) => {
   await database.connect()
 
+  // Point the GovSpending data source at a test-only document so the real
+  // 'govspending-egp' source (its lease and last-run fields) is never touched.
+  const TEST_SOURCE_KEY = `${SEED_PREFIX}govspending-egp`
+  const originalFindOneAndUpdate = DataSourceModel.findOneAndUpdate.bind(DataSourceModel)
+  t.mock.method(
+    DataSourceModel,
+    'findOneAndUpdate',
+    (filter: Record<string, unknown>, ...rest: unknown[]) =>
+      (originalFindOneAndUpdate as (...args: unknown[]) => unknown)(
+        filter.key === GOVSPENDING_SOURCE_KEY ? { ...filter, key: TEST_SOURCE_KEY } : filter,
+        ...rest,
+      ),
+  )
+  const testSource = (await ensureGovSpendingDataSource())!
+  assert.equal(testSource.key, TEST_SOURCE_KEY)
+
   const actor = await User.create({
     googleId: `${SEED_PREFIX}sync-actor`,
     name: 'Seed Sync Admin',
@@ -958,15 +978,24 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
     env.GOVSPENDING_API_KEY = originalApiKey
     await AuditLogModel.deleteMany({ targetId: { $in: runIds } })
     await CollectionRunModel.deleteMany({ _id: { $in: runIds } })
+    await IngestionJobModel.deleteMany({ dataSourceId: testSource._id })
+    await DataSourceModel.deleteOne({ _id: testSource._id })
     await User.deleteOne({ _id: actor._id })
     await database.disconnect()
   })
 
-  // Never call the real GovSpending API from tests
-  t.mock.method(GovSpendingDiscoveryAdapter.prototype, 'listProjects', async () => ({
-    projects: [],
-    total: 0,
-  }))
+  // Never call the real GovSpending API: the first page returns one project that is already
+  // queued and one new project; every later page is empty.
+  const knownProject = { externalId: `${SEED_PREFIX}known`, title: 'Known', fiscalYear: 2569 }
+  const newProject = { externalId: `${SEED_PREFIX}new`, title: 'New', fiscalYear: 2569 }
+  await enqueueDiscoveredProjects(testSource._id, [knownProject])
+  let listCalls = 0
+  t.mock.method(GovSpendingDiscoveryAdapter.prototype, 'listProjects', async () => {
+    listCalls += 1
+    return listCalls === 1
+      ? { projects: [knownProject, newProject], total: 2 }
+      : { projects: [], total: 0 }
+  })
 
   let currentUser: Express.User | undefined = {
     _id: actor._id,
@@ -986,10 +1015,12 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
   })
   app.use('/admin', router)
 
-  const waitForRun = async (runId: string) => {
-    for (let attempt = 0; attempt < 50; attempt++) {
+  // The run is closed first and the feed entry written right after, so wait for both.
+  const waitForRunAndLog = async (runId: string) => {
+    for (let attempt = 0; attempt < 100; attempt++) {
       const run = await CollectionRunModel.findById(runId).lean()
-      if (run && run.status !== 'running') return run
+      const log = await AuditLogModel.findOne({ targetId: runId }).lean()
+      if (run && run.status !== 'running' && log) return { run, log }
       await delay(100)
     }
     throw new Error(`run ${runId} did not finish`)
@@ -1003,51 +1034,88 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
     assert.equal(response.status, 503)
   })
 
-  await t.test(
-    'an admin starts a manual sync: 202, then the run and feed entry are recorded',
-    async () => {
-      env.GOVSPENDING_API_KEY = 'test-key'
+  await t.test('a manual sync returns 202 and records the run, counts and feed entry', async () => {
+    env.GOVSPENDING_API_KEY = 'test-key'
 
-      const response = await request(app).post('/admin/ingestion/sync')
-      assert.equal(response.status, 202)
-      runIds.push(new Types.ObjectId(response.body.runId as string))
+    const response = await request(app).post('/admin/ingestion/sync')
+    assert.equal(response.status, 202)
+    runIds.push(new Types.ObjectId(response.body.runId as string))
 
-      const run = await waitForRun(response.body.runId)
-      assert.equal(run.status, 'success')
-      assert.equal(run.trigger, 'manual')
-      assert.equal(run.triggeredBy?.toString(), actor._id.toString())
-      assert.ok(run.finishedAt instanceof Date)
+    const { run, log } = await waitForRunAndLog(response.body.runId)
+    assert.equal(run.status, 'success')
+    assert.equal(run.trigger, 'manual')
+    assert.equal(run.triggeredBy?.toString(), actor._id.toString())
+    assert.equal(run.fetchedCount, 2)
+    assert.equal(run.createdCount, 1)
+    assert.equal(run.existingCount, 1)
 
-      const log = await AuditLogModel.findOne({ targetId: run._id }).lean()
-      assert.equal(log?.action, 'ingestion.completed')
-      assert.equal(log?.actorType, 'user')
-      assert.equal(log?.actorName, 'Seed Sync Admin')
+    assert.equal(log.action, 'ingestion.completed')
+    assert.equal(log.actorType, 'user')
+    assert.equal(log.actorName, 'Seed Sync Admin')
 
-      const status = await request(app).get('/admin/ingestion/status')
-      assert.equal(status.status, 200)
-      assert.equal(status.body.lastRun.id, response.body.runId)
-      assert.equal(status.body.lastRun.status, 'success')
-      assert.equal(typeof status.body.isRunning, 'boolean')
-    },
-  )
+    const status = await request(app).get('/admin/ingestion/status')
+    assert.equal(status.status, 200)
+    assert.equal(status.body.lastRun.id, response.body.runId)
+    assert.equal(status.body.lastRun.existingCount, 1)
+    assert.equal('updatedCount' in status.body.lastRun, false)
+
+    // The lease was taken and released on the test source only
+    const source = await DataSourceModel.findById(testSource._id).lean()
+    assert.equal(source?.lockedBy, null)
+    assert.ok(source?.lastSucceededAt instanceof Date)
+  })
 
   await t.test(
     'POST /admin/ingestion/sync returns 409 while another run holds the lease',
     async () => {
       env.GOVSPENDING_API_KEY = 'test-key'
-      const dataSource = await ensureGovSpendingDataSource()
       const holder = `${SEED_PREFIX}lease-holder`
-      const claimed = await claimProducerLease(dataSource!._id, holder)
-      assert.equal(claimed, true)
+      assert.equal(await claimProducerLease(testSource._id, holder), true)
 
       try {
         const response = await request(app).post('/admin/ingestion/sync')
         assert.equal(response.status, 409)
       } finally {
-        await releaseProducerLease(dataSource!._id, holder)
+        await releaseProducerLease(testSource._id, holder)
       }
     },
   )
+
+  await t.test('a run stuck in running for over 15 minutes is reported as a timeout', async () => {
+    const stuck = await CollectionRunModel.create({
+      trigger: 'scheduled',
+      status: 'running',
+      startedAt: new Date(Date.now() - 20 * 60_000),
+    })
+    runIds.push(stuck._id)
+
+    const status = await request(app).get('/admin/ingestion/status')
+
+    assert.equal(status.status, 200)
+    const stored = await CollectionRunModel.findById(stuck._id).lean()
+    assert.equal(stored?.status, 'failed')
+    assert.equal(stored?.errorMessage, 'timeout')
+    assert.equal(status.body.isRunning, false)
+  })
+
+  await t.test('starting a new run closes any run still marked running as a timeout', async () => {
+    env.GOVSPENDING_API_KEY = 'test-key'
+    const recent = await CollectionRunModel.create({
+      trigger: 'scheduled',
+      status: 'running',
+      startedAt: new Date(),
+    })
+    runIds.push(recent._id)
+
+    const response = await request(app).post('/admin/ingestion/sync')
+    assert.equal(response.status, 202)
+    runIds.push(new Types.ObjectId(response.body.runId as string))
+    await waitForRunAndLog(response.body.runId)
+
+    const stored = await CollectionRunModel.findById(recent._id).lean()
+    assert.equal(stored?.status, 'failed')
+    assert.equal(stored?.errorMessage, 'timeout')
+  })
 
   await t.test('a regular user cannot see or start syncs', async () => {
     currentUser = makeUser({ role: 'user', status: 'active' })

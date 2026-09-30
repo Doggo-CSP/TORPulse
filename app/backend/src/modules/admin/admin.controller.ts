@@ -9,8 +9,10 @@ import { env } from '../../config/env.js'
 import { GovSpendingDiscoveryAdapter } from '../ingestion/adapters/govspending-discovery.adapter.js'
 import { getBangkokWeekRange } from '../homepage/homepage.controller.js'
 import {
+  expireStaleCollectionRuns,
   findLatestCollectionRun,
   hasRunningCollectionRun,
+  staleRunCutoff,
 } from '../ingestion/collection-run.repository.js'
 import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
@@ -917,12 +919,13 @@ const toRunResponse = (run: CollectionRunLean) => ({
   finishedAt: run.finishedAt ?? null,
   fetchedCount: run.fetchedCount,
   createdCount: run.createdCount,
-  updatedCount: run.updatedCount,
+  existingCount: run.existingCount,
   errorMessage: run.errorMessage ?? null,
 })
 
 export const getIngestionStatus = async (_req: Request, res: Response): Promise<void> => {
   try {
+    await expireStaleCollectionRuns({ olderThan: staleRunCutoff() })
     const [lastRun, isRunning] = await Promise.all([
       findLatestCollectionRun(),
       hasRunningCollectionRun(),
@@ -936,8 +939,10 @@ export const getIngestionStatus = async (_req: Request, res: Response): Promise<
 
 export const triggerIngestionSync = async (req: Request, res: Response): Promise<void> => {
   try {
-    // TODO(QUESTION-13): manual sync runs inside the API process, which then needs
-    // GOVSPENDING_API_KEY too; see QUESTIONS.md
+    // The sync runs in this API process. That is fine because the API is a long-running
+    // Express server (apps/api/server.ts); there is no serverless deploy. If it ever moves
+    // to a scale-to-zero platform, record the request instead and let queue-producer run it.
+    // The API then also needs GOVSPENDING_API_KEY.
     if (!env.GOVSPENDING_API_KEY) {
       res.status(503).json({ success: false, message: 'ยังไม่ได้ตั้งค่า GOVSPENDING_API_KEY' })
       return

@@ -39,7 +39,8 @@ const collectionRunSchema = new Schema(
       default: 0,
       min: 0,
     },
-    updatedCount: {
+    // Projects found again that were already known (queued or processed earlier)
+    existingCount: {
       type: Number,
       required: true,
       default: 0,

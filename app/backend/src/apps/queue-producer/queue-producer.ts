@@ -7,6 +7,7 @@ import { env } from '../../config/env.js'
 import { createAuditLog } from '../../modules/admin/audit-log.repository.js'
 import { getSettings } from '../../modules/admin/settings.repository.js'
 import {
+  expireStaleCollectionRuns,
   finishCollectionRun,
   startCollectionRun,
 } from '../../modules/ingestion/collection-run.repository.js'
@@ -115,6 +116,9 @@ export async function beginGovSpendingSync(
     return null
   }
 
+  // We hold the lease now, so any run still marked running belongs to a process that died
+  await expireStaleCollectionRuns()
+
   const run = await startCollectionRun({
     trigger: trigger.trigger,
     triggeredBy: trigger.triggeredBy ?? null,
@@ -178,9 +182,7 @@ async function recordRunResult(
   const counts = {
     fetchedCount: totals.discovered,
     createdCount: totals.queued,
-    // TODO(QUESTION-11): the producer only queues new projects and never updates existing
-    // ones, so there is nothing to count here yet; see QUESTIONS.md
-    updatedCount: 0,
+    existingCount: totals.existing,
   }
 
   try {

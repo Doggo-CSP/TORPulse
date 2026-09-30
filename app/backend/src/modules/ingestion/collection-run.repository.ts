@@ -1,6 +1,8 @@
 import type { Types } from 'mongoose'
 
 import { CollectionRunModel } from './collection-run.model.js'
+import { DataSourceModel } from './data-source.model.js'
+import { PRODUCER_LEASE_MS } from './data-source.repository.js'
 
 export async function startCollectionRun(input: {
   trigger: 'scheduled' | 'manual'
@@ -20,7 +22,7 @@ export async function finishCollectionRun(
     status: 'success' | 'failed'
     fetchedCount: number
     createdCount: number
-    updatedCount: number
+    existingCount: number
     errorMessage?: string | null
   },
 ) {
@@ -32,7 +34,7 @@ export async function finishCollectionRun(
         finishedAt: new Date(),
         fetchedCount: result.fetchedCount,
         createdCount: result.createdCount,
-        updatedCount: result.updatedCount,
+        existingCount: result.existingCount,
         errorMessage: result.errorMessage ?? null,
       },
     },
@@ -44,7 +46,27 @@ export async function findLatestCollectionRun() {
   return CollectionRunModel.findOne().sort({ startedAt: -1 }).lean()
 }
 
-// TODO(QUESTION-12): a run left 'running' by a crashed process stays 'running' forever; see QUESTIONS.md
 export async function hasRunningCollectionRun(): Promise<boolean> {
   return (await CollectionRunModel.exists({ status: 'running' })) !== null
 }
+
+// Closes runs left 'running' by a process that died, as failed with errorMessage 'timeout'.
+// Called with no cutoff right after claiming the producer lease (nobody else can be running
+// then) and, when reading the status, for runs older than the lease duration (15 minutes).
+// On status reads a run is only closed while the lease is free: a healthy long sync renews
+// its lease every page, so an old run that still holds it is really still working.
+export async function expireStaleCollectionRuns(options: { olderThan?: Date } = {}) {
+  const filter: Record<string, unknown> = { status: 'running' }
+  if (options.olderThan) {
+    const leaseHeld = await DataSourceModel.exists({ lockedUntil: { $gt: new Date() } })
+    if (leaseHeld) return 0
+    filter.startedAt = { $lt: options.olderThan }
+  }
+
+  const result = await CollectionRunModel.updateMany(filter, {
+    $set: { status: 'failed', finishedAt: new Date(), errorMessage: 'timeout' },
+  })
+  return result.modifiedCount
+}
+
+export const staleRunCutoff = (now = new Date()) => new Date(now.getTime() - PRODUCER_LEASE_MS)
