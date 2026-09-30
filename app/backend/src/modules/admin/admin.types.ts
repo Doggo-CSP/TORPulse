@@ -8,3 +8,5 @@ export interface CreateAuditLogInput {
   before?: unknown
   after?: unknown
 }
+
+export type UserChangeOutcome = 'updated' | 'not_found' | 'self' | 'last_admin'
