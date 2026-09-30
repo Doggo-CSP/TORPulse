@@ -68,20 +68,20 @@ test('admin routes: requireAdmin guard', async (t) => {
     assert.equal(response.body.success, false)
   })
 
-  await t.test('an editor can read stats but not users, activity, or user changes', async () => {
-    currentUser = makeUser({ role: 'editor', status: 'active' })
+  await t.test('a regular user is rejected on every admin route group', async () => {
+    currentUser = makeUser({ role: 'user', status: 'active' })
 
-    const stats = await request(app).get('/admin/stats')
-    const users = await request(app).get('/admin/users')
-    const activities = await request(app).get('/admin/activity')
-    const role = await request(app)
-      .patch(`/admin/users/${new Types.ObjectId().toString()}/role`)
-      .send({ role: 'admin' })
+    const responses = await Promise.all([
+      request(app).get('/admin/tors'),
+      request(app).get('/admin/users'),
+      request(app).get('/admin/activity'),
+      request(app).get('/admin/settings'),
+      request(app).get('/admin/ingestion/status'),
+    ])
 
-    assert.equal(stats.status, 200)
-    assert.equal(users.status, 403)
-    assert.equal(activities.status, 403)
-    assert.equal(role.status, 403)
+    for (const response of responses) {
+      assert.equal(response.status, 403)
+    }
   })
 
   await t.test('GET /admin/stats rejects a suspended admin with 403', async () => {
@@ -242,11 +242,11 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
   await t.test('PATCH role changes the role and writes an audit log', async () => {
     const response = await request(app)
       .patch(`${targetUrl(target._id)}/role`)
-      .send({ role: 'editor' })
+      .send({ role: 'admin' })
 
     assert.equal(response.status, 200)
     assert.equal(response.body.success, true)
-    assert.equal((await User.findById(target._id).lean())?.role, 'editor')
+    assert.equal((await User.findById(target._id).lean())?.role, 'admin')
 
     const log = await AuditLogModel.findOne({
       targetId: target._id,
@@ -256,13 +256,13 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     assert.equal(log.actorId?.toString(), actor._id.toString())
     assert.equal(log.targetType, 'user')
     assert.deepEqual(log.before, { role: 'user' })
-    assert.deepEqual(log.after, { role: 'editor' })
+    assert.deepEqual(log.after, { role: 'admin' })
   })
 
   await t.test('PATCH role rejects setting the role the user already has', async () => {
     const response = await request(app)
       .patch(`${targetUrl(target._id)}/role`)
-      .send({ role: 'editor' })
+      .send({ role: 'admin' })
 
     assert.equal(response.status, 400)
   })
@@ -347,7 +347,7 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     assert.equal(status.status, 400)
     assert.equal(badType.status, 400)
     assert.equal(missing.status, 404)
-    assert.equal((await User.findById(target._id).lean())?.role, 'editor')
+    assert.equal((await User.findById(target._id).lean())?.role, 'admin')
   })
 
   await t.test('GET /admin/users searches by organization and returns total', async () => {
@@ -931,7 +931,7 @@ test('admin routes: system settings', async (t) => {
   )
 
   await t.test('settings are admin-only', async () => {
-    currentUser = makeUser({ role: 'editor', status: 'active' })
+    currentUser = makeUser({ role: 'user', status: 'active' })
     const read = await request(app).get('/admin/settings')
     const write = await request(app).patch('/admin/settings').send({ ingestionEnabled: false })
 
@@ -945,10 +945,10 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
 
   const actor = await User.create({
     googleId: `${SEED_PREFIX}sync-actor`,
-    name: 'Seed Sync Editor',
+    name: 'Seed Sync Admin',
     email: `${SEED_PREFIX}sync-actor@example.com`,
     image: null,
-    role: 'editor',
+    role: 'admin',
     status: 'active',
   })
   const runIds: Types.ObjectId[] = []
@@ -974,7 +974,7 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
     name: actor.name,
     email: actor.email,
     image: actor.image,
-    role: 'editor',
+    role: 'admin',
     status: 'active',
   }
 
@@ -1004,7 +1004,7 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
   })
 
   await t.test(
-    'an editor starts a manual sync: 202, then the run and feed entry are recorded',
+    'an admin starts a manual sync: 202, then the run and feed entry are recorded',
     async () => {
       env.GOVSPENDING_API_KEY = 'test-key'
 
@@ -1021,7 +1021,7 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
       const log = await AuditLogModel.findOne({ targetId: run._id }).lean()
       assert.equal(log?.action, 'ingestion.completed')
       assert.equal(log?.actorType, 'user')
-      assert.equal(log?.actorName, 'Seed Sync Editor')
+      assert.equal(log?.actorName, 'Seed Sync Admin')
 
       const status = await request(app).get('/admin/ingestion/status')
       assert.equal(status.status, 200)
@@ -1074,7 +1074,7 @@ test('admin routes: GET /admin/stats overview numbers', async (t) => {
 
   const app = express()
   app.use((req, _res, next) => {
-    req.user = makeUser({ role: 'editor', status: 'active' })
+    req.user = makeUser({ role: 'admin', status: 'active' })
     next()
   })
   app.use('/admin', router)

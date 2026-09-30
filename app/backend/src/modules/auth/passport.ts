@@ -13,7 +13,7 @@ declare global {
       name: string
       email: string
       image: string | null
-      role?: 'admin' | 'editor' | 'user'
+      role?: 'admin' | 'user'
       status?: 'active' | 'suspended'
     }
   }

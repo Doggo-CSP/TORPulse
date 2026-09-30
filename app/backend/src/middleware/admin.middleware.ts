@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express'
 
-type Role = 'admin' | 'editor' | 'user'
+type Role = 'admin' | 'user'
 
 // Allows only the given roles, and only for accounts whose status is active (or unset on
 // records created before status existed).
