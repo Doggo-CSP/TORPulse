@@ -12,6 +12,7 @@ import {
   getTorByIdHandler,
   resolveTorCategory,
 } from './tor.controller.js'
+import { CategoryModel } from '../category/category.model.js'
 import { TorModel } from './tor.model.js'
 
 // --- deriveCategory (pure) -------------------------------------------------
@@ -222,6 +223,9 @@ test('GET /recommendations requires auth, then returns deterministic scored item
       }),
     }),
   }))
+  context.mock.method(CategoryModel, 'find', () => ({
+    lean: async () => [{ key: 'web_application', name: 'งานพัฒนาเว็บไซต์' }],
+  }))
 
   const guestApp = express()
   guestApp.get('/recommendations', getRecommendationsHandler)
@@ -251,4 +255,8 @@ test('GET /recommendations requires auth, then returns deterministic scored item
     assert.ok(item.score >= 50 && item.score <= 95, `score ${item.score} out of range`)
   }
   assert.deepEqual(firstResponse.body, secondResponse.body)
+  const reactItem = firstResponse.body.items.find(
+    (item: { projectTitle: string }) => item.projectTitle === 'Project A',
+  )
+  assert.equal(reactItem?.categoryName, 'งานพัฒนาเว็บไซต์')
 })

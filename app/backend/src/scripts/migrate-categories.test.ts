@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { LEGACY_INTEREST_IDS } from '../modules/category/category.constants.js'
 import { deriveOldCategory, mapInterests, planTorCategory } from './migrate-categories.js'
+
+const KEYS = new Set(Object.values(LEGACY_INTEREST_IDS))
 
 test('deriveOldCategory keeps the pre-change 5-category rules', () => {
   assert.equal(deriveOldCategory(['Machine Learning']), 'data_bi')
@@ -50,16 +53,20 @@ test('planTorCategory stores a missing category even when it does not move', () 
 })
 
 test('mapInterests maps legacy profile ids to category keys and de-duplicates', () => {
-  assert.deepEqual(mapInterests(['web', 'ai', 'web_application']), {
+  assert.deepEqual(mapInterests(['web', 'ai', 'web_application'], KEYS), {
     mapped: ['web_application', 'ai_ml'],
     unmapped: [],
     changed: true,
   })
-  assert.deepEqual(mapInterests(['data_bi']), { mapped: ['data_bi'], unmapped: [], changed: false })
+  assert.deepEqual(mapInterests(['data_bi'], KEYS), {
+    mapped: ['data_bi'],
+    unmapped: [],
+    changed: false,
+  })
 })
 
 test('mapInterests reports unknown values instead of dropping them', () => {
-  const result = mapInterests(['web', 'blockchain'])
+  const result = mapInterests(['web', 'blockchain'], KEYS)
 
   assert.deepEqual(result.unmapped, ['blockchain'])
   assert.equal(result.changed, false)

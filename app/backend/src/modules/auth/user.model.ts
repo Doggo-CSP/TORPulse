@@ -1,7 +1,5 @@
 import mongoose, { Schema, model, type HydratedDocument, type Model } from 'mongoose'
 
-import { CATEGORY_KEYS } from '../category/category.constants.js'
-
 export interface UserRecord {
   googleId: string
   name: string
@@ -46,7 +44,8 @@ const userSchema = new Schema<UserRecord>(
     phone: { type: String, default: '' },
     address: { type: String, default: '' },
     about: { type: String, default: '' },
-    interests: { type: [{ type: String, enum: CATEGORY_KEYS }], default: [] },
+    // Category keys; validated against the categories collection by PUT /user/interests
+    interests: { type: [String], default: [] },
     website: { type: String, default: null },
     companyName: { type: String, default: '' },
     registrationNumber: { type: String, default: '' },

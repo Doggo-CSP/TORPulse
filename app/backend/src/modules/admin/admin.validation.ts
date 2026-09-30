@@ -1,7 +1,6 @@
 import { isObjectIdOrHexString } from 'mongoose'
 import { z } from 'zod'
 
-import { CATEGORY_KEYS } from '../category/category.constants.js'
 import { TOR_REVIEW_STATUSES } from '../tor/tor.model.js'
 import { ACTIVITY_GROUPS } from './admin.types.js'
 
@@ -13,7 +12,7 @@ export const adminTorListQuerySchema = z.object({
     .enum([...TOR_REVIEW_STATUSES, 'all'])
     .optional()
     .default('all'),
-  category: z.enum(CATEGORY_KEYS).optional(),
+  category: z.string().trim().min(1).optional(),
   confidence_min: z.coerce.number().min(0).max(1).optional(),
   confidence_max: z.coerce.number().min(0).max(1).optional(),
   data_source_id: z
@@ -37,7 +36,8 @@ export const updateAdminTorSchema = z
     deliverables: stringList.optional(),
     timeline: stringList.optional(),
     evaluationCriteria: stringList.optional(),
-    category: z.enum(CATEGORY_KEYS).optional(),
+    // Must be an active category; checked against the DB in the handler
+    category: z.string().trim().min(1).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0)
@@ -70,3 +70,40 @@ export const updateAdminUserSchema = z
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0)
+
+// Categories: the key is optional on create (generated from the name when missing) and can
+// never change afterwards, so the update schema rejects it via .strict().
+const categoryFields = {
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(500),
+  keywords: z.array(z.string()),
+}
+
+export const createCategorySchema = z
+  .object({
+    key: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9_]+$/)
+      .max(50)
+      .optional(),
+    name: categoryFields.name,
+    description: categoryFields.description.optional(),
+    keywords: categoryFields.keywords.optional(),
+  })
+  .strict()
+
+export const updateCategorySchema = z
+  .object({
+    name: categoryFields.name.optional(),
+    description: categoryFields.description.optional(),
+    keywords: categoryFields.keywords.optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0)
+
+export const categoryStatusSchema = z.object({ isActive: z.boolean() }).strict()
+
+export const adminCategoryListQuerySchema = z.object({
+  search: z.string().trim().optional(),
+})

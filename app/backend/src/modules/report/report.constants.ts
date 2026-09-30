@@ -1,18 +1,4 @@
-import { CATEGORY_KEYS, CATEGORY_LABELS, type TorCategory } from '../category/category.constants.js'
-
 export const UNKNOWN_DEPARTMENT_LABEL = 'อื่นๆ'
-
-export const REPORT_CATEGORY_LABELS = CATEGORY_LABELS
-
-// Display order for endpoint C, which must always emit every category.
-export const REPORT_CATEGORY_ORDER: readonly TorCategory[] = CATEGORY_KEYS
-
-export const CATEGORY_LABEL_TO_KEY: Record<string, TorCategory> = Object.fromEntries(
-  (Object.entries(REPORT_CATEGORY_LABELS) as [TorCategory, string][]).map(([key, label]) => [
-    label,
-    key,
-  ]),
-)
 
 export const REPORT_PERIODS = ['6m', '1y', '3y', 'all'] as const
 export type ReportPeriod = (typeof REPORT_PERIODS)[number]

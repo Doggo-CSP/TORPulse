@@ -1,7 +1,5 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
-import { CATEGORY_KEYS } from '../category/category.constants.js'
-
 export const TOR_REVIEW_STATUSES = ['unverified', 'verified', 'archived', 'deleted'] as const
 export type TorReviewStatus = (typeof TOR_REVIEW_STATUSES)[number]
 
@@ -155,9 +153,10 @@ const torSchema = new Schema(
       enum: TOR_REVIEW_STATUSES,
       default: 'unverified',
     },
+    // A key of the categories collection; checked by the admin API, not by an enum, because
+    // admins can add categories.
     category: {
       type: String,
-      enum: [...CATEGORY_KEYS, null],
       default: null,
     },
     categoryOverridden: {

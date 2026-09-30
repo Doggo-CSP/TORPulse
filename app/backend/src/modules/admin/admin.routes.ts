@@ -18,6 +18,11 @@ import {
   updateAdminSettings,
   getIngestionStatus,
   triggerIngestionSync,
+  getAdminCategories,
+  createAdminCategory,
+  updateAdminCategory,
+  setAdminCategoryStatus,
+  deleteAdminCategory,
 } from './admin.controller.js'
 
 const router = Router()
@@ -42,5 +47,10 @@ router.patch('/tors/:torId', updateAdminTor)
 router.post('/tors/:torId/verify', verifyAdminTor)
 router.post('/tors/:torId/archive', archiveAdminTor)
 router.delete('/tors/:torId', deleteAdminTor)
+router.get('/categories', getAdminCategories)
+router.post('/categories', createAdminCategory)
+router.patch('/categories/:categoryId', updateAdminCategory)
+router.patch('/categories/:categoryId/status', setAdminCategoryStatus)
+router.delete('/categories/:categoryId', deleteAdminCategory)
 
 export default router

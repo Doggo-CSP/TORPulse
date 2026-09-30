@@ -4,23 +4,46 @@ import test from 'node:test'
 import express from 'express'
 import request from 'supertest'
 
+import { database } from '../../config/mongoose.js'
+import { seedCategories } from '../../scripts/seed-categories.js'
+import { CATEGORY_SEED } from './category.constants.js'
+import { CategoryModel } from './category.model.js'
 import router from './category.routes.js'
 
-test('GET /categories lists all 8 categories in display order with Thai names', async () => {
+const HIDDEN_KEY = 'seed_category_routes_test_hidden'
+
+test('GET /categories', async (t) => {
+  await database.connect()
+  await seedCategories()
+  await CategoryModel.deleteMany({ key: HIDDEN_KEY })
+
+  t.after(async () => {
+    await CategoryModel.deleteMany({ key: HIDDEN_KEY })
+    await database.disconnect()
+  })
+
   const app = express()
   app.use('/categories', router)
 
-  const response = await request(app).get('/categories')
+  await t.test('lists the seeded categories in display order with Thai names', async () => {
+    const response = await request(app).get('/categories')
 
-  assert.equal(response.status, 200)
-  assert.deepEqual(response.body, [
-    { key: 'web_application', name: 'งานพัฒนาเว็บไซต์' },
-    { key: 'data_bi', name: 'งานข้อมูลและวิเคราะห์' },
-    { key: 'mobile_app', name: 'งานแอปพลิเคชันมือถือ' },
-    { key: 'enterprise_system', name: 'งานระบบองค์กร' },
-    { key: 'consulting_architecture', name: 'งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ' },
-    { key: 'cybersecurity', name: 'งานความมั่นคงปลอดภัยไซเบอร์' },
-    { key: 'ai_ml', name: 'งานปัญญาประดิษฐ์และแมชชีนเลิร์นนิง' },
-    { key: 'cloud_infrastructure', name: 'งานคลาวด์และโครงสร้างพื้นฐาน' },
-  ])
+    assert.equal(response.status, 200)
+    // Other categories an admin added may also be listed; the seeded 8 keep their order.
+    const seedKeys = new Set(CATEGORY_SEED.map((category) => category.key))
+    const seeded = (response.body as { key: string }[]).filter((c) => seedKeys.has(c.key))
+    assert.deepEqual(
+      seeded,
+      CATEGORY_SEED.map(({ key, name, description }) => ({ key, name, description })),
+    )
+  })
+
+  await t.test('leaves out hidden categories', async () => {
+    await CategoryModel.create({ key: HIDDEN_KEY, name: 'หมวดทดสอบที่ซ่อน', isActive: false })
+
+    const response = await request(app).get('/categories')
+
+    assert.equal(response.status, 200)
+    assert.ok(!(response.body as { key: string }[]).some((c) => c.key === HIDDEN_KEY))
+  })
 })

@@ -8,7 +8,9 @@ import { Types } from 'mongoose'
 
 import { env } from '../../config/env.js'
 import { database } from '../../config/mongoose.js'
+import { seedCategories } from '../../scripts/seed-categories.js'
 import { User } from '../auth/user.model.js'
+import { CategoryModel } from '../category/category.model.js'
 import { TorModel } from '../tor/tor.model.js'
 import torRouter from '../tor/tor.routes.js'
 import router from './admin.routes.js'
@@ -89,6 +91,7 @@ test('admin routes: requireAdmin guard', async (t) => {
       request(app).get('/admin/activity'),
       request(app).get('/admin/settings'),
       request(app).get('/admin/ingestion/status'),
+      request(app).get('/admin/categories'),
     ])
 
     for (const response of responses) {
@@ -574,6 +577,7 @@ test('admin routes: transactional role changes and the audit activity feed', asy
 
 test('admin routes: TOR management (UC-14)', async (t) => {
   await database.connect()
+  await seedCategories()
 
   const actor = await User.create({
     googleId: `${SEED_PREFIX}tor-actor`,
@@ -814,6 +818,18 @@ test('admin routes: TOR management (UC-14)', async (t) => {
       assert.equal(badCategory.status, 400)
     },
   )
+
+  await t.test('PATCH category refuses a hidden category', async () => {
+    const hiddenKey = 'seed_admin_routes_test_hidden'
+    await CategoryModel.deleteMany({ key: hiddenKey })
+    await CategoryModel.create({ key: hiddenKey, name: `${SEED_PREFIX}hidden`, isActive: false })
+    try {
+      const response = await request(app).patch(torUrl(webTor._id)).send({ category: hiddenKey })
+      assert.equal(response.status, 400)
+    } finally {
+      await CategoryModel.deleteMany({ key: hiddenKey })
+    }
+  })
 
   await t.test('POST verify marks the TOR verified once', async () => {
     const first = await request(app).post(`${torUrl(webTor._id)}/verify`)

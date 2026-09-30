@@ -17,14 +17,31 @@ import {
 import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
 import { User, type UserDocument } from '../auth/user.model.js'
-import { CATEGORY_LABELS } from '../category/category.constants.js'
+import { CategoryModel } from '../category/category.model.js'
+import {
+  countUsersByCategory,
+  generateCategoryKey,
+  getCategoryNameMap,
+  listCategories,
+  nextCategorySortOrder,
+  normalizeKeywords,
+} from '../category/category.repository.js'
 import { deriveCategory, resolveTorCategory } from '../tor/tor.controller.js'
 import { TorModel, type Tor, type TorReviewStatus } from '../tor/tor.model.js'
 import { UserBookmarkModel } from '../user/user-bookmark.model.js'
-import type { SystemSettings, TorChangeOutcome, UserChangeOutcome } from './admin.types.js'
+import type {
+  CategoryChangeOutcome,
+  SystemSettings,
+  TorChangeOutcome,
+  UserChangeOutcome,
+} from './admin.types.js'
 import {
   activityQuerySchema,
+  adminCategoryListQuerySchema,
   adminTorListQuerySchema,
+  categoryStatusSchema,
+  createCategorySchema,
+  updateCategorySchema,
   updateAdminTorSchema,
   updateAdminUserSchema,
   updateSettingsSchema,
@@ -587,7 +604,8 @@ const TOR_STATUS_TRANSITIONS: Record<'verified' | 'archived' | 'deleted', TorRev
   deleted: ['unverified', 'verified', 'archived'],
 }
 
-const toAdminTorListItem = (tor: AdminTorLean) => {
+// categoryNames: key -> name from getCategoryNameMap(); an unknown key is shown as the key itself
+const toAdminTorListItem = (tor: AdminTorLean, categoryNames: Map<string, string>) => {
   const category = resolveTorCategory(tor)
   return {
     id: tor._id.toString(),
@@ -597,7 +615,7 @@ const toAdminTorListItem = (tor: AdminTorLean) => {
     sourceAdapter: tor.sourceAdapter,
     dataSourceId: tor.dataSourceId.toString(),
     category,
-    categoryLabel: CATEGORY_LABELS[category],
+    categoryLabel: categoryNames.get(category) ?? category,
     confidence: tor.confidence,
     reviewStatus: tor.reviewStatus ?? 'unverified',
     // The table shows the budget, falling back to the mid (reference) price when it is missing
@@ -608,9 +626,9 @@ const toAdminTorListItem = (tor: AdminTorLean) => {
   }
 }
 
-const toAdminTorDetail = (tor: AdminTorLean) => {
+const toAdminTorDetail = (tor: AdminTorLean, categoryNames: Map<string, string>) => {
   // The detail feeds the edit form, so it returns the stored budget without the list fallback
-  const { budgetSource: _budgetSource, ...listFields } = toAdminTorListItem(tor)
+  const { budgetSource: _budgetSource, ...listFields } = toAdminTorListItem(tor, categoryNames)
   return {
     ...listFields,
     budgetBaht: tor.budgetBaht ?? null,
@@ -685,9 +703,12 @@ export const getAdminTors = async (req: Request, res: Response): Promise<void> =
       filter.createdAt = createdAt
     }
 
-    const docs = await TorModel.find(filter).sort({ createdAt: -1 }).lean()
+    const [docs, categoryNames] = await Promise.all([
+      TorModel.find(filter).sort({ createdAt: -1 }).lean(),
+      getCategoryNameMap(),
+    ])
     const items = docs
-      .map(toAdminTorListItem)
+      .map((tor) => toAdminTorListItem(tor, categoryNames))
       .filter((item) => !category || item.category === category)
 
     const total = items.length
@@ -715,7 +736,7 @@ export const getAdminTorById = async (req: Request, res: Response): Promise<void
       return
     }
 
-    res.json({ tor: toAdminTorDetail(tor) })
+    res.json({ tor: toAdminTorDetail(tor, await getCategoryNameMap()) })
   } catch (error) {
     res.status(500).json({ success: false, message: (error as Error).message })
   }
@@ -737,6 +758,15 @@ export const updateAdminTor = async (req: Request, res: Response): Promise<void>
     }
 
     const changes = parsed.data
+    // Only an active category can be assigned; TORs already on a hidden one keep it.
+    if (
+      changes.category &&
+      !(await CategoryModel.exists({ key: changes.category, isActive: true }))
+    ) {
+      res.status(400).json({ success: false, message: 'ไม่พบหมวดหมู่ หรือหมวดหมู่ถูกซ่อนอยู่' })
+      return
+    }
+
     const actorId = req.user!._id
     let outcome = 'not_found' as TorChangeOutcome
     let updated = null as AdminTorLean | null
@@ -806,7 +836,11 @@ export const updateAdminTor = async (req: Request, res: Response): Promise<void>
       return
     }
 
-    res.json({ success: true, message: 'แก้ไขข้อมูล TOR สำเร็จ', tor: toAdminTorDetail(updated) })
+    res.json({
+      success: true,
+      message: 'แก้ไขข้อมูล TOR สำเร็จ',
+      tor: toAdminTorDetail(updated, await getCategoryNameMap()),
+    })
   } catch (error) {
     res.status(500).json({ success: false, message: (error as Error).message })
   }
@@ -1057,6 +1091,410 @@ export const updateAdminSettings = async (req: Request, res: Response): Promise<
       message: 'บันทึกการตั้งค่าสำเร็จ',
       settings: toSettingsResponse(saved),
     })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Categories (UC-16): /admin/categories
+// ---------------------------------------------------------------------------
+
+type CategoryLean = Awaited<ReturnType<typeof listCategories>>[number]
+
+const toAdminCategory = (category: CategoryLean, userCount: number) => ({
+  id: category._id.toString(),
+  key: category.key,
+  name: category.name,
+  description: category.description ?? '',
+  keywords: category.keywords ?? [],
+  isActive: category.isActive,
+  sortOrder: category.sortOrder,
+  userCount,
+  createdAt: category.createdAt,
+  updatedAt: category.updatedAt,
+})
+
+const categoryAuditFields = (category: CategoryLean) => ({
+  name: category.name,
+  description: category.description ?? '',
+  keywords: category.keywords ?? [],
+  isActive: category.isActive,
+})
+
+// Names are unique regardless of letter case ("AI" and "ai" are the same category).
+const categoryNameTaken = async (
+  name: string,
+  session: ClientSession,
+  excludeId?: Types.ObjectId,
+): Promise<boolean> => {
+  const filter: Record<string, unknown> = {
+    name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' },
+  }
+  if (excludeId) filter._id = { $ne: excludeId }
+  return Boolean(await CategoryModel.exists(filter).session(session))
+}
+
+// TORs that show this category: a stored category, or no stored category and the keyword rules
+// derive this key (same as resolveTorCategory). Soft-deleted TORs still hold the key, so they count.
+const countTorsUsingCategory = async (key: string, session: ClientSession): Promise<number> => {
+  const [stored, unstored] = await Promise.all([
+    TorModel.countDocuments({ category: key }, { session }),
+    TorModel.find({ category: null }, { technologies: 1 }).session(session).lean(),
+  ])
+  return stored + unstored.filter((tor) => deriveCategory(tor.technologies ?? []) === key).length
+}
+
+export const getAdminCategories = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = adminCategoryListQuerySchema.safeParse(req.query)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'พารามิเตอร์ไม่ถูกต้อง' })
+      return
+    }
+
+    // total and activeCount cover every category, so the page's summary does not change with
+    // the search box; categories is the filtered list.
+    const [categories, userCounts, total, activeCount] = await Promise.all([
+      listCategories({ search: parsed.data.search }),
+      countUsersByCategory(),
+      CategoryModel.countDocuments(),
+      CategoryModel.countDocuments({ isActive: true }),
+    ])
+
+    res.json({
+      categories: categories.map((category) =>
+        toAdminCategory(category, userCounts.get(category.key) ?? 0),
+      ),
+      total,
+      activeCount,
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+export const createAdminCategory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = createCategorySchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'ข้อมูลหมวดหมู่ไม่ถูกต้อง' })
+      return
+    }
+
+    const input = parsed.data
+    const actorId = req.user!._id
+    let outcome = 'not_found' as CategoryChangeOutcome
+    let created = null as CategoryLean | null
+
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        created = null
+        if (await categoryNameTaken(input.name, session)) {
+          outcome = 'duplicate_name'
+          return
+        }
+        if (input.key && (await CategoryModel.exists({ key: input.key }).session(session))) {
+          outcome = 'duplicate_key'
+          return
+        }
+
+        const [doc] = await CategoryModel.create(
+          [
+            {
+              key: input.key ?? (await generateCategoryKey(input.name, session)),
+              name: input.name,
+              description: input.description ?? '',
+              keywords: normalizeKeywords(input.keywords ?? []),
+              isActive: true,
+              sortOrder: await nextCategorySortOrder(session),
+            },
+          ],
+          { session },
+        )
+        created = doc!.toObject() as CategoryLean
+
+        await createAuditLog(
+          {
+            actorId,
+            action: 'category.created',
+            targetType: 'category',
+            targetId: created._id,
+            actorName: req.user!.name,
+            targetLabel: created.name,
+            after: { key: created.key, ...categoryAuditFields(created) },
+          },
+          session,
+        )
+        outcome = 'updated'
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    if (outcome === 'duplicate_name') {
+      res.status(409).json({ success: false, message: 'มีหมวดหมู่ชื่อนี้อยู่แล้ว' })
+      return
+    }
+    if (outcome === 'duplicate_key') {
+      res.status(409).json({ success: false, message: 'มีหมวดหมู่ที่ใช้ key นี้อยู่แล้ว' })
+      return
+    }
+    if (!created) {
+      res.status(500).json({ success: false, message: 'เพิ่มหมวดหมู่ไม่สำเร็จ' })
+      return
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'เพิ่มหมวดหมู่สำเร็จ',
+      category: toAdminCategory(created, 0),
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+export const updateAdminCategory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { categoryId } = req.params
+
+    if (!isObjectIdOrHexString(categoryId)) {
+      res.status(400).json({ success: false, message: 'รหัสหมวดหมู่ไม่ถูกต้อง' })
+      return
+    }
+
+    // .strict() rejects key (and anything else not editable)
+    const parsed = updateCategorySchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({
+        success: false,
+        message: 'ข้อมูลหมวดหมู่ไม่ถูกต้อง (แก้ไขได้เฉพาะชื่อ คำอธิบาย และคีย์เวิร์ด)',
+      })
+      return
+    }
+
+    const changes = {
+      ...parsed.data,
+      ...(parsed.data.keywords ? { keywords: normalizeKeywords(parsed.data.keywords) } : {}),
+    }
+    const actorId = req.user!._id
+    let outcome = 'not_found' as CategoryChangeOutcome
+    let updated = null as CategoryLean | null
+
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        outcome = 'not_found'
+        const category = await CategoryModel.findById(categoryId).session(session).lean()
+        if (!category) return
+
+        if (changes.name && (await categoryNameTaken(changes.name, session, category._id))) {
+          outcome = 'duplicate_name'
+          return
+        }
+
+        const current = categoryAuditFields(category) as Record<string, unknown>
+        const before = Object.fromEntries(Object.keys(changes).map((key) => [key, current[key]]))
+
+        updated = await CategoryModel.findByIdAndUpdate(
+          categoryId,
+          { $set: changes },
+          { returnDocument: 'after', runValidators: true, session },
+        ).lean()
+        if (!updated) return
+
+        await createAuditLog(
+          {
+            actorId,
+            action: 'category.updated',
+            targetType: 'category',
+            targetId: updated._id,
+            actorName: req.user!.name,
+            targetLabel: updated.name,
+            before,
+            after: changes,
+          },
+          session,
+        )
+        outcome = 'updated'
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    if (outcome === 'duplicate_name') {
+      res.status(409).json({ success: false, message: 'มีหมวดหมู่ชื่อนี้อยู่แล้ว' })
+      return
+    }
+    if (outcome === 'not_found' || !updated) {
+      res.status(404).json({ success: false, message: 'ไม่พบหมวดหมู่' })
+      return
+    }
+
+    const userCounts = await countUsersByCategory()
+    res.json({
+      success: true,
+      message: 'แก้ไขหมวดหมู่สำเร็จ',
+      category: toAdminCategory(updated, userCounts.get((updated as CategoryLean).key) ?? 0),
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+// Hiding keeps every existing reference: users keep the interest and TORs keep the category;
+// the category just stops being offered for new choices.
+export const setAdminCategoryStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { categoryId } = req.params
+
+    if (!isObjectIdOrHexString(categoryId)) {
+      res.status(400).json({ success: false, message: 'รหัสหมวดหมู่ไม่ถูกต้อง' })
+      return
+    }
+
+    const parsed = categoryStatusSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'สถานะไม่ถูกต้อง' })
+      return
+    }
+
+    const { isActive } = parsed.data
+    const actorId = req.user!._id
+    let outcome = 'not_found' as CategoryChangeOutcome
+    let updated = null as CategoryLean | null
+
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        outcome = 'not_found'
+        const category = await CategoryModel.findById(categoryId).session(session).lean()
+        if (!category) return
+
+        if (category.isActive === isActive) {
+          outcome = 'unchanged'
+          return
+        }
+
+        updated = await CategoryModel.findByIdAndUpdate(
+          categoryId,
+          { $set: { isActive } },
+          { returnDocument: 'after', session },
+        ).lean()
+        if (!updated) return
+
+        await createAuditLog(
+          {
+            actorId,
+            action: isActive ? 'category.shown' : 'category.hidden',
+            targetType: 'category',
+            targetId: updated._id,
+            actorName: req.user!.name,
+            targetLabel: updated.name,
+            before: { isActive: category.isActive },
+            after: { isActive },
+          },
+          session,
+        )
+        outcome = 'updated'
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    if (outcome === 'not_found') {
+      res.status(404).json({ success: false, message: 'ไม่พบหมวดหมู่' })
+      return
+    }
+    if (outcome === 'unchanged' || !updated) {
+      res.status(400).json({
+        success: false,
+        message: isActive ? 'หมวดหมู่นี้แสดงอยู่แล้ว' : 'หมวดหมู่นี้ถูกซ่อนอยู่แล้ว',
+      })
+      return
+    }
+
+    const userCounts = await countUsersByCategory()
+    res.json({
+      success: true,
+      message: isActive ? 'แสดงหมวดหมู่สำเร็จ' : 'ซ่อนหมวดหมู่สำเร็จ',
+      category: toAdminCategory(updated, userCounts.get((updated as CategoryLean).key) ?? 0),
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+// Only a category nobody uses can be deleted; otherwise the admin is told to hide it.
+export const deleteAdminCategory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { categoryId } = req.params
+
+    if (!isObjectIdOrHexString(categoryId)) {
+      res.status(400).json({ success: false, message: 'รหัสหมวดหมู่ไม่ถูกต้อง' })
+      return
+    }
+
+    const actorId = req.user!._id
+    let outcome = 'not_found' as CategoryChangeOutcome
+    let usage = { userCount: 0, torCount: 0 }
+
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        outcome = 'not_found'
+        const category = await CategoryModel.findById(categoryId).session(session).lean()
+        if (!category) return
+
+        const [userCount, torCount] = await Promise.all([
+          User.countDocuments({ interests: category.key }, { session }),
+          countTorsUsingCategory(category.key, session),
+        ])
+        usage = { userCount, torCount }
+        if (userCount > 0 || torCount > 0) {
+          outcome = 'in_use'
+          return
+        }
+
+        await CategoryModel.deleteOne({ _id: category._id }, { session })
+        await createAuditLog(
+          {
+            actorId,
+            action: 'category.deleted',
+            targetType: 'category',
+            targetId: category._id,
+            actorName: req.user!.name,
+            targetLabel: category.name,
+            before: { key: category.key, ...categoryAuditFields(category) },
+          },
+          session,
+        )
+        outcome = 'updated'
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    if (outcome === 'not_found') {
+      res.status(404).json({ success: false, message: 'ไม่พบหมวดหมู่' })
+      return
+    }
+    if (outcome === 'in_use') {
+      const reasons = [
+        usage.userCount > 0 ? `มีผู้ใช้เลือกหมวดหมู่นี้ ${usage.userCount} คน` : null,
+        usage.torCount > 0 ? `มี TOR ใช้อยู่ ${usage.torCount} รายการ` : null,
+      ].filter(Boolean)
+      res.status(409).json({
+        success: false,
+        message: `ลบไม่ได้ เพราะ${reasons.join(' และ')} กรุณาซ่อนหมวดหมู่แทน`,
+        ...usage,
+      })
+      return
+    }
+
+    res.json({ success: true, message: 'ลบหมวดหมู่สำเร็จ' })
   } catch (error) {
     res.status(500).json({ success: false, message: (error as Error).message })
   }

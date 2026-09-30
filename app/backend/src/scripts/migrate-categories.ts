@@ -2,11 +2,8 @@ import { pathToFileURL } from 'node:url'
 
 import { database } from '../config/mongoose.js'
 import { User } from '../modules/auth/user.model.js'
-import {
-  CATEGORY_KEYS,
-  LEGACY_INTEREST_IDS,
-  type TorCategory,
-} from '../modules/category/category.constants.js'
+import { LEGACY_INTEREST_IDS } from '../modules/category/category.constants.js'
+import { CategoryModel } from '../modules/category/category.model.js'
 import { deriveCategory } from '../modules/tor/tor.controller.js'
 import { TorModel } from '../modules/tor/tor.model.js'
 
@@ -42,7 +39,7 @@ const OLD_CONSULTING_ARCHITECTURE = [
 const oldMatchesAny = (technologies: string[], keywords: string[]): boolean =>
   technologies.some((tech) => keywords.some((keyword) => tech.includes(keyword)))
 
-export function deriveOldCategory(technologies: string[]): TorCategory {
+export function deriveOldCategory(technologies: string[]): string {
   const normalized = technologies.map((tech) => tech.toLowerCase())
   if (oldMatchesAny(normalized, OLD_MOBILE_APP)) return 'mobile_app'
   const hasWeb = oldMatchesAny(normalized, OLD_WEB_APPLICATION)
@@ -62,8 +59,8 @@ interface TorForMigration {
 
 export type TorMigrationPlan =
   | { type: 'skip'; reason: 'edited' | 'verified' | 'overridden' }
-  | { type: 'unchanged'; category: TorCategory }
-  | { type: 'update'; from: TorCategory; to: TorCategory }
+  | { type: 'unchanged'; category: string }
+  | { type: 'update'; from: string; to: string }
 
 export function planTorCategory(tor: TorForMigration): TorMigrationPlan {
   if (tor.categoryOverridden) return { type: 'skip', reason: 'overridden' }
@@ -72,24 +69,27 @@ export function planTorCategory(tor: TorForMigration): TorMigrationPlan {
 
   const to = deriveCategory(tor.technologies ?? [])
   const from =
-    (tor.category as TorCategory | null | undefined) ?? deriveOldCategory(tor.technologies ?? [])
+    (tor.category as string | null | undefined) ?? deriveOldCategory(tor.technologies ?? [])
 
   // A missing stored category is written even when the derived value did not move.
   if (tor.category === to) return { type: 'unchanged', category: to }
   return { type: 'update', from, to }
 }
 
-export function mapInterests(interests: string[]): {
-  mapped: TorCategory[]
+// categoryKeys: every key in the categories collection (hidden ones included).
+export function mapInterests(
+  interests: string[],
+  categoryKeys: ReadonlySet<string>,
+): {
+  mapped: string[]
   unmapped: string[]
   changed: boolean
 } {
-  const keys = CATEGORY_KEYS as readonly string[]
-  const mapped: TorCategory[] = []
+  const mapped: string[] = []
   const unmapped: string[] = []
 
   for (const value of interests) {
-    const key = keys.includes(value) ? (value as TorCategory) : LEGACY_INTEREST_IDS[value]
+    const key = categoryKeys.has(value) ? value : LEGACY_INTEREST_IDS[value]
     if (key) {
       if (!mapped.includes(key)) mapped.push(key)
     } else {
@@ -120,7 +120,7 @@ async function migrateCategories(apply: boolean, includeTors: boolean): Promise<
     const moves = new Map<string, number>()
     const skipped = { edited: 0, verified: 0, overridden: 0 }
     let unchanged = 0
-    const torWrites: { _id: unknown; category: TorCategory }[] = []
+    const torWrites: { _id: unknown; category: string }[] = []
 
     for (const tor of tors) {
       const plan = planTorCategory(tor)
@@ -154,11 +154,14 @@ async function migrateCategories(apply: boolean, includeTors: boolean): Promise<
       { interests: { $exists: true, $ne: [] } },
       { email: 1, interests: 1 },
     ).lean()
-    const userWrites: { _id: unknown; interests: TorCategory[] }[] = []
+    const categoryKeys = new Set(
+      (await CategoryModel.find({}, { key: 1 }).lean()).map((category) => category.key),
+    )
+    const userWrites: { _id: unknown; interests: string[] }[] = []
     let usersWithUnmapped = 0
 
     for (const user of users) {
-      const { mapped, unmapped, changed } = mapInterests(user.interests ?? [])
+      const { mapped, unmapped, changed } = mapInterests(user.interests ?? [], categoryKeys)
       if (unmapped.length > 0) {
         // Leave the whole list untouched so nothing is dropped silently.
         usersWithUnmapped += 1

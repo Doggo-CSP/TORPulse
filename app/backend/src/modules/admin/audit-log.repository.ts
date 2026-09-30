@@ -24,12 +24,13 @@ export async function createAuditLog(input: CreateAuditLogInput, session?: Clien
   return log
 }
 
-// The feed group is the action prefix: user.* -> users, settings.* -> system, and so on.
+// The feed group is the action prefix: user.* -> users, settings.* and category.* -> system,
+// and so on.
 const GROUP_ACTION_PATTERNS: Record<ActivityGroup, RegExp> = {
   users: /^user\./,
   ingestion: /^ingestion\./,
   tor: /^tor\./,
-  system: /^settings\./,
+  system: /^(settings|category)\./,
 }
 
 export function activityGroupOf(action: string): ActivityGroup | null {
