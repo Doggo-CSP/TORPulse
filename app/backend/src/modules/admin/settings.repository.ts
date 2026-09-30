@@ -5,7 +5,6 @@ import type { SystemSettings, UpdateSettingsInput } from './admin.types.js'
 
 const DEFAULT_SETTINGS: SystemSettings = {
   ingestionEnabled: true,
-  autoApproveGovEmails: false,
   senderEmail: null,
 }
 
@@ -16,7 +15,6 @@ export async function getSettings(session?: ClientSession): Promise<SystemSettin
 
   return {
     ingestionEnabled: doc?.ingestionEnabled ?? DEFAULT_SETTINGS.ingestionEnabled,
-    autoApproveGovEmails: doc?.autoApproveGovEmails ?? DEFAULT_SETTINGS.autoApproveGovEmails,
     senderEmail: doc?.senderEmail ?? DEFAULT_SETTINGS.senderEmail,
   }
 }

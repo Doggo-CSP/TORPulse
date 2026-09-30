@@ -19,7 +19,6 @@ export type ActivityGroup = (typeof ACTIVITY_GROUPS)[number]
 
 export interface SystemSettings {
   ingestionEnabled: boolean
-  autoApproveGovEmails: boolean
   senderEmail: string | null
 }
 

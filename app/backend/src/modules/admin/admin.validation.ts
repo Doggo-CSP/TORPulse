@@ -52,7 +52,6 @@ export const activityQuerySchema = z.object({
 export const updateSettingsSchema = z
   .object({
     ingestionEnabled: z.boolean().optional(),
-    autoApproveGovEmails: z.boolean().optional(),
     senderEmail: z.email().nullable().optional(),
   })
   .strict()

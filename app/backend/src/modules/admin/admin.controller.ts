@@ -61,7 +61,6 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
     const [
       totalUsers,
       activeUsers,
-      pendingUsers,
       adminCount,
       editorCount,
       userCount,
@@ -70,7 +69,6 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
     ] = await Promise.all([
       User.countDocuments(),
       User.countDocuments({ $or: [{ status: 'active' }, { status: { $exists: false } }] }),
-      User.countDocuments({ status: 'pending' }),
       User.countDocuments({ role: 'admin' }),
       User.countDocuments({ role: 'editor' }),
       User.countDocuments({ $or: [{ role: 'user' }, { role: { $exists: false } }] }),
@@ -110,7 +108,6 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
         admins: adminCount,
         editors: editorCount,
         users: userCount,
-        pending: pendingUsers,
       },
       tors: {
         total: torsTotal,
@@ -120,9 +117,8 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
       },
       users: {
         total: totalUsers,
-        // Roles are counted regardless of status, so pending users also appear here
         byRole: { admin: adminCount, editor: editorCount, user: userCount },
-        byStatus: { active: activeUsers, pending: pendingUsers, suspended: suspendedUsers },
+        byStatus: { active: activeUsers, suspended: suspendedUsers },
       },
       savedTors: { total: savedTors },
       ingestionJobs: {
@@ -430,8 +426,7 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
       return
     }
 
-    // Admins can approve (pending -> active), suspend (-> suspended) and reactivate
-    // (suspended -> active). Nobody is moved back to pending by hand.
+    // Admins can suspend (active -> suspended) and reactivate (suspended -> active).
     if (!['active', 'suspended'].includes(status)) {
       res.status(400).json({ success: false, message: 'สถานะไม่ถูกต้อง' })
       return
@@ -468,13 +463,7 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
           return
         }
 
-        // TODO(QUESTION-7): rejecting a pending user is recorded as a suspension; see QUESTIONS.md
-        const action =
-          status === 'suspended'
-            ? 'user.suspended'
-            : previousStatus === 'pending'
-              ? 'user.approved'
-              : 'user.reactivated'
+        const action = status === 'suspended' ? 'user.suspended' : 'user.reactivated'
 
         updated = await User.findByIdAndUpdate(userId, { status }, { new: true, session })
         if (!updated) return
@@ -523,7 +512,6 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
 
     const statusMap: Record<string, string> = {
       active: 'ใช้งานอยู่',
-      pending: 'รอการอนุมัติ',
       suspended: 'ระงับการใช้งาน',
     }
 

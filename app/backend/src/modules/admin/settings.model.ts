@@ -17,12 +17,6 @@ const settingsSchema = new Schema(
       required: true,
       default: true,
     },
-    // TODO(QUESTION-10): default for auto-approval is a guess; see QUESTIONS.md
-    autoApproveGovEmails: {
-      type: Boolean,
-      required: true,
-      default: false,
-    },
     // Stored for future email sending; there is no UI and nothing sends email yet.
     senderEmail: {
       type: String,

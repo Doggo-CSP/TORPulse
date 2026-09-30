@@ -83,7 +83,7 @@ test('AuditLogModel rejects a record without an actor', async () => {
 test('AuditLogModel accepts a system record without an actor', async () => {
   const doc = new AuditLogModel({
     actorType: 'system',
-    action: 'user.approved',
+    action: 'ingestion.completed',
     targetType: 'user',
     targetId: new Types.ObjectId(),
   })
@@ -92,7 +92,7 @@ test('AuditLogModel accepts a system record without an actor', async () => {
 })
 
 test('activityGroupOf maps action prefixes to feed groups', () => {
-  assert.equal(activityGroupOf('user.approved'), 'users')
+  assert.equal(activityGroupOf('user.suspended'), 'users')
   assert.equal(activityGroupOf('ingestion.failed'), 'ingestion')
   assert.equal(activityGroupOf('tor.updated'), 'tor')
   assert.equal(activityGroupOf('settings.updated'), 'system')

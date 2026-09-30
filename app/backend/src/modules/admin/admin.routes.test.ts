@@ -84,26 +84,8 @@ test('admin routes: requireAdmin guard', async (t) => {
     assert.equal(role.status, 403)
   })
 
-  await t.test('a suspended or pending editor is rejected', async () => {
-    currentUser = makeUser({ role: 'editor', status: 'suspended' })
-    const suspended = await request(app).get('/admin/stats')
-    currentUser = makeUser({ role: 'editor', status: 'pending' })
-    const pending = await request(app).get('/admin/stats')
-
-    assert.equal(suspended.status, 403)
-    assert.equal(pending.status, 403)
-  })
-
   await t.test('GET /admin/stats rejects a suspended admin with 403', async () => {
     currentUser = makeUser({ role: 'admin', status: 'suspended' })
-
-    const response = await request(app).get('/admin/stats')
-
-    assert.equal(response.status, 403)
-  })
-
-  await t.test('GET /admin/stats rejects a pending admin with 403', async () => {
-    currentUser = makeUser({ role: 'admin', status: 'pending' })
 
     const response = await request(app).get('/admin/stats')
 
@@ -166,15 +148,7 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     role: 'admin',
     status: 'active',
   })
-  const pendingUser = await User.create({
-    googleId: `${SEED_PREFIX}pending`,
-    name: 'Seed Pending',
-    email: `${SEED_PREFIX}pending@example.com`,
-    image: null,
-    role: 'user',
-    status: 'pending',
-  })
-  const seededIds = [actor._id, target._id, otherAdmin._id, pendingUser._id]
+  const seededIds = [actor._id, target._id, otherAdmin._id]
 
   t.after(async () => {
     await AuditLogModel.deleteMany({ targetId: { $in: seededIds } })
@@ -316,22 +290,6 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     }).lean()
     assert.deepEqual(suspended?.after, { status: 'suspended' })
     assert.deepEqual(reactivated?.before, { status: 'suspended' })
-  })
-
-  await t.test('PATCH status approves a pending user and can reject another', async () => {
-    await User.updateOne({ _id: pendingUser._id }, { $set: { status: 'pending' } })
-    const approve = await request(app)
-      .patch(`${targetUrl(pendingUser._id)}/status`)
-      .send({ status: 'active' })
-    assert.equal(approve.status, 200)
-    assert.ok(await AuditLogModel.exists({ targetId: pendingUser._id, action: 'user.approved' }))
-
-    await User.updateOne({ _id: pendingUser._id }, { $set: { status: 'pending' } })
-    const reject = await request(app)
-      .patch(`${targetUrl(pendingUser._id)}/status`)
-      .send({ status: 'suspended' })
-    assert.equal(reject.status, 200)
-    assert.equal((await User.findById(pendingUser._id).lean())?.status, 'suspended')
   })
 
   await t.test('PATCH status rejects invalid, pending, and unchanged statuses', async () => {
@@ -932,7 +890,6 @@ test('admin routes: system settings', async (t) => {
     assert.equal(response.status, 200)
     assert.deepEqual(response.body.settings, {
       ingestionEnabled: true,
-      autoApproveGovEmails: false,
       senderEmail: null,
       ingestionIntervalMinutes: env.GOVSPENDING_SYNC_INTERVAL_MS / 60_000,
     })
@@ -941,20 +898,19 @@ test('admin routes: system settings', async (t) => {
   await t.test('PATCH /admin/settings saves changes and writes settings.updated', async () => {
     const response = await request(app)
       .patch('/admin/settings')
-      .send({ autoApproveGovEmails: true, senderEmail: 'noreply@example.go.th' })
+      .send({ ingestionEnabled: false, senderEmail: 'noreply@example.go.th' })
 
     assert.equal(response.status, 200)
-    assert.equal(response.body.settings.autoApproveGovEmails, true)
+    assert.equal(response.body.settings.ingestionEnabled, false)
     assert.equal(response.body.settings.senderEmail, 'noreply@example.go.th')
-    assert.equal(response.body.settings.ingestionEnabled, true)
 
     const log = await AuditLogModel.findOne({
       actorId: actor._id,
       action: 'settings.updated',
     }).lean()
-    assert.deepEqual(log?.before, { autoApproveGovEmails: false, senderEmail: null })
+    assert.deepEqual(log?.before, { ingestionEnabled: true, senderEmail: null })
     assert.deepEqual(log?.after, {
-      autoApproveGovEmails: true,
+      ingestionEnabled: false,
       senderEmail: 'noreply@example.go.th',
     })
   })
@@ -1127,7 +1083,7 @@ test('admin routes: GET /admin/stats overview numbers', async (t) => {
   assert.equal(before.status, 200)
 
   for (const [key, status] of [
-    ['stats-pending', 'pending'],
+    ['stats-active', 'active'],
     ['stats-suspended', 'suspended'],
   ] as const) {
     const user = await User.create({
@@ -1171,8 +1127,7 @@ test('admin routes: GET /admin/stats overview numbers', async (t) => {
   assert.equal(after.body.tors.newThisWeek - before.body.tors.newThisWeek, 1)
   assert.equal(after.body.tors.awarded, null)
 
-  // pending is a status, so pending users are also counted in byRole
-  assert.equal(after.body.users.byStatus.pending - before.body.users.byStatus.pending, 1)
+  assert.equal(after.body.users.byStatus.active - before.body.users.byStatus.active, 1)
   assert.equal(after.body.users.byStatus.suspended - before.body.users.byStatus.suspended, 1)
   assert.equal(after.body.users.byRole.user - before.body.users.byRole.user, 2)
   assert.equal(after.body.users.total - before.body.users.total, 2)
@@ -1184,5 +1139,5 @@ test('admin routes: GET /admin/stats overview numbers', async (t) => {
 
   // Legacy keys used by the current admin page are still present
   assert.equal(typeof after.body.stats.total_tors, 'number')
-  assert.equal(typeof after.body.role_counts.pending, 'number')
+  assert.equal(typeof after.body.role_counts.admins, 'number')
 })

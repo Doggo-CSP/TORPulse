@@ -13,7 +13,7 @@ export const requireRole =
     }
 
     const role = req.user.role ?? 'user'
-    if (!roles.includes(role) || (req.user.status && req.user.status !== 'active')) {
+    if (!roles.includes(role) || req.user.status === 'suspended') {
       res.status(403).json({ success: false, message: 'ไม่มีสิทธิ์เข้าถึงส่วนผู้ดูแลระบบ' })
       return
     }
