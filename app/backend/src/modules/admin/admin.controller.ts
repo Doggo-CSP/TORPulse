@@ -1,17 +1,20 @@
 import type { Request, Response } from 'express'
+import { env } from '../../config/env.js'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
 import { User, type UserDocument } from '../auth/user.model.js'
 import { CATEGORY_LABELS } from '../category/category.constants.js'
 import { deriveCategory, resolveTorCategory } from '../tor/tor.controller.js'
 import { TorModel, type Tor, type TorReviewStatus } from '../tor/tor.model.js'
 import { UserBookmarkModel } from '../user/user-bookmark.model.js'
-import type { TorChangeOutcome, UserChangeOutcome } from './admin.types.js'
+import type { SystemSettings, TorChangeOutcome, UserChangeOutcome } from './admin.types.js'
 import {
   adminTorListQuerySchema,
   updateAdminTorSchema,
   updateAdminUserSchema,
+  updateSettingsSchema,
 } from './admin.validation.js'
 import { createAuditLog, listRecentAuditLogs } from './audit-log.repository.js'
+import { getSettings, updateSettings } from './settings.repository.js'
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -483,6 +486,7 @@ const ACTIVITY_TITLES: Record<string, string> = {
   'user.suspended': 'ระงับบัญชีผู้ใช้งาน',
   'user.reactivated': 'เปิดใช้งานบัญชีอีกครั้ง',
   'user.updated': 'แก้ไขข้อมูลผู้ใช้งาน',
+  'settings.updated': 'ปรับการตั้งค่าระบบ',
   'tor.update': 'แก้ไขข้อมูล TOR',
   'tor.verify': 'ยืนยันความถูกต้องของ TOR',
   'tor.archive': 'เก็บ TOR เข้าคลัง',
@@ -517,7 +521,7 @@ export const getAdminActivities = async (_req: Request, res: Response): Promise<
     const torTitleById = new Map(tors.map((tor) => [tor._id.toString(), tor.projectTitle]))
 
     const activities = logs.map((log) => {
-      const actor = userById.get(log.actorId.toString())
+      const actor = log.actorId ? userById.get(log.actorId.toString()) : undefined
       const target =
         log.targetType === 'user'
           ? userById.get(log.targetId.toString())?.email
@@ -859,3 +863,77 @@ export const archiveAdminTor = (req: Request, res: Response): Promise<void> =>
 
 export const deleteAdminTor = (req: Request, res: Response): Promise<void> =>
   changeTorReviewStatus(req, res, 'deleted', 'tor.delete', 'ลบ TOR สำเร็จ')
+
+// ---------------------------------------------------------------------------
+// System settings
+// ---------------------------------------------------------------------------
+
+// The producer's sync interval comes from env and needs an infrastructure change to edit,
+// so it is reported read-only next to the editable settings.
+const toSettingsResponse = (settings: SystemSettings) => ({
+  ...settings,
+  ingestionIntervalMinutes: env.GOVSPENDING_SYNC_INTERVAL_MS / 60_000,
+})
+
+export const getAdminSettings = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    res.json({ settings: toSettingsResponse(await getSettings()) })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+export const updateAdminSettings = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parsed = updateSettingsSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'ข้อมูลการตั้งค่าไม่ถูกต้อง' })
+      return
+    }
+
+    const changes = parsed.data
+    const actorId = req.user!._id
+    let saved = null as SystemSettings | null
+
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        const current = (await getSettings(session)) as unknown as Record<string, unknown>
+        const before = Object.fromEntries(
+          Object.keys(changes).map((key) => [key, current[key] ?? null]),
+        )
+
+        const doc = await updateSettings(changes, session)
+        if (!doc) return
+
+        await createAuditLog(
+          {
+            actorId,
+            action: 'settings.updated',
+            targetType: 'settings',
+            targetId: doc._id,
+            before,
+            after: changes,
+          },
+          session,
+        )
+        saved = await getSettings(session)
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    if (!saved) {
+      res.status(500).json({ success: false, message: 'บันทึกการตั้งค่าไม่สำเร็จ' })
+      return
+    }
+
+    res.json({
+      success: true,
+      message: 'บันทึกการตั้งค่าสำเร็จ',
+      settings: toSettingsResponse(saved),
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}

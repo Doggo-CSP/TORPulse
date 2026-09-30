@@ -10,7 +10,9 @@ import { Types } from 'mongoose'
 import { createApiApp } from '../../apps/api/app.js'
 import type { ApiAuthConfig } from './auth.config.js'
 import { createAuthRouter } from './auth.routes.js'
-import { createPassport } from './passport.js'
+import { AuditLogModel } from '../admin/audit-log.model.js'
+import { SettingsModel } from '../admin/settings.model.js'
+import { createPassport, newUserDefaults } from './passport.js'
 import { User } from './user.model.js'
 
 const config: ApiAuthConfig = {
@@ -119,4 +121,132 @@ test('deserializeUser keeps an active account logged in', async (t) => {
   const user = await deserialize(authPassport, '64b000000000000000000003')
 
   assert.equal(user, stored)
+})
+
+test('newUserDefaults: new accounts are pending unless a verified .go.th email is auto-approved', () => {
+  assert.deepEqual(newUserDefaults('a@example.com', true, true), {
+    status: 'pending',
+    autoApproved: false,
+  })
+  assert.deepEqual(newUserDefaults('officer@dga.or.th', true, true), {
+    status: 'pending',
+    autoApproved: false,
+  })
+  assert.deepEqual(newUserDefaults('officer@DGA.GO.TH', true, true), {
+    status: 'active',
+    accountType: 'agency',
+    autoApproved: true,
+  })
+  assert.deepEqual(newUserDefaults('officer@dga.go.th', false, true), {
+    status: 'pending',
+    autoApproved: false,
+  })
+  assert.deepEqual(newUserDefaults('officer@dga.go.th', true, false), {
+    status: 'pending',
+    autoApproved: false,
+  })
+})
+
+type GoogleVerify = (
+  accessToken: string,
+  refreshToken: string,
+  profile: unknown,
+  done: (error: unknown, user?: unknown) => void,
+) => void
+
+const runGoogleVerify = (authPassport: passport.Authenticator, profile: unknown) =>
+  new Promise<unknown>((resolve, reject) => {
+    const strategy = (
+      authPassport as unknown as { _strategy(name: string): { _verify: GoogleVerify } }
+    )._strategy('google')
+    strategy._verify('access', 'refresh', profile, (error, user) =>
+      error ? reject(error) : resolve(user),
+    )
+  })
+
+const mockSettings = (
+  context: test.TestContext,
+  settings: { autoApproveGovEmails: boolean } | null,
+) => {
+  context.mock.method(SettingsModel, 'findOne', () => ({
+    session: () => ({ lean: async () => settings }),
+  }))
+}
+
+test('Google login auto-approves a new verified .go.th account and logs it as system', async (t) => {
+  const authPassport = createPassport(config)
+  const userId = new Types.ObjectId()
+  let capturedUpdate: Record<string, Record<string, unknown>> | undefined
+  const auditDocs: unknown[] = []
+
+  mockSettings(t, { autoApproveGovEmails: true })
+  t.mock.method(User, 'findOneAndUpdate', async (_filter: unknown, update: unknown) => {
+    capturedUpdate = update as Record<string, Record<string, unknown>>
+    return {
+      value: { _id: userId, status: 'active' },
+      lastErrorObject: { updatedExisting: false },
+    }
+  })
+  t.mock.method(AuditLogModel, 'create', async (docs: unknown[]) => {
+    auditDocs.push(...docs)
+    return docs
+  })
+
+  const user = await runGoogleVerify(authPassport, {
+    id: 'google-1',
+    displayName: 'Officer',
+    emails: [{ value: 'Officer@DGA.go.th', verified: true }],
+  })
+
+  assert.deepEqual(user, { _id: userId, status: 'active' })
+  assert.equal(capturedUpdate?.$setOnInsert?.status, 'active')
+  assert.equal(capturedUpdate?.$setOnInsert?.accountType, 'agency')
+  assert.equal(auditDocs.length, 1)
+  assert.equal((auditDocs[0] as { actorType: string }).actorType, 'system')
+  assert.equal((auditDocs[0] as { action: string }).action, 'user.approved')
+})
+
+test('Google login leaves a new non-government account pending and writes no log', async (t) => {
+  const authPassport = createPassport(config)
+  let capturedUpdate: Record<string, Record<string, unknown>> | undefined
+  const create = t.mock.method(AuditLogModel, 'create', async (docs: unknown[]) => docs)
+
+  mockSettings(t, null)
+  t.mock.method(User, 'findOneAndUpdate', async (_filter: unknown, update: unknown) => {
+    capturedUpdate = update as Record<string, Record<string, unknown>>
+    return {
+      value: { _id: new Types.ObjectId(), status: 'pending' },
+      lastErrorObject: { updatedExisting: false },
+    }
+  })
+
+  await runGoogleVerify(authPassport, {
+    id: 'google-2',
+    displayName: 'Person',
+    emails: [{ value: 'person@example.com', verified: true }],
+  })
+
+  assert.equal(capturedUpdate?.$setOnInsert?.status, 'pending')
+  assert.equal(capturedUpdate?.$setOnInsert?.accountType, undefined)
+  assert.equal(create.mock.callCount(), 0)
+})
+
+test('Google login does not re-approve or log an existing account', async (t) => {
+  const authPassport = createPassport(config)
+  const create = t.mock.method(AuditLogModel, 'create', async (docs: unknown[]) => docs)
+
+  mockSettings(t, { autoApproveGovEmails: true })
+  t.mock.method(User, 'findOneAndUpdate', async () => ({
+    value: { _id: new Types.ObjectId(), status: 'pending' },
+    lastErrorObject: { updatedExisting: true },
+  }))
+
+  const user = await runGoogleVerify(authPassport, {
+    id: 'google-3',
+    displayName: 'Waiting',
+    emails: [{ value: 'waiting@dga.go.th', verified: true }],
+  })
+
+  assert.deepEqual((user as { status: string }).status, 'pending')
+  assert.equal(create.mock.callCount(), 0)
 })

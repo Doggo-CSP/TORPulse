@@ -7,7 +7,8 @@ export async function createAuditLog(input: CreateAuditLogInput, session?: Clien
   const [log] = await AuditLogModel.create(
     [
       {
-        actorId: input.actorId,
+        actorType: input.actorType ?? 'user',
+        actorId: input.actorId ?? null,
         action: input.action,
         targetType: input.targetType,
         targetId: input.targetId,

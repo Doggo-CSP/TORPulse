@@ -41,6 +41,16 @@ export const updateAdminTorSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0)
 
+// ingestionIntervalMinutes is read-only (it comes from the scheduler's env), so it is not here.
+export const updateSettingsSchema = z
+  .object({
+    ingestionEnabled: z.boolean().optional(),
+    autoApproveGovEmails: z.boolean().optional(),
+    senderEmail: z.email().nullable().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0)
+
 // Profile fields an admin may fix. Uses the existing User field names:
 // organization -> agencyName / companyName, position -> jobTitle, government -> 'agency'.
 // email, role and status are rejected here (role/status have their own endpoints).

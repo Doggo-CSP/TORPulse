@@ -2,10 +2,20 @@ import { InferSchemaType, Schema, model } from 'mongoose'
 
 const auditLogSchema = new Schema(
   {
+    // 'system' is used for automatic actions (auto-approval, scheduled ingestion runs)
+    actorType: {
+      type: String,
+      required: true,
+      enum: ['user', 'system'],
+      default: 'user',
+    },
     actorId: {
       type: Schema.Types.ObjectId,
-      required: true,
       ref: 'User',
+      default: null,
+      required: function (this: { actorType?: string }) {
+        return this.actorType !== 'system'
+      },
     },
     action: {
       type: String,

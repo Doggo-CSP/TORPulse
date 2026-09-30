@@ -23,7 +23,7 @@ test('createAuditLog stores actor, action, target, and before/after snapshots', 
   await createAuditLog(
     {
       actorId,
-      action: 'user.role.update',
+      action: 'user.role_changed',
       targetType: 'user',
       targetId,
       before: { role: 'user' },
@@ -34,8 +34,9 @@ test('createAuditLog stores actor, action, target, and before/after snapshots', 
 
   assert.deepEqual(capturedDocs, [
     {
+      actorType: 'user',
       actorId,
-      action: 'user.role.update',
+      action: 'user.role_changed',
       targetType: 'user',
       targetId,
       before: { role: 'user' },
@@ -55,7 +56,7 @@ test('createAuditLog defaults missing before/after to null', async (context) => 
 
   await createAuditLog({
     actorId: new Types.ObjectId(),
-    action: 'tor.delete',
+    action: 'tor.deleted',
     targetType: 'tor',
     targetId: new Types.ObjectId(),
   })
@@ -66,7 +67,7 @@ test('createAuditLog defaults missing before/after to null', async (context) => 
 
 test('AuditLogModel rejects a record without an actor', async () => {
   const doc = new AuditLogModel({
-    action: 'user.status.update',
+    action: 'user.suspended',
     targetType: 'user',
     targetId: new Types.ObjectId(),
   })
@@ -74,4 +75,15 @@ test('AuditLogModel rejects a record without an actor', async () => {
   const error = doc.validateSync()
 
   assert.ok(error?.errors.actorId)
+})
+
+test('AuditLogModel accepts a system record without an actor', async () => {
+  const doc = new AuditLogModel({
+    actorType: 'system',
+    action: 'user.approved',
+    targetType: 'user',
+    targetId: new Types.ObjectId(),
+  })
+
+  assert.equal(doc.validateSync(), undefined)
 })

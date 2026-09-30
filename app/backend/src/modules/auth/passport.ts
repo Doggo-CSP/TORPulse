@@ -2,6 +2,8 @@ import passport from 'passport'
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20'
 import type { Types } from 'mongoose'
 
+import { createAuditLog } from '../admin/audit-log.repository.js'
+import { getSettings } from '../admin/settings.repository.js'
 import type { ApiAuthConfig } from './auth.config.js'
 import { User, type UserDocument } from './user.model.js'
 
@@ -17,6 +19,22 @@ declare global {
       status?: 'active' | 'pending' | 'suspended'
     }
   }
+}
+
+// New accounts start as pending. When auto-approval is on, a verified .go.th address is
+// approved at once and marked as a government agency account. Only used with $setOnInsert,
+// so existing accounts (including people already waiting) are never changed here.
+export const newUserDefaults = (
+  email: string,
+  emailVerified: boolean,
+  autoApproveGovEmails: boolean,
+): { status: 'active' | 'pending'; accountType?: 'agency'; autoApproved: boolean } => {
+  const autoApproved =
+    autoApproveGovEmails && emailVerified && email.trim().toLowerCase().endsWith('.go.th')
+
+  return autoApproved
+    ? { status: 'active', accountType: 'agency', autoApproved }
+    : { status: 'pending', autoApproved }
 }
 
 export const createPassport = (config: ApiAuthConfig): passport.Authenticator => {
@@ -39,7 +57,14 @@ export const createPassport = (config: ApiAuthConfig): passport.Authenticator =>
               return
             }
 
-            const user = await User.findOneAndUpdate(
+            const { autoApproveGovEmails } = await getSettings()
+            const defaults = newUserDefaults(
+              email,
+              profile.emails?.[0]?.verified === true,
+              autoApproveGovEmails,
+            )
+
+            const result = await User.findOneAndUpdate(
               { googleId: profile.id },
               {
                 $set: {
@@ -50,13 +75,35 @@ export const createPassport = (config: ApiAuthConfig): passport.Authenticator =>
                 $setOnInsert: {
                   googleId: profile.id,
                   role: 'user',
-                  status: 'active',
+                  status: defaults.status,
+                  ...(defaults.accountType ? { accountType: defaults.accountType } : {}),
                 },
               },
-              { upsert: true, returnDocument: 'after', runValidators: true },
+              {
+                upsert: true,
+                returnDocument: 'after',
+                runValidators: true,
+                includeResultMetadata: true,
+              },
             )
+            const user = result.value
 
-            if (user?.status === 'suspended') {
+            if (
+              user &&
+              defaults.autoApproved &&
+              result.lastErrorObject?.updatedExisting === false
+            ) {
+              await createAuditLog({
+                actorType: 'system',
+                action: 'user.approved',
+                targetType: 'user',
+                targetId: user._id,
+                after: { status: 'active', reason: 'auto_approve_gov_email' },
+              })
+            }
+
+            // TODO(QUESTION-8): pending users are not restricted outside /admin yet; see QUESTIONS.md
+            if (!user || user.status === 'suspended') {
               done(null, false)
               return
             }

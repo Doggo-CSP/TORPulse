@@ -5,12 +5,14 @@ import express from 'express'
 import request from 'supertest'
 import { Types } from 'mongoose'
 
+import { env } from '../../config/env.js'
 import { database } from '../../config/mongoose.js'
 import { User } from '../auth/user.model.js'
 import { TorModel } from '../tor/tor.model.js'
 import torRouter from '../tor/tor.routes.js'
 import router from './admin.routes.js'
 import { AuditLogModel } from './audit-log.model.js'
+import { SETTINGS_KEY, SettingsModel } from './settings.model.js'
 
 const SEED_PREFIX = 'seed-admin-routes-test-'
 
@@ -809,5 +811,106 @@ test('admin routes: TOR management (UC-14)', async (t) => {
     const response = await request(app).post(`${torUrl(new Types.ObjectId())}/verify`)
 
     assert.equal(response.status, 404)
+  })
+})
+
+test('admin routes: system settings', async (t) => {
+  await database.connect()
+
+  const actor = await User.create({
+    googleId: `${SEED_PREFIX}settings-actor`,
+    name: 'Seed Settings Admin',
+    email: `${SEED_PREFIX}settings-actor@example.com`,
+    image: null,
+    role: 'admin',
+    status: 'active',
+  })
+
+  // The settings document is shared; back it up and put it back afterwards.
+  const original = await SettingsModel.findOne({ key: SETTINGS_KEY }).lean()
+
+  t.after(async () => {
+    await SettingsModel.deleteOne({ key: SETTINGS_KEY })
+    if (original) await SettingsModel.create(original)
+    await AuditLogModel.deleteMany({ actorId: actor._id })
+    await User.deleteOne({ _id: actor._id })
+    await database.disconnect()
+  })
+
+  let currentUser: Express.User | undefined = {
+    _id: actor._id,
+    googleId: actor.googleId,
+    name: actor.name,
+    email: actor.email,
+    image: actor.image,
+    role: 'admin',
+    status: 'active',
+  }
+
+  const app = express()
+  app.use(express.json())
+  app.use((req, _res, next) => {
+    req.user = currentUser
+    next()
+  })
+  app.use('/admin', router)
+
+  await t.test('GET /admin/settings returns defaults when nothing is stored', async () => {
+    await SettingsModel.deleteOne({ key: SETTINGS_KEY })
+
+    const response = await request(app).get('/admin/settings')
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(response.body.settings, {
+      ingestionEnabled: true,
+      autoApproveGovEmails: false,
+      senderEmail: null,
+      ingestionIntervalMinutes: env.GOVSPENDING_SYNC_INTERVAL_MS / 60_000,
+    })
+  })
+
+  await t.test('PATCH /admin/settings saves changes and writes settings.updated', async () => {
+    const response = await request(app)
+      .patch('/admin/settings')
+      .send({ autoApproveGovEmails: true, senderEmail: 'noreply@example.go.th' })
+
+    assert.equal(response.status, 200)
+    assert.equal(response.body.settings.autoApproveGovEmails, true)
+    assert.equal(response.body.settings.senderEmail, 'noreply@example.go.th')
+    assert.equal(response.body.settings.ingestionEnabled, true)
+
+    const log = await AuditLogModel.findOne({
+      actorId: actor._id,
+      action: 'settings.updated',
+    }).lean()
+    assert.deepEqual(log?.before, { autoApproveGovEmails: false, senderEmail: null })
+    assert.deepEqual(log?.after, {
+      autoApproveGovEmails: true,
+      senderEmail: 'noreply@example.go.th',
+    })
+  })
+
+  await t.test(
+    'PATCH /admin/settings rejects bad email, read-only, and unknown fields',
+    async () => {
+      const badEmail = await request(app).patch('/admin/settings').send({ senderEmail: 'nope' })
+      const readOnly = await request(app)
+        .patch('/admin/settings')
+        .send({ ingestionIntervalMinutes: 5 })
+      const empty = await request(app).patch('/admin/settings').send({})
+
+      assert.equal(badEmail.status, 400)
+      assert.equal(readOnly.status, 400)
+      assert.equal(empty.status, 400)
+    },
+  )
+
+  await t.test('settings are admin-only', async () => {
+    currentUser = makeUser({ role: 'editor', status: 'active' })
+    const read = await request(app).get('/admin/settings')
+    const write = await request(app).patch('/admin/settings').send({ ingestionEnabled: false })
+
+    assert.equal(read.status, 403)
+    assert.equal(write.status, 403)
   })
 })
