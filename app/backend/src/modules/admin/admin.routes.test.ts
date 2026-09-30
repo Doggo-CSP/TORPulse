@@ -656,6 +656,36 @@ test('admin routes: TOR management (UC-14)', async (t) => {
     },
   )
 
+  await t.test('GET /admin/tors shows the budget, falling back to the mid price', async () => {
+    await TorModel.updateOne(
+      { _id: webTor._id },
+      { $set: { budgetBaht: 3_000_000, midPriceBaht: 2_900_000 } },
+    )
+    await TorModel.updateOne(
+      { _id: mobileTor._id },
+      { $set: { budgetBaht: null, midPriceBaht: 2_500_000 } },
+    )
+
+    const response = await request(app).get('/admin/tors').query(seedQuery)
+    const byId = Object.fromEntries(response.body.tors.map((tor: { id: string }) => [tor.id, tor]))
+    assert.equal(byId[webTor._id.toString()].budgetBaht, 3_000_000)
+    assert.equal(byId[webTor._id.toString()].budgetSource, 'budget')
+    assert.equal(byId[mobileTor._id.toString()].budgetBaht, 2_500_000)
+    assert.equal(byId[mobileTor._id.toString()].budgetSource, 'mid_price')
+
+    // The detail keeps the stored value for the edit form
+    const detail = await request(app).get(`/admin/tors/${mobileTor._id.toString()}`)
+    assert.equal(detail.body.tor.budgetBaht, null)
+    assert.equal(detail.body.tor.midPriceBaht, 2_500_000)
+    assert.equal('budgetSource' in detail.body.tor, false)
+
+    await TorModel.updateOne(
+      { _id: webTor._id },
+      { $set: { budgetBaht: null, midPriceBaht: null } },
+    )
+    await TorModel.updateOne({ _id: mobileTor._id }, { $set: { midPriceBaht: null } })
+  })
+
   await t.test('GET /admin/tors filters by category and confidence', async () => {
     const byCategory = await request(app)
       .get('/admin/tors')
@@ -1182,6 +1212,7 @@ test('admin routes: GET /admin/stats overview numbers', async (t) => {
       analysisModel: 'test-model',
       analysisVersion: 'v1',
       analyzedAt: new Date(),
+      awardedPriceBaht: 1_000_000,
       reviewStatus,
     })
     createdTorIds.push(tor._id)
@@ -1193,7 +1224,8 @@ test('admin routes: GET /admin/stats overview numbers', async (t) => {
   // Deleted TORs are not counted; a TOR created now counts as new this week
   assert.equal(after.body.tors.total - before.body.tors.total, 1)
   assert.equal(after.body.tors.newThisWeek - before.body.tors.newThisWeek, 1)
-  assert.equal(after.body.tors.awarded, null)
+  // Awarded = has an agreed price; the deleted TOR is not counted
+  assert.equal(after.body.tors.awarded - before.body.tors.awarded, 1)
 
   assert.equal(after.body.users.byStatus.active - before.body.users.byStatus.active, 1)
   assert.equal(after.body.users.byStatus.suspended - before.body.users.byStatus.suspended, 1)

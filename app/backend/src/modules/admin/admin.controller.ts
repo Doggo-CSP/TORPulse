@@ -60,21 +60,15 @@ const touchActor = async (actorId: Types.ObjectId, session: ClientSession): Prom
 
 export const getAdminStats = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const [
-      totalUsers,
-      activeUsers,
-      adminCount,
-      userCount,
-      totalTors,
-      awardedCount,
-    ] = await Promise.all([
-      User.countDocuments(),
-      User.countDocuments({ $or: [{ status: 'active' }, { status: { $exists: false } }] }),
-      User.countDocuments({ role: 'admin' }),
-      User.countDocuments({ $or: [{ role: 'user' }, { role: { $exists: false } }] }),
-      TorModel.countDocuments(),
-      TorModel.countDocuments({ awardedPriceBaht: { $ne: null } }),
-    ])
+    const [totalUsers, activeUsers, adminCount, userCount, totalTors, awardedCount] =
+      await Promise.all([
+        User.countDocuments(),
+        User.countDocuments({ $or: [{ status: 'active' }, { status: { $exists: false } }] }),
+        User.countDocuments({ role: 'admin' }),
+        User.countDocuments({ $or: [{ role: 'user' }, { role: { $exists: false } }] }),
+        TorModel.countDocuments(),
+        TorModel.countDocuments({ awardedPriceBaht: { $ne: null } }),
+      ])
 
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
     const newThisWeek = await TorModel.countDocuments({ createdAt: { $gte: oneWeekAgo } })
@@ -83,12 +77,14 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
     // for the existing frontend until it moves to these keys.
     const notDeleted = { reviewStatus: { $ne: 'deleted' as const } }
     const { start: weekStart, end: weekEnd } = getBangkokWeekRange(new Date())
-    const [torsTotal, torsNewThisWeek, suspendedUsers, savedTors, jobStatusRows] =
+    const [torsTotal, torsNewThisWeek, torsAwarded, suspendedUsers, savedTors, jobStatusRows] =
       await Promise.all([
         TorModel.countDocuments(notDeleted),
-        // TODO(QUESTION-15): TORs have no announcement date, so the date they entered the
-        // system is used; see QUESTIONS.md
+        // TORs have no announcement date yet, so the date they entered the system is used.
+        // Storing the e-GP announcement date is future work (QUESTIONS.md).
         TorModel.countDocuments({ ...notDeleted, createdAt: { $gte: weekStart, $lt: weekEnd } }),
+        // A TOR counts as awarded once the source reports an agreed (winning) price
+        TorModel.countDocuments({ ...notDeleted, awardedPriceBaht: { $ne: null } }),
         User.countDocuments({ status: 'suspended' }),
         UserBookmarkModel.countDocuments(),
         IngestionJobModel.aggregate<{ _id: string; count: number }>([
@@ -111,8 +107,7 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
       tors: {
         total: torsTotal,
         newThisWeek: torsNewThisWeek,
-        // TODO(QUESTION-14): GovSpending has no "results announced" field; see QUESTIONS.md
-        awarded: null,
+        awarded: torsAwarded,
       },
       users: {
         total: totalUsers,
@@ -605,39 +600,46 @@ const toAdminTorListItem = (tor: AdminTorLean) => {
     categoryLabel: CATEGORY_LABELS[category],
     confidence: tor.confidence,
     reviewStatus: tor.reviewStatus ?? 'unverified',
-    budgetBaht: tor.budgetBaht ?? null,
+    // The table shows the budget, falling back to the mid (reference) price when it is missing
+    budgetBaht: tor.budgetBaht ?? tor.midPriceBaht ?? null,
+    budgetSource: tor.budgetBaht != null ? 'budget' : tor.midPriceBaht != null ? 'mid_price' : null,
     createdAt: tor.createdAt,
     updatedAt: tor.updatedAt,
   }
 }
 
-const toAdminTorDetail = (tor: AdminTorLean) => ({
-  ...toAdminTorListItem(tor),
-  ingestionJobId: tor.ingestionJobId.toString(),
-  sourceVersion: tor.sourceVersion,
-  detailUrl: tor.detailUrl,
-  documents: tor.documents ?? [],
-  departmentName: tor.departmentName ?? null,
-  departmentSubName: tor.departmentSubName ?? null,
-  projectStatus: tor.projectStatus ?? null,
-  summary: tor.summary ?? null,
-  scope: tor.scope ?? null,
-  objectives: tor.objectives ?? [],
-  requirements: tor.requirements ?? [],
-  technologies: tor.technologies ?? [],
-  bidderQualifications: tor.bidderQualifications ?? [],
-  deliverables: tor.deliverables ?? [],
-  timeline: tor.timeline ?? [],
-  evaluationCriteria: tor.evaluationCriteria ?? [],
-  midPriceBaht: tor.midPriceBaht ?? null,
-  awardedPriceBaht: tor.awardedPriceBaht ?? null,
-  submissionDeadline: tor.submissionDeadline ?? null,
-  contactInformation: tor.contactInformation ?? [],
-  classificationReason: tor.classificationReason,
-  analysisModel: tor.analysisModel,
-  analysisVersion: tor.analysisVersion,
-  analyzedAt: tor.analyzedAt,
-})
+const toAdminTorDetail = (tor: AdminTorLean) => {
+  // The detail feeds the edit form, so it returns the stored budget without the list fallback
+  const { budgetSource: _budgetSource, ...listFields } = toAdminTorListItem(tor)
+  return {
+    ...listFields,
+    budgetBaht: tor.budgetBaht ?? null,
+    ingestionJobId: tor.ingestionJobId.toString(),
+    sourceVersion: tor.sourceVersion,
+    detailUrl: tor.detailUrl,
+    documents: tor.documents ?? [],
+    departmentName: tor.departmentName ?? null,
+    departmentSubName: tor.departmentSubName ?? null,
+    projectStatus: tor.projectStatus ?? null,
+    summary: tor.summary ?? null,
+    scope: tor.scope ?? null,
+    objectives: tor.objectives ?? [],
+    requirements: tor.requirements ?? [],
+    technologies: tor.technologies ?? [],
+    bidderQualifications: tor.bidderQualifications ?? [],
+    deliverables: tor.deliverables ?? [],
+    timeline: tor.timeline ?? [],
+    evaluationCriteria: tor.evaluationCriteria ?? [],
+    midPriceBaht: tor.midPriceBaht ?? null,
+    awardedPriceBaht: tor.awardedPriceBaht ?? null,
+    submissionDeadline: tor.submissionDeadline ?? null,
+    contactInformation: tor.contactInformation ?? [],
+    classificationReason: tor.classificationReason,
+    analysisModel: tor.analysisModel,
+    analysisVersion: tor.analysisVersion,
+    analyzedAt: tor.analyzedAt,
+  }
+}
 
 export const getAdminTors = async (req: Request, res: Response): Promise<void> => {
   try {
