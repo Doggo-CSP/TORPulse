@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { setTimeout as delay } from 'node:timers/promises'
 import test from 'node:test'
 
 import express from 'express'
@@ -13,6 +14,13 @@ import torRouter from '../tor/tor.routes.js'
 import router from './admin.routes.js'
 import { AuditLogModel } from './audit-log.model.js'
 import { SETTINGS_KEY, SettingsModel } from './settings.model.js'
+import { GovSpendingDiscoveryAdapter } from '../ingestion/adapters/govspending-discovery.adapter.js'
+import { CollectionRunModel } from '../ingestion/collection-run.model.js'
+import {
+  claimProducerLease,
+  ensureGovSpendingDataSource,
+  releaseProducerLease,
+} from '../ingestion/data-source.repository.js'
 
 const SEED_PREFIX = 'seed-admin-routes-test-'
 
@@ -973,5 +981,125 @@ test('admin routes: system settings', async (t) => {
 
     assert.equal(read.status, 403)
     assert.equal(write.status, 403)
+  })
+})
+
+test('admin routes: e-GP sync status and manual sync', async (t) => {
+  await database.connect()
+
+  const actor = await User.create({
+    googleId: `${SEED_PREFIX}sync-actor`,
+    name: 'Seed Sync Editor',
+    email: `${SEED_PREFIX}sync-actor@example.com`,
+    image: null,
+    role: 'editor',
+    status: 'active',
+  })
+  const runIds: Types.ObjectId[] = []
+  const originalApiKey = env.GOVSPENDING_API_KEY
+
+  t.after(async () => {
+    env.GOVSPENDING_API_KEY = originalApiKey
+    await AuditLogModel.deleteMany({ targetId: { $in: runIds } })
+    await CollectionRunModel.deleteMany({ _id: { $in: runIds } })
+    await User.deleteOne({ _id: actor._id })
+    await database.disconnect()
+  })
+
+  // Never call the real GovSpending API from tests
+  t.mock.method(GovSpendingDiscoveryAdapter.prototype, 'listProjects', async () => ({
+    projects: [],
+    total: 0,
+  }))
+
+  let currentUser: Express.User | undefined = {
+    _id: actor._id,
+    googleId: actor.googleId,
+    name: actor.name,
+    email: actor.email,
+    image: actor.image,
+    role: 'editor',
+    status: 'active',
+  }
+
+  const app = express()
+  app.use(express.json())
+  app.use((req, _res, next) => {
+    req.user = currentUser
+    next()
+  })
+  app.use('/admin', router)
+
+  const waitForRun = async (runId: string) => {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const run = await CollectionRunModel.findById(runId).lean()
+      if (run && run.status !== 'running') return run
+      await delay(100)
+    }
+    throw new Error(`run ${runId} did not finish`)
+  }
+
+  await t.test('POST /admin/ingestion/sync returns 503 without an API key', async () => {
+    env.GOVSPENDING_API_KEY = undefined
+
+    const response = await request(app).post('/admin/ingestion/sync')
+
+    assert.equal(response.status, 503)
+  })
+
+  await t.test(
+    'an editor starts a manual sync: 202, then the run and feed entry are recorded',
+    async () => {
+      env.GOVSPENDING_API_KEY = 'test-key'
+
+      const response = await request(app).post('/admin/ingestion/sync')
+      assert.equal(response.status, 202)
+      runIds.push(new Types.ObjectId(response.body.runId as string))
+
+      const run = await waitForRun(response.body.runId)
+      assert.equal(run.status, 'success')
+      assert.equal(run.trigger, 'manual')
+      assert.equal(run.triggeredBy?.toString(), actor._id.toString())
+      assert.ok(run.finishedAt instanceof Date)
+
+      const log = await AuditLogModel.findOne({ targetId: run._id }).lean()
+      assert.equal(log?.action, 'ingestion.completed')
+      assert.equal(log?.actorType, 'user')
+      assert.equal(log?.actorName, 'Seed Sync Editor')
+
+      const status = await request(app).get('/admin/ingestion/status')
+      assert.equal(status.status, 200)
+      assert.equal(status.body.lastRun.id, response.body.runId)
+      assert.equal(status.body.lastRun.status, 'success')
+      assert.equal(typeof status.body.isRunning, 'boolean')
+    },
+  )
+
+  await t.test(
+    'POST /admin/ingestion/sync returns 409 while another run holds the lease',
+    async () => {
+      env.GOVSPENDING_API_KEY = 'test-key'
+      const dataSource = await ensureGovSpendingDataSource()
+      const holder = `${SEED_PREFIX}lease-holder`
+      const claimed = await claimProducerLease(dataSource!._id, holder)
+      assert.equal(claimed, true)
+
+      try {
+        const response = await request(app).post('/admin/ingestion/sync')
+        assert.equal(response.status, 409)
+      } finally {
+        await releaseProducerLease(dataSource!._id, holder)
+      }
+    },
+  )
+
+  await t.test('a regular user cannot see or start syncs', async () => {
+    currentUser = makeUser({ role: 'user', status: 'active' })
+
+    const status = await request(app).get('/admin/ingestion/status')
+    const sync = await request(app).post('/admin/ingestion/sync')
+
+    assert.equal(status.status, 403)
+    assert.equal(sync.status, 403)
   })
 })

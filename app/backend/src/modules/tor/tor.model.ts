@@ -169,6 +169,11 @@ const torSchema = new Schema(
       type: Date,
       default: null,
     },
+    // Last time ingestion saw this project at the source
+    lastSeenAt: {
+      type: Date,
+      default: null,
+    },
     contactInformation: {
       type: [String],
       required: true,

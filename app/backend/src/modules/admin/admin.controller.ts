@@ -1,5 +1,16 @@
+import { randomUUID } from 'node:crypto'
+
 import type { Request, Response } from 'express'
+import {
+  beginGovSpendingSync,
+  completeGovSpendingSync,
+} from '../../apps/queue-producer/queue-producer.js'
 import { env } from '../../config/env.js'
+import { GovSpendingDiscoveryAdapter } from '../ingestion/adapters/govspending-discovery.adapter.js'
+import {
+  findLatestCollectionRun,
+  hasRunningCollectionRun,
+} from '../ingestion/collection-run.repository.js'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
 import { User, type UserDocument } from '../auth/user.model.js'
 import { CATEGORY_LABELS } from '../category/category.constants.js'
@@ -861,6 +872,83 @@ export const archiveAdminTor = (req: Request, res: Response): Promise<void> =>
 
 export const deleteAdminTor = (req: Request, res: Response): Promise<void> =>
   changeTorReviewStatus(req, res, 'deleted', 'tor.deleted', 'ลบ TOR สำเร็จ')
+
+// ---------------------------------------------------------------------------
+// e-GP sync: GET /admin/ingestion/status, POST /admin/ingestion/sync
+// ---------------------------------------------------------------------------
+
+type CollectionRunLean = NonNullable<Awaited<ReturnType<typeof findLatestCollectionRun>>>
+
+const toRunResponse = (run: CollectionRunLean) => ({
+  id: run._id.toString(),
+  trigger: run.trigger,
+  triggeredBy: run.triggeredBy ? run.triggeredBy.toString() : null,
+  status: run.status,
+  startedAt: run.startedAt,
+  finishedAt: run.finishedAt ?? null,
+  fetchedCount: run.fetchedCount,
+  createdCount: run.createdCount,
+  updatedCount: run.updatedCount,
+  errorMessage: run.errorMessage ?? null,
+})
+
+export const getIngestionStatus = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const [lastRun, isRunning] = await Promise.all([
+      findLatestCollectionRun(),
+      hasRunningCollectionRun(),
+    ])
+
+    res.json({ lastRun: lastRun ? toRunResponse(lastRun) : null, isRunning })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+export const triggerIngestionSync = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // TODO(QUESTION-13): manual sync runs inside the API process, which then needs
+    // GOVSPENDING_API_KEY too; see QUESTIONS.md
+    if (!env.GOVSPENDING_API_KEY) {
+      res.status(503).json({ success: false, message: 'ยังไม่ได้ตั้งค่า GOVSPENDING_API_KEY' })
+      return
+    }
+
+    const producerId = `manual-sync-${randomUUID()}`
+    const trigger = {
+      trigger: 'manual' as const,
+      triggeredBy: req.user!._id,
+      triggeredByName: req.user!.name,
+    }
+
+    // The lease is the same one the scheduled producer uses, so a scheduled run and a
+    // manual run can never overlap, even across processes.
+    const claim = await beginGovSpendingSync(producerId, trigger)
+    if (!claim) {
+      res.status(409).json({ success: false, message: 'มีการซิงก์ข้อมูลที่กำลังทำงานอยู่' })
+      return
+    }
+
+    const adapter = new GovSpendingDiscoveryAdapter({ apiKey: env.GOVSPENDING_API_KEY })
+    void completeGovSpendingSync(
+      claim,
+      producerId,
+      adapter,
+      new AbortController().signal,
+      trigger,
+    ).catch((error: unknown) => {
+      console.error('Manual GovSpending sync failed', error)
+    })
+
+    res.status(202).json({
+      success: true,
+      message: 'เริ่มซิงก์ข้อมูล e-GP แล้ว',
+      runId: claim.runId.toString(),
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
 
 // ---------------------------------------------------------------------------
 // System settings

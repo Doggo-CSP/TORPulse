@@ -16,6 +16,8 @@ import {
   deleteAdminTor,
   getAdminSettings,
   updateAdminSettings,
+  getIngestionStatus,
+  triggerIngestionSync,
 } from './admin.controller.js'
 
 const router = Router()
@@ -25,6 +27,8 @@ const router = Router()
 router.use(requireRole('admin', 'editor'))
 
 router.get('/stats', getAdminStats)
+router.get('/ingestion/status', getIngestionStatus)
+router.post('/ingestion/sync', triggerIngestionSync)
 router.get('/users', requireAdmin, getAdminUsers)
 router.get('/users/:userId', requireAdmin, getAdminUserById)
 router.patch('/users/:userId', requireAdmin, updateAdminUser)
