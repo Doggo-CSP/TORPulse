@@ -31,6 +31,8 @@ export const createAuthRouter = (
         name: req.user.name,
         email: req.user.email,
         image: req.user.image,
+        role: req.user.role ?? 'user',
+        status: req.user.status ?? 'active',
       },
     })
   })

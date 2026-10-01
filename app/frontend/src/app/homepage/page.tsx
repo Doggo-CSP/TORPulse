@@ -3,6 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
+import { useDebounce } from "use-debounce";
 import { SiteNav } from "@/app/components/site_nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserProfile } from "@/hooks/use-user-profile";
@@ -111,6 +112,9 @@ const categorySplit = [
 const totalBudgetAmount = 6_128_192;
 const totalProjectCount = 51_800;
 
+// Fallback stats/chart data — shown only until /api/v1/homepage/analytics
+// (priceComparison / priceSummary) has loaded, or if a category has no
+// priced TORs yet. Kept as a static illustrative example.
 const homeStats = {
   avgMid: 21_400_000,
   avgAwarded: 18_900_000,
@@ -127,7 +131,7 @@ const priceComparisonData = [
 ];
 
 const priceChartSeries = [
-  { key: "midPrice", label: "ราคากลาง", color: "#b0a898" },
+  { key: "midPrice", label: "ราคากลาง", color: "#d18f5dff" },
   { key: "awardedPrice", label: "ราคาที่ชนะ", color: "#4a7c59" },
 ];
 
@@ -157,6 +161,41 @@ export default function HomePage() {
     return categorySplit;
   }, [analytics]);
 
+  // Price comparison chart (ราคากลาง vs ราคาที่ชนะ) by category — sourced from
+  // analytics.priceComparison once loaded, only including categories that have
+  // at least one TOR with both a mid price and an awarded price recorded.
+  // Falls back to the static example data otherwise.
+  const displayedPriceComparison = useMemo(() => {
+    if (analytics?.priceComparison && analytics.priceComparison.length > 0) {
+      const rows = analytics.priceComparison
+        .filter(
+          (p) => p.avgMidPriceBaht !== null && p.avgAwardedPriceBaht !== null,
+        )
+        .map((p) => ({
+          category: p.label,
+          midPrice: Number(toMillion(p.avgMidPriceBaht as number)),
+          awardedPrice: Number(toMillion(p.avgAwardedPriceBaht as number)),
+        }));
+      if (rows.length > 0) return rows;
+    }
+    return priceComparisonData;
+  }, [analytics]);
+
+  // Overall avg mid price / avg awarded price / avg discount % stat cards —
+  // sourced from analytics.priceSummary once loaded (computed only over TORs
+  // that have both prices recorded, so the discount % is like-for-like).
+  const displayedHomeStats = useMemo(() => {
+    const s = analytics?.priceSummary;
+    if (s && s.avgMidPriceBaht !== null && s.avgAwardedPriceBaht !== null) {
+      return {
+        avgMid: s.avgMidPriceBaht,
+        avgAwarded: s.avgAwardedPriceBaht,
+        avgDiscountPct: s.avgDiscountPct ?? 0,
+      };
+    }
+    return homeStats;
+  }, [analytics]);
+
   const currentUser = user || (profile ? {
     id: profile.id,
     name: profile.displayName || profile.name,
@@ -171,10 +210,17 @@ export default function HomePage() {
 
   const [filtersOpen, setFiltersOpen] = useState(true);
 
-  const [name, setName] = useState("");
+  // Immediate (UI-bound) states
+  const [nameInput, setNameInput] = useState("");
+  const [budgetMinInput, setBudgetMinInput] = useState("");
+  const [budgetMaxInput, setBudgetMaxInput] = useState("");
+
+  // Debounced values — these drive the API request (400 ms delay)
+  const [debouncedName] = useDebounce(nameInput, 800);
+  const [debouncedBudgetMin] = useDebounce(budgetMinInput, 800);
+  const [debouncedBudgetMax] = useDebounce(budgetMaxInput, 800);
+
   const [budgetYear, setBudgetYear] = useState("ทั้งหมด");
-  const [budgetMin, setBudgetMin] = useState("");
-  const [budgetMax, setBudgetMax] = useState("");
   const [agency, setAgency] = useState("ทั้งหมด"); // not sent to API yet — see note below
   const [status, setStatus] = useState("ทั้งหมด"); // not sent to API yet — see note below
   const [egpOnly, setEgpOnly] = useState(false); // not sent to API yet — see note below
@@ -212,18 +258,19 @@ export default function HomePage() {
     }));
   }, [isLoggedIn, recommendedTors]);
 
-  // live search + filter against the real API
+  // live search + filter against the real API — uses debounced text values to avoid
+  // firing a request on every keystroke in the name / budget inputs
   const requestParams = useMemo(
     () => ({
-      q: name || undefined,
+      q: debouncedName || undefined,
       year: budgetYear === "ทั้งหมด" ? undefined : Number(budgetYear),
-      budget_min: budgetMin ? Number(budgetMin) * 1_000_000 : undefined,
-      budget_max: budgetMax ? Number(budgetMax) * 1_000_000 : undefined,
+      budget_min: debouncedBudgetMin ? Number(debouncedBudgetMin) * 1_000_000 : undefined,
+      budget_max: debouncedBudgetMax ? Number(debouncedBudgetMax) * 1_000_000 : undefined,
       technologies: techs.length > 0 ? techs.join(",") : undefined, // needs backend $in support — see below
       page: currentPage,
       limit: ITEMS_PER_PAGE,
     }),
-    [name, budgetYear, budgetMin, budgetMax, techs, currentPage],
+    [debouncedName, budgetYear, debouncedBudgetMin, debouncedBudgetMax, techs, currentPage],
   );
 
   const { data, isLoading: searching, error: searchError } = useTors(requestParams);
@@ -232,10 +279,10 @@ export default function HomePage() {
   const visiblePage = Math.min(currentPage, totalPages);
 
   const clearFilters = () => {
-    setName("");
+    setNameInput("");
+    setBudgetMinInput("");
+    setBudgetMaxInput("");
     setBudgetYear("ทั้งหมด");
-    setBudgetMin("");
-    setBudgetMax("");
     setAgency("ทั้งหมด");
     setStatus("ทั้งหมด");
     setEgpOnly(false);
@@ -361,8 +408,8 @@ export default function HomePage() {
                     ชื่อรายการ
                   </label>
                   <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
                     placeholder="ระบุชื่อรายการ"
                     className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
                   />
@@ -389,16 +436,16 @@ export default function HomePage() {
                   </label>
                   <div className="flex items-center gap-2">
                     <input
-                      value={budgetMin}
-                      onChange={(e) => setBudgetMin(e.target.value)}
+                      value={budgetMinInput}
+                      onChange={(e) => setBudgetMinInput(e.target.value)}
                       placeholder="Min"
                       type="number"
                       className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
                     />
                     <span className="text-muted-foreground">-</span>
                     <input
-                      value={budgetMax}
-                      onChange={(e) => setBudgetMax(e.target.value)}
+                      value={budgetMaxInput}
+                      onChange={(e) => setBudgetMaxInput(e.target.value)}
                       placeholder="Max"
                       type="number"
                       className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
@@ -801,7 +848,7 @@ export default function HomePage() {
               <div className="rounded-xl bg-surface-2 p-4">
                 <p className="text-xs text-muted-foreground">ราคากลางเฉลี่ย</p>
                 <p className="mt-1 font-display text-xl font-semibold">
-                  ฿{toMillion(homeStats.avgMid)} ล้าน
+                  ฿{toMillion(displayedHomeStats.avgMid)} ล้าน
                 </p>
               </div>
               <div className="rounded-xl bg-surface-2 p-4">
@@ -809,20 +856,20 @@ export default function HomePage() {
                   ราคาที่ชนะเฉลี่ย
                 </p>
                 <p className="mt-1 font-display text-xl font-semibold">
-                  ฿{toMillion(homeStats.avgAwarded)} ล้าน
+                  ฿{toMillion(displayedHomeStats.avgAwarded)} ล้าน
                 </p>
               </div>
               <div className="rounded-xl bg-surface-2 p-4">
                 <p className="text-xs text-muted-foreground">ส่วนต่างเฉลี่ย</p>
                 <p className="mt-1 font-display text-xl font-semibold text-primary">
-                  {homeStats.avgDiscountPct.toFixed(1)}%
+                  {displayedHomeStats.avgDiscountPct.toFixed(1)}%
                 </p>
               </div>
             </div>
 
             <div className="mt-5" style={{ height: 280 }}>
               <PriceComparisonChart
-                data={priceComparisonData}
+                data={displayedPriceComparison}
                 series={priceChartSeries}
               />
             </div>

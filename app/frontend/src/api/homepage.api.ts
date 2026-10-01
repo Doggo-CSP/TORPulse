@@ -20,9 +20,24 @@ export interface CategoryMetric {
   percentage: number;
 }
 
+export interface PriceComparisonMetric {
+  category: string;
+  label: string;
+  avgMidPriceBaht: number | null;
+  avgAwardedPriceBaht: number | null;
+}
+
+export interface PriceSummary {
+  avgMidPriceBaht: number | null;
+  avgAwardedPriceBaht: number | null;
+  avgDiscountPct: number | null;
+}
+
 export interface HomepageAnalytics {
   topTechnologies: TechnologyMetric[];
   categoryDistribution: CategoryMetric[];
+  priceComparison: PriceComparisonMetric[];
+  priceSummary: PriceSummary;
 }
 
 /**

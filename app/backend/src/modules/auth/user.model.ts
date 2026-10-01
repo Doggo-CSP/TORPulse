@@ -21,6 +21,8 @@ export interface UserRecord {
   businessType?: string
   agencyName?: string
   agencyType?: string
+  role?: 'admin' | 'user'
+  status?: 'active' | 'pending' | 'suspended'
   createdAt: Date
   updatedAt: Date
 }
@@ -31,6 +33,8 @@ const userSchema = new Schema<UserRecord>(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     image: { type: String, default: null },
+    role: { type: String, enum: ['admin', 'user'], default: 'user' },
+    status: { type: String, enum: ['active', 'pending', 'suspended'], default: 'active' },
     accountType: { type: String, enum: ['personal', 'company', 'agency'], default: 'personal' },
     displayName: { type: String, default: '' },
     firstName: { type: String, default: '' },

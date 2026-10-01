@@ -13,6 +13,8 @@ declare global {
       name: string
       email: string
       image: string | null
+      role?: 'admin' | 'editor' | 'user'
+      status?: 'active' | 'pending' | 'suspended'
     }
   }
 }
@@ -45,7 +47,11 @@ export const createPassport = (config: ApiAuthConfig): passport.Authenticator =>
                   email,
                   image: profile.photos?.[0]?.value ?? null,
                 },
-                $setOnInsert: { googleId: profile.id },
+                $setOnInsert: {
+                  googleId: profile.id,
+                  role: 'user',
+                  status: 'active',
+                },
               },
               { upsert: true, returnDocument: 'after', runValidators: true },
             )

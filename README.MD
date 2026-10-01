@@ -207,7 +207,7 @@ npm run build               # Production build test
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please refer to [`CONTRIBUTING.md`](file:///c:/Users/User/.antigravity-ide/TORPulse/CONTRIBUTING.md) for branch naming conventions, Conventional Commit standards, and pull request guidelines.
+Contributions are welcome! Please refer to [`CONTRIBUTING.md`] for branch naming conventions, Conventional Commit standards, and pull request guidelines.
 
 ---
 
