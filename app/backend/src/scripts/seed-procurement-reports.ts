@@ -28,13 +28,13 @@ interface ClosedFixtureSpec {
 // savings_amount are trivial to hand-verify, and every awardedPriceBaht is
 // chosen to land the fixture's savings_pct in a distinct spot:
 //   SA (agencyName=Seed Agency Alpha, analyzedAt 30 days ago -> "recent"):
-//     mobile_app x2:  20.0%, 10.0%
-//     data_bi x2:      8.0%,  6.0%
-//     web_application: -5.0%  (over budget -> NOT below-reference)
+//     mobile x2:  20.0%, 10.0%
+//     data x2:      8.0%,  6.0%
+//     web: -5.0%  (over budget -> NOT below-reference)
 //   SB (agencyName=Seed Agency Beta, analyzedAt 730 days ago -> "old", outside 1y/6m):
-//     web_application:  3.0%
-//     enterprise_system x2: 12.0%, 14.0%
-//     consulting_architecture x2: 18.0%, 16.0%
+//     web:  3.0%
+//     enterprise x2: 12.0%, 14.0%
+//     consulting x2: 18.0%, 16.0%
 //
 // Hand-computed expectations (agencyName=Seed Agency Alpha, period=all or 6m):
 //   project_count=5, total_mid_price=50.0, total_awarded_price=46.1,

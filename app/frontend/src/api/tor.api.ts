@@ -25,7 +25,9 @@ export interface TorDetail {
   budgetBaht: number | null;
   midPriceBaht: number | null;
   awardedPriceBaht: number | null;
+  // YYYY-MM-DD or null; submissionDeadlineText is the raw text from the TOR.
   submissionDeadline: string | null;
+  submissionDeadlineText: string | null;
   contactInformation: string[];
   classificationReason: string;
   confidence: number;
@@ -44,10 +46,14 @@ export interface TorListItem {
   summary: string | null;
   detailUrl: string | null;
   budgetBaht: number | null;
+  // YYYY-MM-DD or null; submissionDeadlineText is the raw text from the TOR.
   submissionDeadline: string | null;
+  submissionDeadlineText: string | null;
   technologies: string[];
   createdAt: string;
+  // Primary TOR category key; `categories` lists every matching key, primary first.
   category: string;
+  categories: string[];
 }
 
 export interface RecommendedTorItem extends TorListItem {

@@ -2,14 +2,38 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { z } from 'zod'
 
+import { parseThaiDate } from '../thai-date.js'
+
 const GOVSPENDING_SERVICE_URL = 'https://opend.data.go.th/govspending/service/egp-contract'
 const PROJECT_ID_PATTERN = /^\d{11}$/
 const MAX_REQUEST_ATTEMPTS = 3
+
+// Optional metadata: an invalid value becomes null instead of rejecting the whole page.
+const optionalText = z
+  .preprocess(
+    (value) => (typeof value === 'string' ? value.trim() || null : value),
+    z.string().nullable(),
+  )
+  .catch(null)
+
+const optionalAmount = z
+  .preprocess(
+    (value) => (value === null || value === undefined || value === '' ? null : Number(value)),
+    z.number().finite().nonnegative().nullable(),
+  )
+  .catch(null)
 
 const projectSchema = z.object({
   project_id: z.string().regex(PROJECT_ID_PATTERN),
   project_name: z.string().min(1),
   year: z.coerce.number().int(),
+  dept_name: optionalText,
+  dept_sub_name: optionalText,
+  project_status: optionalText,
+  announce_date: optionalText,
+  project_money: optionalAmount,
+  price_build: optionalAmount,
+  sum_price_agree: optionalAmount,
 })
 
 const responseSchema = z.object({
@@ -18,10 +42,23 @@ const responseSchema = z.object({
   data: z.array(projectSchema),
 })
 
+export interface GovSpendingProjectMetadata {
+  title: string
+  departmentName: string | null
+  departmentSubName: string | null
+  projectStatus: string | null
+  fiscalYear: number
+  announceDate: Date | null
+  budgetBaht: number | null
+  midPriceBaht: number | null
+  awardedPriceBaht: number | null
+}
+
 export interface DiscoveredProcurementProject {
   externalId: string
   title: string
   fiscalYear: number
+  metadata: GovSpendingProjectMetadata
 }
 
 export interface GovSpendingPage {
@@ -113,6 +150,17 @@ export class GovSpendingDiscoveryAdapter {
         externalId: project.project_id,
         title: project.project_name,
         fiscalYear: project.year,
+        metadata: {
+          title: project.project_name,
+          departmentName: project.dept_name,
+          departmentSubName: project.dept_sub_name,
+          projectStatus: project.project_status,
+          fiscalYear: project.year,
+          announceDate: parseThaiDate(project.announce_date),
+          budgetBaht: project.project_money,
+          midPriceBaht: project.price_build,
+          awardedPriceBaht: project.sum_price_agree,
+        },
       })),
     }
   }

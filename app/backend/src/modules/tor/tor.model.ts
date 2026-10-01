@@ -75,6 +75,14 @@ const torSchema = new Schema(
       type: String,
       default: null,
     },
+    fiscalYear: {
+      type: Number,
+      default: null,
+    },
+    announceDate: {
+      type: Date,
+      default: null,
+    },
     summary: {
       type: String,
       default: null,
@@ -99,6 +107,18 @@ const torSchema = new Schema(
       required: true,
       default: [],
     },
+    // Keys from the tor_categories collection, set by the AI classifier.
+    category: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    categories: {
+      type: [String],
+      required: true,
+      default: [],
+      index: true,
+    },
     budgetBaht: {
       type: Number,
       min: 0,
@@ -116,8 +136,14 @@ const torSchema = new Schema(
       default: null,
       alias: 'winningPriceBaht',
     },
+    // Raw deadline text from the TOR, as the AI returned it.
     submissionDeadline: {
       type: String,
+      default: null,
+    },
+    // submissionDeadline parsed to a date (midnight UTC); null when no exact day.
+    submissionDeadlineAt: {
+      type: Date,
       default: null,
     },
     contactInformation: {

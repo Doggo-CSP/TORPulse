@@ -37,13 +37,13 @@ interface TorFixtureSpec {
 // - budgetBaht sum of the non-null values = 2,000,000 exactly
 // - agencyName has 4 distinct real values plus one null and one empty string (both excluded
 //   from departments)
-// - technologies chosen to hit every deriveCategory() branch: web_application x4, data_bi x1,
-//   mobile_app x2, enterprise_system x3 (10 total; consulting_architecture has no fixtures)
+// - technologies chosen to hit every deriveCategory() branch: web x4, data x1,
+//   mobile x2, enterprise x3 (10 total; consulting has no fixtures)
 // - 6 fixtures land "this week" and 4 "last week" (Asia/Bangkok) -> new_this_week = 6
 //
 // midPriceBaht / awardedPriceBaht are set so every fixture that has BOTH values has
 // awardedPriceBaht = exactly 90% of midPriceBaht. That keeps every per-category average
-// (web_application, data_bi, mobile_app, enterprise_system) an exact integer, and keeps the
+// (web, data, mobile, enterprise) an exact integer, and keeps the
 // overall paired discount at exactly 10.00% regardless of how many fixtures are paired in a
 // given category. Some fixtures deliberately have only one of the two prices set (004 has
 // neither, 005 has mid only, 006 has awarded only) to exercise the "not both present" branch
@@ -169,7 +169,9 @@ export async function seedHomepageTors(): Promise<void> {
   await DataSourceModel.deleteMany({ key: { $regex: `^${SEED_PREFIX}` } })
 
   const dataSources = await Promise.all(
-    SEED_DATA_SOURCES.map((source) => DataSourceModel.create({ key: source.key, name: source.name })),
+    SEED_DATA_SOURCES.map((source) =>
+      DataSourceModel.create({ key: source.key, name: source.name }),
+    ),
   )
 
   const { start } = getBangkokWeekRange(new Date())
@@ -232,7 +234,8 @@ async function main(): Promise<void> {
   }
 }
 
-const isMainModule = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+const isMainModule =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
 if (isMainModule) {
   main().catch((error: unknown) => {
     console.error('Homepage TOR seed failed:', error)

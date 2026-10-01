@@ -27,6 +27,9 @@ export async function enqueueDiscoveredProjects(
           sourceVersion: 'initial',
         },
         update: {
+          $set: {
+            sourceMetadata: project.metadata,
+          },
           $setOnInsert: {
             sourceAdapter: 'central_egp',
             status: 'queued',
@@ -47,6 +50,50 @@ export async function enqueueDiscoveredProjects(
     queued: result.upsertedCount,
     existing: uniqueProjects.length - result.upsertedCount,
   }
+}
+
+export const REQUEUEABLE_STATUSES = [
+  'completed',
+  'failed',
+  'rejected',
+  'review_required',
+  'skipped',
+] as const
+export type RequeueableStatus = (typeof REQUEUEABLE_STATUSES)[number]
+
+function requeueFilter(statuses: readonly RequeueableStatus[]) {
+  return {
+    status: { $in: statuses },
+    // Never steal a job that a worker currently holds.
+    $or: [{ lockedUntil: null }, { lockedUntil: { $lte: new Date() } }],
+  }
+}
+
+export async function countRequeueableJobs(
+  statuses: readonly RequeueableStatus[] = REQUEUEABLE_STATUSES,
+): Promise<number> {
+  return IngestionJobModel.countDocuments(requeueFilter(statuses)).exec()
+}
+
+// Reset finished jobs so a running ingestion worker reprocesses them.
+export async function requeueJobs(
+  statuses: readonly RequeueableStatus[] = REQUEUEABLE_STATUSES,
+): Promise<{ matched: number; requeued: number }> {
+  const result = await IngestionJobModel.updateMany(requeueFilter(statuses), {
+    $set: {
+      status: 'queued',
+      currentStage: 'queued',
+      attempCount: 0,
+      nextRetryAt: new Date(),
+      lockedBy: null,
+      lockedUntil: null,
+    },
+    $unset: {
+      lastError: 1,
+    },
+  })
+
+  return { matched: result.matchedCount, requeued: result.modifiedCount }
 }
 
 export async function claimNextJob(workerId: string) {
@@ -152,7 +199,7 @@ export async function completeJob(
 export async function stopJob(
   jobId: Types.ObjectId,
   workerId: string,
-  status: 'rejected' | 'review_required',
+  status: 'rejected' | 'review_required' | 'skipped',
   reason: string,
 ): Promise<void> {
   await IngestionJobModel.updateOne(

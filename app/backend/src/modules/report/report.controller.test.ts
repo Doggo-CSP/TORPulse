@@ -5,6 +5,7 @@ import express from 'express'
 import request from 'supertest'
 
 import { database } from '../../config/mongoose.js'
+import { ensureDefaultCategories } from '../category/category.repository.js'
 import { DataSourceModel } from '../ingestion/data-source.model.js'
 import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
 import {
@@ -18,6 +19,7 @@ import router from './report.routes.js'
 
 test('procurement report endpoints, against a deterministic seeded dataset', async (t) => {
   await database.connect()
+  await ensureDefaultCategories()
   await seedProcurementReports()
 
   t.after(async () => {
@@ -95,7 +97,7 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
     async () => {
       const response = await request(app)
         .get('/reports/price-overview')
-        .query({ category: 'งานพัฒนาเว็บไซต์', agencyName: SEED_AGENCY_ALPHA })
+        .query({ category: 'Web Application', agencyName: SEED_AGENCY_ALPHA })
 
       assert.equal(response.status, 200)
       assert.equal(response.body.data.project_count, 1)
@@ -156,7 +158,7 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
   )
 
   await t.test(
-    'GET /reports/category-comparison for Seed Agency Alpha returns all 5 categories, 2 empty',
+    'GET /reports/category-comparison for Seed Agency Alpha returns all 8 categories, 5 empty',
     async () => {
       const response = await request(app)
         .get('/reports/category-comparison')
@@ -164,43 +166,43 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
 
       assert.equal(response.status, 200)
       const categories: Record<string, unknown>[] = response.body.data.categories
-      assert.equal(categories.length, 5)
+      assert.equal(categories.length, 8)
       const byCategory = Object.fromEntries(categories.map((c) => [c.category, c]))
 
-      assert.deepEqual(byCategory.mobile_app, {
-        category: 'mobile_app',
-        category_label: 'งานแอปพลิเคชันมือถือ',
+      assert.deepEqual(byCategory.mobile, {
+        category: 'mobile',
+        category_label: 'Mobile App',
         total_mid_price: 20.0,
         total_awarded_price: 17.0,
         avg_savings_pct: 15.0,
         project_count: 2,
       })
-      assert.deepEqual(byCategory.data_bi, {
-        category: 'data_bi',
-        category_label: 'งานข้อมูลและวิเคราะห์',
+      assert.deepEqual(byCategory.data, {
+        category: 'data',
+        category_label: 'Data / BI',
         total_mid_price: 20.0,
         total_awarded_price: 18.6,
         avg_savings_pct: 7.0,
         project_count: 2,
       })
-      assert.deepEqual(byCategory.web_application, {
-        category: 'web_application',
-        category_label: 'งานพัฒนาเว็บไซต์',
+      assert.deepEqual(byCategory.web, {
+        category: 'web',
+        category_label: 'Web Application',
         total_mid_price: 10.0,
         total_awarded_price: 10.5,
         avg_savings_pct: -5.0,
         project_count: 1,
       })
-      assert.deepEqual(byCategory.enterprise_system, {
-        category: 'enterprise_system',
-        category_label: 'งานระบบองค์กร',
+      assert.deepEqual(byCategory.enterprise, {
+        category: 'enterprise',
+        category_label: 'Enterprise System',
         total_mid_price: 0,
         total_awarded_price: 0,
         avg_savings_pct: null,
         project_count: 0,
       })
-      assert.deepEqual(byCategory.consulting_architecture, {
-        category: 'consulting_architecture',
+      assert.deepEqual(byCategory.consulting, {
+        category: 'consulting',
         category_label: 'Consulting / Architecture',
         total_mid_price: 0,
         total_awarded_price: 0,
@@ -221,18 +223,18 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
       const categories: Record<string, unknown>[] = response.body.data.categories
       const byCategory = Object.fromEntries(categories.map((c) => [c.category, c]))
 
-      assert.equal(byCategory.mobile_app!.project_count, 0)
-      assert.equal(byCategory.data_bi!.project_count, 0)
-      assert.deepEqual(byCategory.enterprise_system, {
-        category: 'enterprise_system',
-        category_label: 'งานระบบองค์กร',
+      assert.equal(byCategory.mobile!.project_count, 0)
+      assert.equal(byCategory.data!.project_count, 0)
+      assert.deepEqual(byCategory.enterprise, {
+        category: 'enterprise',
+        category_label: 'Enterprise System',
         total_mid_price: 20.0,
         total_awarded_price: 17.4,
         avg_savings_pct: 13.0,
         project_count: 2,
       })
-      assert.deepEqual(byCategory.consulting_architecture, {
-        category: 'consulting_architecture',
+      assert.deepEqual(byCategory.consulting, {
+        category: 'consulting',
         category_label: 'Consulting / Architecture',
         total_mid_price: 20.0,
         total_awarded_price: 16.6,

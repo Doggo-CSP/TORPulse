@@ -59,4 +59,3 @@ export type UserDocument = HydratedDocument<UserRecord>
 
 export const User =
   (mongoose.models.User as Model<UserRecord> | undefined) ?? model<UserRecord>('User', userSchema)
-

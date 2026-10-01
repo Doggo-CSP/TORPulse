@@ -1,11 +1,9 @@
 import type { Request, Response } from 'express'
 
-import { deriveCategory, type TorCategory } from '../tor/tor.controller.js'
+import { getCategoryCatalog, type CategoryItem } from '../category/category.repository.js'
+import { resolveTorCategory, type TorCategory } from '../tor/tor.controller.js'
 import { TorModel } from '../tor/tor.model.js'
 import {
-  CATEGORY_LABEL_TO_KEY,
-  REPORT_CATEGORY_LABELS,
-  REPORT_CATEGORY_ORDER,
   SAVINGS_BUCKETS,
   periodToCutoff,
   type ProcurementListSortField,
@@ -31,6 +29,7 @@ interface PricedProjectLean {
   referencePriceBaht: number
   winningPriceBaht: number
   technologies: string[]
+  category: string | null
 }
 
 function toMillionRound2(baht: number): number {
@@ -63,21 +62,44 @@ async function validateAgencyName(agencyName: string | undefined, res: Response)
   return false
 }
 
-function filterByCategory<T extends { technologies: string[] }>(
-  projects: T[],
-  categoryLabel: string | undefined,
-): T[] {
-  if (!categoryLabel) return projects
-  const category = CATEGORY_LABEL_TO_KEY[categoryLabel]
-  return projects.filter((p) => deriveCategory(p.technologies ?? []) === category)
+type CategorizedLean = { technologies?: string[] | null; category?: string | null }
+
+/**
+ * Resolve the `category` query param (key or name, case-insensitive) to a
+ * category key. Sends 400 and returns false when it is unknown.
+ */
+async function resolveCategoryParam(
+  category: string | undefined,
+  res: Response,
+): Promise<{ key: string | undefined; catalog: CategoryItem[] } | false> {
+  const catalog = await getCategoryCatalog()
+  if (!category) return { key: undefined, catalog }
+
+  const wanted = category.toLowerCase()
+  const match = catalog.find(({ key, name }) => key === wanted || name.toLowerCase() === wanted)
+  if (!match) {
+    res.status(400).json({ message: 'Invalid category' })
+    return false
+  }
+  return { key: match.key, catalog }
 }
 
-function groupByCategory<T extends { technologies: string[] }>(
+function categoryLabels(catalog: CategoryItem[]): Map<string, string> {
+  return new Map(catalog.map(({ key, name }) => [key, name]))
+}
+
+function filterByCategory<T extends CategorizedLean>(
   projects: T[],
-): Map<TorCategory, T[]> {
+  category: string | undefined,
+): T[] {
+  if (!category) return projects
+  return projects.filter((p) => resolveTorCategory(p) === category)
+}
+
+function groupByCategory<T extends CategorizedLean>(projects: T[]): Map<TorCategory, T[]> {
   const byCategory = new Map<TorCategory, T[]>()
   for (const project of projects) {
-    const category = deriveCategory(project.technologies ?? [])
+    const category = resolveTorCategory(project)
     const bucket = byCategory.get(category)
     if (bucket) {
       bucket.push(project)
@@ -98,8 +120,11 @@ export async function priceOverviewHandler(req: Request, res: Response): Promise
     res.status(400).json({ message: 'Invalid query parameters' })
     return
   }
-  const { period, category, agencyName } = parsed.data
+  const { period, category: categoryParam, agencyName } = parsed.data
   if (!(await validateAgencyName(agencyName, res))) return
+  const resolved = await resolveCategoryParam(categoryParam, res)
+  if (!resolved) return
+  const category = resolved.key
 
   const cutoff = periodToCutoff(period as ReportPeriod)
   const match = baseMatch(cutoff, agencyName)
@@ -108,6 +133,7 @@ export async function priceOverviewHandler(req: Request, res: Response): Promise
     midPriceBaht: 1,
     awardedPriceBaht: 1,
     technologies: 1,
+    category: 1,
   }).lean()
 
   const projects: PricedProjectLean[] = filterByCategory(
@@ -115,6 +141,7 @@ export async function priceOverviewHandler(req: Request, res: Response): Promise
       referencePriceBaht: p.midPriceBaht!,
       winningPriceBaht: p.awardedPriceBaht!,
       technologies: p.technologies ?? [],
+      category: p.category ?? null,
     })),
     category,
   )
@@ -162,8 +189,11 @@ export async function savingsDistributionHandler(req: Request, res: Response): P
     res.status(400).json({ message: 'Invalid query parameters' })
     return
   }
-  const { period, category, agencyName } = parsed.data
+  const { period, category: categoryParam, agencyName } = parsed.data
   if (!(await validateAgencyName(agencyName, res))) return
+  const resolved = await resolveCategoryParam(categoryParam, res)
+  if (!resolved) return
+  const category = resolved.key
 
   const cutoff = periodToCutoff(period as ReportPeriod)
   const match = baseMatch(cutoff, agencyName)
@@ -172,6 +202,7 @@ export async function savingsDistributionHandler(req: Request, res: Response): P
     midPriceBaht: 1,
     awardedPriceBaht: 1,
     technologies: 1,
+    category: 1,
   }).lean()
 
   const projects: PricedProjectLean[] = filterByCategory(
@@ -179,6 +210,7 @@ export async function savingsDistributionHandler(req: Request, res: Response): P
       referencePriceBaht: p.midPriceBaht!,
       winningPriceBaht: p.awardedPriceBaht!,
       technologies: p.technologies ?? [],
+      category: p.category ?? null,
     })),
     category,
   )
@@ -229,22 +261,25 @@ export async function categoryComparisonHandler(req: Request, res: Response): Pr
     midPriceBaht: 1,
     awardedPriceBaht: 1,
     technologies: 1,
+    category: 1,
   }).lean()
 
   const projects: PricedProjectLean[] = rawProjects.map((p) => ({
     referencePriceBaht: p.midPriceBaht!,
     winningPriceBaht: p.awardedPriceBaht!,
     technologies: p.technologies ?? [],
+    category: p.category ?? null,
   }))
 
   const byCategory = groupByCategory(projects)
+  const catalog = await getCategoryCatalog()
 
-  const categories = REPORT_CATEGORY_ORDER.map((cat) => {
+  const categories = catalog.map(({ key: cat, name }) => {
     const group = byCategory.get(cat) ?? []
     if (group.length === 0) {
       return {
         category: cat,
-        category_label: REPORT_CATEGORY_LABELS[cat],
+        category_label: name,
         total_mid_price: 0,
         total_awarded_price: 0,
         avg_savings_pct: null,
@@ -260,7 +295,7 @@ export async function categoryComparisonHandler(req: Request, res: Response): Pr
 
     return {
       category: cat,
-      category_label: REPORT_CATEGORY_LABELS[cat],
+      category_label: name,
       total_mid_price: toMillionRound2(totalMid),
       total_awarded_price: toMillionRound2(totalAwarded),
       avg_savings_pct: round1(avgSavingsPct),
@@ -326,6 +361,9 @@ export async function procurementListHandler(req: Request, res: Response): Promi
     sort_order: sortOrder,
   } = parsed.data
   if (!(await validateAgencyName(agencyName, res))) return
+  const resolved = await resolveCategoryParam(category, res)
+  if (!resolved) return
+  const labels = categoryLabels(resolved.catalog)
 
   const cutoff = periodToCutoff(period as ReportPeriod)
   const match = baseMatch(cutoff, agencyName)
@@ -343,24 +381,21 @@ export async function procurementListHandler(req: Request, res: Response): Promi
     midPriceBaht: 1,
     awardedPriceBaht: 1,
     technologies: 1,
+    category: 1,
     detailUrl: 1,
   }).lean()
 
-  const filtered = category
-    ? rawProjects.filter(
-        (p) => deriveCategory(p.technologies ?? []) === CATEGORY_LABEL_TO_KEY[category],
-      )
-    : rawProjects
+  const filtered = filterByCategory(rawProjects, resolved.key)
 
   const rows: ProcurementListRow[] = filtered.map((p) => {
     const midPriceBaht = round2(p.midPriceBaht!)
     const awardedPriceBaht = round2(p.awardedPriceBaht!)
-    const cat = deriveCategory(p.technologies ?? [])
+    const cat = resolveTorCategory(p)
     return {
       id: String(p._id),
       external_id: p.externalId,
       category: cat,
-      category_label: REPORT_CATEGORY_LABELS[cat],
+      category_label: labels.get(cat) ?? cat,
       project_title: p.projectTitle,
       agency_name: p.agencyName ?? null,
       mid_price_baht: midPriceBaht,

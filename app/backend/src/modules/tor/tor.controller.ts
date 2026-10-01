@@ -3,14 +3,15 @@ import { createHash } from 'node:crypto'
 import type { Request, Response } from 'express'
 import { isObjectIdOrHexString } from 'mongoose'
 
+import { cleanDateText, parseThaiDate, toIsoDateString } from '../ingestion/thai-date.js'
 import { TorModel } from './tor.model.js'
 
 // ---------------------------------------------------------------------------
-// Category derivation (pure, no DB) — shared with homepage.controller.ts
+// Category resolution (pure, no DB) — shared with homepage and report
 // ---------------------------------------------------------------------------
 
-export type TorCategory =
-  'mobile_app' | 'data_bi' | 'web_application' | 'enterprise_system' | 'consulting_architecture'
+// A key from the tor_categories collection (see modules/category).
+export type TorCategory = string
 
 const MOBILE_APP_KEYWORDS = ['flutter', 'react native', 'swift', 'kotlin', 'android', 'ios']
 const DATA_BI_KEYWORDS = [
@@ -43,35 +44,38 @@ const CONSULTING_ARCHITECTURE_KEYWORDS = [
 const matchesAny = (technologies: string[], keywords: string[]): boolean =>
   technologies.some((tech) => keywords.some((keyword) => tech.includes(keyword)))
 
+/**
+ * Legacy keyword guess, only used for TORs analysed before the AI stored a
+ * category. Returns keys from the default category set.
+ */
 export function deriveCategory(technologies: string[]): TorCategory {
   const normalized = technologies.map((tech) => tech.toLowerCase())
 
   if (matchesAny(normalized, MOBILE_APP_KEYWORDS)) {
-    return 'mobile_app'
+    return 'mobile'
   }
 
   const hasWebKeyword = matchesAny(normalized, WEB_APPLICATION_KEYWORDS)
   if (matchesAny(normalized, DATA_BI_KEYWORDS) && !hasWebKeyword) {
-    return 'data_bi'
+    return 'data'
   }
 
   if (hasWebKeyword) {
-    return 'web_application'
+    return 'web'
   }
 
   if (matchesAny(normalized, CONSULTING_ARCHITECTURE_KEYWORDS)) {
-    return 'consulting_architecture'
+    return 'consulting'
   }
 
-  return 'enterprise_system'
+  return 'enterprise'
 }
 
-export const CATEGORY_LABELS: Record<TorCategory, string> = {
-  web_application: 'งานพัฒนาเว็บไซต์',
-  data_bi: 'งานข้อมูลและวิเคราะห์',
-  mobile_app: 'งานแอปพลิเคชันมือถือ',
-  enterprise_system: 'งานระบบองค์กร',
-  consulting_architecture: 'Consulting / Architecture',
+export function resolveTorCategory(tor: {
+  category?: string | null
+  technologies?: string[] | null
+}): TorCategory {
+  return tor.category || deriveCategory(tor.technologies ?? [])
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +102,22 @@ export function calculateInterestScore(
   return SCORE_MIN + (hashInt % SCORE_RANGE)
 }
 
+// `submissionDeadline` in API responses is always YYYY-MM-DD or null, so
+// clients can pass it to `new Date()`. The AI's raw text is returned as
+// `submissionDeadlineText`. TORs stored before `submissionDeadlineAt`
+// existed are parsed on the fly.
+function deadlineFields(tor: {
+  submissionDeadline?: string | null
+  submissionDeadlineAt?: Date | null
+}) {
+  return {
+    submissionDeadline: toIsoDateString(
+      tor.submissionDeadlineAt ?? parseThaiDate(tor.submissionDeadline),
+    ),
+    submissionDeadlineText: cleanDateText(tor.submissionDeadline),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Shared response shape
 // ---------------------------------------------------------------------------
@@ -110,7 +130,10 @@ interface TorLeanFields {
   agencyName?: string | null
   budgetBaht?: number | null
   submissionDeadline?: string | null
+  submissionDeadlineAt?: Date | null
   technologies?: string[]
+  category?: string | null
+  categories?: string[]
   createdAt: Date
 }
 
@@ -122,10 +145,11 @@ export function toTorListItem(tor: TorLeanFields) {
     projectTitle: tor.projectTitle,
     agencyName: tor.agencyName ?? null,
     budgetBaht: tor.budgetBaht ?? null,
-    submissionDeadline: tor.submissionDeadline ?? null,
+    ...deadlineFields(tor),
     technologies: tor.technologies ?? [],
     createdAt: tor.createdAt,
-    category: deriveCategory(tor.technologies ?? []),
+    category: resolveTorCategory(tor),
+    categories: tor.categories?.length ? tor.categories : [resolveTorCategory(tor)],
   }
 }
 
@@ -243,7 +267,7 @@ export async function getTorByIdHandler(req: Request, res: Response): Promise<vo
     budgetBaht: tor.budgetBaht ?? null,
     midPriceBaht: tor.midPriceBaht ?? null,
     awardedPriceBaht: tor.awardedPriceBaht ?? null,
-    submissionDeadline: tor.submissionDeadline ?? null,
+    ...deadlineFields(tor),
     contactInformation: tor.contactInformation,
     classificationReason: tor.classificationReason,
     confidence: tor.confidence,

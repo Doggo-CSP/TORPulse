@@ -1,10 +1,16 @@
 import { Types } from 'mongoose'
 
 import { env } from '../../config/env.js'
-import { upsertTor } from '../tor/tor.repository.js'
+import { torFieldsFromSourceMetadata, upsertTor } from '../tor/tor.repository.js'
+import { getCategoryCatalog, normalizeCategories } from '../category/category.repository.js'
+import { cleanDateText, parseThaiDate } from './thai-date.js'
 import type { IngestionJob } from './ingestion-job.model.js'
-import type { ProcurementSourceAdapter } from './adapters/procurement-source.adapter.js'
-import { CentralEgpAdapter } from './adapters/central-egp.adapters.js'
+import type {
+  DownloadDocument,
+  ProcurementProject,
+  ProcurementSourceAdapter,
+} from './adapters/procurement-source.adapter.js'
+import { CentralEgpAdapter, NoTorDocumentsError } from './adapters/central-egp.adapters.js'
 import {
   analyzeTorWithDeepSeek,
   TOR_ANALYSIS_VERSION,
@@ -22,6 +28,7 @@ export type IngestionResult =
     }
   | { type: 'rejected'; reason: string }
   | { type: 'review_required'; reason: string }
+  | { type: 'skipped'; reason: string }
 
 const adapters: Record<string, ProcurementSourceAdapter> = {
   central_egp: new CentralEgpAdapter(),
@@ -45,11 +52,22 @@ export async function processIngestionJob(
     }
   }
 
-  await updateStage('fetching_details')
-  const project = await adapter.getProject(job.externalId)
+  let project: ProcurementProject
+  let documents: DownloadDocument[]
 
-  await updateStage('downloading')
-  const documents = await adapter.downloadDocuments(project)
+  try {
+    await updateStage('fetching_details')
+    project = await adapter.getProject(job.externalId)
+
+    await updateStage('downloading')
+    documents = await adapter.downloadDocuments(project)
+  } catch (error) {
+    if (error instanceof NoTorDocumentsError) {
+      return { type: 'skipped', reason: error.message }
+    }
+
+    throw error
+  }
 
   if (documents.length === 0) {
     return {
@@ -72,7 +90,8 @@ export async function processIngestionJob(
   }
 
   await updateStage('classifying')
-  const extractedTor = await torAnalyzers[env.AI_PROVIDER](extractedText, project)
+  const categoryCatalog = await getCategoryCatalog()
+  const extractedTor = await torAnalyzers[env.AI_PROVIDER](extractedText, project, categoryCatalog)
 
   if (!extractedTor.isSoftwareRelated) {
     return {
@@ -83,7 +102,13 @@ export async function processIngestionJob(
 
   await updateStage('extracting_fields')
 
+  const { category, categories } = normalizeCategories(
+    extractedTor,
+    categoryCatalog.map(({ key }) => key),
+  )
+
   await updateStage('storing')
+  const sourceMetadata = job.sourceMetadata ?? null
   const tor = await upsertTor({
     dataSourceId: job.dataSourceId,
     ingestionJobId: job._id,
@@ -91,20 +116,31 @@ export async function processIngestionJob(
     sourceVersion: job.sourceVersion,
     sourceAdapter: job.sourceAdapter,
     detailUrl: project.detailUrl,
-    projectTitle: nonBlankOrFallback(extractedTor.projectTitle, project.title),
+    projectTitle: nonBlankOrFallback(
+      extractedTor.projectTitle,
+      sourceMetadata?.title ?? project.title,
+    ),
     agencyName: nonBlankOrFallback(extractedTor.agencyName, project.agencyName ?? null),
-    departmentName: project.departmentName ?? null,
-    departmentSubName: project.departmentSubName ?? null,
-    projectStatus: project.projectStatus ?? null,
+    departmentName: null,
+    departmentSubName: null,
+    projectStatus: null,
+    fiscalYear: null,
+    announceDate: null,
+    midPriceBaht: null,
+    awardedPriceBaht: null,
     summary: extractedTor.summary,
     objectives: extractedTor.objectives,
     requirements: extractedTor.requirements,
     bidderQualifications: extractedTor.bidderQualifications,
     technologies: extractedTor.technologies,
+    category,
+    categories,
     budgetBaht: extractedTor.budgetBaht,
-    midPriceBaht: project.midPriceBaht ?? null,
-    awardedPriceBaht: project.awardedPriceBaht ?? null,
-    submissionDeadline: extractedTor.submissionDeadline,
+    // GovSpending owns department, status, year, announce date and prices,
+    // and its project budget wins over the LLM-extracted one.
+    ...torFieldsFromSourceMetadata(sourceMetadata),
+    submissionDeadline: cleanDateText(extractedTor.submissionDeadline),
+    submissionDeadlineAt: parseThaiDate(extractedTor.submissionDeadline),
     contactInformation: extractedTor.contactInformation,
     classificationReason: extractedTor.classificationReason,
     confidence: extractedTor.confidence,

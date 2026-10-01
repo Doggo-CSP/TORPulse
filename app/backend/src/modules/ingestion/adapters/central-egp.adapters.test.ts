@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import { strToU8, zipSync } from 'fflate'
 
-import { CentralEgpAdapter } from './central-egp.adapters.js'
+import { CentralEgpAdapter, NoTorDocumentsError } from './central-egp.adapters.js'
 
 const PROJECT_ID = '67119538991'
 const ZIP_ID = 'cefa9bcbd513448ea9ad54f80aea5f56'
@@ -110,6 +110,77 @@ test('rejects malformed Central eGP prices', async () => {
   })
 
   await assert.rejects(() => adapter.getProjectDetails(PROJECT_ID), /invalid priceBuild/)
+})
+
+test('reports no TOR when eGP has no announcement archive and skips detail calls', async () => {
+  const requestedUrls: string[] = []
+  const adapter = new CentralEgpAdapter({
+    fetchImpl: (async (input: string | URL | Request) => {
+      requestedUrls.push(input.toString())
+      return Response.json({
+        response: { responseCode: '1', messageCode: 'E0001' },
+        data: null,
+      })
+    }) as typeof fetch,
+  })
+
+  await assert.rejects(() => adapter.getProject(PROJECT_ID), NoTorDocumentsError)
+  assert.equal(requestedUrls.length, 1)
+  assert.ok(requestedUrls[0]?.includes('infoProcureDocAnnounZipTemp'))
+})
+
+test('reports no TOR when the archive has no TOR PDF', async () => {
+  const archive = zipSync({ 'folder/annoudoc.pdf': PDF })
+  const adapter = new CentralEgpAdapter({ fetchImpl: createFetchMock(archive, []) })
+  const project = await adapter.getProject(PROJECT_ID)
+
+  await assert.rejects(() => adapter.downloadDocuments(project), NoTorDocumentsError)
+})
+
+test('getProject only requests the archive metadata', async () => {
+  const requestedUrls: string[] = []
+  const adapter = new CentralEgpAdapter({ fetchImpl: createFetchMock(PDF, requestedUrls) })
+
+  const project = await adapter.getProject(PROJECT_ID)
+
+  assert.equal(project.externalId, PROJECT_ID)
+  assert.equal(project.departmentName, undefined)
+  assert.equal(requestedUrls.length, 1)
+  assert.ok(requestedUrls[0]?.includes('infoProcureDocAnnounZipTemp'))
+})
+
+test('extracts tor_, Attach_TOR and doc_ PDFs in priority order', async () => {
+  const archive = zipSync({
+    [`doc_1100800000_${PROJECT_ID}.pdf`]: PDF,
+    'Attach_TOR_2.pdf': PDF,
+    [`annoudoc_1100800000_${PROJECT_ID}.pdf`]: PDF,
+    'Attach_TOR_1.pdf': PDF,
+    [`tor_${PROJECT_ID}_b997372f.pdf`]: PDF,
+    'tor_notes.txt': strToU8('not a PDF'),
+  })
+  const adapter = new CentralEgpAdapter({ fetchImpl: createFetchMock(archive, []) })
+
+  const documents = await adapter.downloadDocuments(await adapter.getProject(PROJECT_ID))
+
+  assert.deepEqual(
+    documents.map((document) => document.fileName),
+    [
+      `tor_${PROJECT_ID}_b997372f.pdf`,
+      'Attach_TOR_1.pdf',
+      'Attach_TOR_2.pdf',
+      `doc_1100800000_${PROJECT_ID}.pdf`,
+    ],
+  )
+})
+
+test('reports no TOR when the archive only has the announcement', async () => {
+  const archive = zipSync({ [`annoudoc_1100800000_${PROJECT_ID}.pdf`]: PDF })
+  const adapter = new CentralEgpAdapter({ fetchImpl: createFetchMock(archive, []) })
+
+  await assert.rejects(
+    async () => adapter.downloadDocuments(await adapter.getProject(PROJECT_ID)),
+    NoTorDocumentsError,
+  )
 })
 
 test('rejects invalid Central eGP project IDs before making a request', async () => {

@@ -4,23 +4,16 @@ import { TorModel } from '../tor/tor.model.js'
 
 export const getAdminStats = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const [
-      totalUsers,
-      activeUsers,
-      pendingUsers,
-      adminCount,
-      userCount,
-      totalTors,
-      awardedCount,
-    ] = await Promise.all([
-      User.countDocuments(),
-      User.countDocuments({ $or: [{ status: 'active' }, { status: { $exists: false } }] }),
-      User.countDocuments({ status: 'pending' }),
-      User.countDocuments({ role: 'admin' }),
-      User.countDocuments({ $or: [{ role: 'user' }, { role: { $exists: false } }] }),
-      TorModel.countDocuments(),
-      TorModel.countDocuments({ awardedPriceBaht: { $ne: null } }),
-    ])
+    const [totalUsers, activeUsers, pendingUsers, adminCount, userCount, totalTors, awardedCount] =
+      await Promise.all([
+        User.countDocuments(),
+        User.countDocuments({ $or: [{ status: 'active' }, { status: { $exists: false } }] }),
+        User.countDocuments({ status: 'pending' }),
+        User.countDocuments({ role: 'admin' }),
+        User.countDocuments({ $or: [{ role: 'user' }, { role: { $exists: false } }] }),
+        TorModel.countDocuments(),
+        TorModel.countDocuments({ awardedPriceBaht: { $ne: null } }),
+      ])
 
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
     const newThisWeek = await TorModel.countDocuments({ createdAt: { $gte: oneWeekAgo } })
@@ -39,7 +32,9 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
       },
     })
   } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch admin stats', error: (error as Error).message })
+    res
+      .status(500)
+      .json({ message: 'Failed to fetch admin stats', error: (error as Error).message })
   }
 }
 

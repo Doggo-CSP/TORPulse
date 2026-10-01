@@ -18,15 +18,20 @@ export interface UpsertTorInput {
   departmentName?: string | null
   departmentSubName?: string | null
   projectStatus?: string | null
+  fiscalYear?: number | null
+  announceDate?: Date | null
   summary: string | null
   objectives: string[]
   requirements: string[]
   bidderQualifications: string[]
   technologies: string[]
+  category?: string | null
+  categories?: string[]
   budgetBaht: number | null
   midPriceBaht?: number | null
   awardedPriceBaht?: number | null
   submissionDeadline: string | null
+  submissionDeadlineAt?: Date | null
   contactInformation: string[]
   classificationReason: string
   confidence: number

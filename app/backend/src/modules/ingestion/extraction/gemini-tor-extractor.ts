@@ -2,7 +2,12 @@ import { GoogleGenAI } from '@google/genai'
 
 import { env } from '../../../config/env.js'
 import type { ProcurementProject } from '../adapters/procurement-source.adapter.js'
-import { buildSystemPrompt, parseTorAnalysis, type TorAnalysis } from './deepseek-tor-extractor.js'
+import {
+  buildSystemPrompt,
+  parseTorAnalysis,
+  type ClassifierCategory,
+  type TorAnalysis,
+} from './deepseek-tor-extractor.js'
 
 interface GeminiClient {
   models: {
@@ -39,6 +44,7 @@ function createGeminiClient(): GeminiClient {
 export async function analyzeTorWithGemini(
   markdown: string,
   project: ProcurementProject,
+  categories: ClassifierCategory[],
   client: GeminiClient = createGeminiClient(),
 ): Promise<TorAnalysis> {
   const response = await client.models.generateContent({
@@ -52,7 +58,7 @@ export async function analyzeTorWithGemini(
       '</tor_document>',
     ].join('\n'),
     config: {
-      systemInstruction: buildSystemPrompt(),
+      systemInstruction: buildSystemPrompt(categories),
       responseMimeType: 'application/json',
       maxOutputTokens: 8_000,
     },

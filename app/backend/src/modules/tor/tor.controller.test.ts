@@ -10,51 +10,52 @@ import {
   deriveCategory,
   getRecommendationsHandler,
   getTorByIdHandler,
+  toTorListItem,
 } from './tor.controller.js'
 import { TorModel } from './tor.model.js'
 
 // --- deriveCategory (pure) -------------------------------------------------
 
 const categoryCases: Array<{ name: string; technologies: string[]; expected: string }> = [
-  { name: 'mobile keyword alone', technologies: ['Flutter'], expected: 'mobile_app' },
-  { name: 'mobile keyword lowercase', technologies: ['android'], expected: 'mobile_app' },
+  { name: 'mobile keyword alone', technologies: ['Flutter'], expected: 'mobile' },
+  { name: 'mobile keyword lowercase', technologies: ['android'], expected: 'mobile' },
   {
     name: 'mobile takes priority even with data/web keywords present',
     technologies: ['React Native', 'Python', 'React'],
-    expected: 'mobile_app',
+    expected: 'mobile',
   },
-  { name: 'data/BI keywords only', technologies: ['Python', 'Power BI'], expected: 'data_bi' },
+  { name: 'data/BI keywords only', technologies: ['Python', 'Power BI'], expected: 'data' },
   {
     name: 'data/BI keyword excluded when a web keyword is also present',
     technologies: ['python', 'react'],
-    expected: 'web_application',
+    expected: 'web',
   },
-  { name: 'web keyword alone', technologies: ['Vue'], expected: 'web_application' },
-  { name: 'web keyword case-insensitive', technologies: ['REACT'], expected: 'web_application' },
+  { name: 'web keyword alone', technologies: ['Vue'], expected: 'web' },
+  { name: 'web keyword case-insensitive', technologies: ['REACT'], expected: 'web' },
   {
     name: 'enterprise keywords explicit',
     technologies: ['.NET', 'SAP'],
-    expected: 'enterprise_system',
+    expected: 'enterprise',
   },
   {
     name: 'consulting/architecture keyword',
     technologies: ['IT Consulting'],
-    expected: 'consulting_architecture',
+    expected: 'consulting',
   },
   {
     name: 'web keyword takes priority over consulting/architecture keyword',
     technologies: ['React', 'Consulting'],
-    expected: 'web_application',
+    expected: 'web',
   },
   {
-    name: 'empty technologies falls back to enterprise_system',
+    name: 'empty technologies falls back to enterprise',
     technologies: [],
-    expected: 'enterprise_system',
+    expected: 'enterprise',
   },
   {
-    name: 'unrecognized technology falls back to enterprise_system',
+    name: 'unrecognized technology falls back to enterprise',
     technologies: ['COBOL'],
-    expected: 'enterprise_system',
+    expected: 'enterprise',
   },
 ]
 
@@ -201,4 +202,34 @@ test('GET /recommendations requires auth, then returns deterministic scored item
     assert.ok(item.score >= 50 && item.score <= 95, `score ${item.score} out of range`)
   }
   assert.deepEqual(firstResponse.body, secondResponse.body)
+})
+
+test('list items expose an ISO deadline and the raw deadline text', () => {
+  const base = {
+    _id: 'id',
+    externalId: '69019037579',
+    sourceAdapter: 'central_egp',
+    projectTitle: 'Project',
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+  }
+
+  const stored = toTorListItem({
+    ...base,
+    submissionDeadline: '15 มกราคม 2569',
+    submissionDeadlineAt: new Date('2026-01-15T00:00:00Z'),
+  })
+  assert.equal(stored.submissionDeadline, '2026-01-15')
+  assert.equal(stored.submissionDeadlineText, '15 มกราคม 2569')
+
+  // Older TOR without submissionDeadlineAt is parsed on the fly.
+  assert.equal(
+    toTorListItem({ ...base, submissionDeadline: '2025-11-17T16:00:00' }).submissionDeadline,
+    '2025-11-17',
+  )
+
+  const monthOnly = toTorListItem({ ...base, submissionDeadline: 'มกราคม 2569' })
+  assert.equal(monthOnly.submissionDeadline, null)
+  assert.equal(monthOnly.submissionDeadlineText, 'มกราคม 2569')
+
+  assert.equal(toTorListItem({ ...base, submissionDeadline: 'null' }).submissionDeadlineText, null)
 })

@@ -41,7 +41,17 @@ const EGP_MAX_RETRY_DELAY_MS = 60_000
 
 const PROJECT_ID_PATTERN = /^\d{11}$/
 
-const TOR_FILE_PATTERN = /(?:^|[_\W])tor(?:[_\W]|$)|ขอบเขต.*งาน/iu
+/**
+ * TOR files inside the announcement ZIP, in the order they are sent to the
+ * extractor (most important first):
+ *
+ * tor_<projectId>_<uuid>.pdf   the TOR itself
+ * Attach_TOR_<n>.pdf           TOR attachments
+ * doc_<deptId>_<projectId>.pdf invitation / bid document
+ *
+ * annoudoc_*.pdf (the announcement) is intentionally excluded.
+ */
+const TOR_FILE_PREFIXES = ['tor_', 'attach_tor', 'doc_'] as const
 
 const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
 const MAX_ARCHIVE_ENTRIES = 500
@@ -81,6 +91,33 @@ export class CentralEgpRateLimitError extends Error {
     this.name = 'CentralEgpRateLimitError'
     this.projectId = projectId
     this.retryAfterMs = retryAfterMs
+  }
+}
+
+/**
+ * Central eGP has no TOR to download for this project (no announcement
+ * archive published, or no TOR PDF inside it). Permanent, so the worker
+ * should skip the job instead of retrying it.
+ */
+export class NoTorDocumentsError extends Error {
+  public constructor(message: string) {
+    super(message)
+
+    this.name = 'NoTorDocumentsError'
+  }
+}
+
+/**
+ * Non-2xx response from a Central eGP endpoint.
+ */
+export class CentralEgpHttpError extends Error {
+  public readonly status: number
+
+  public constructor(message: string, status: number) {
+    super(message)
+
+    this.name = 'CentralEgpHttpError'
+    this.status = status
   }
 }
 
@@ -172,16 +209,11 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
     assertProjectId(projectId)
 
     /**
-     * You can keep Promise.all here.
-     *
-     * Both requests ultimately go through limitedFetch(),
-     * therefore they will not actually hammer eGP
-     * simultaneously.
+     * Only the archive metadata is needed here. Department, status and
+     * prices come from GovSpending (job.sourceMetadata), so the token and
+     * detail endpoints are not called during ingestion.
      */
-    const [metadata, details] = await Promise.all([
-      this.fetchArchiveMetadata(projectId),
-      this.getProjectDetails(projectId),
-    ])
+    const metadata = await this.fetchArchiveMetadata(projectId)
 
     this.archiveByProjectId.set(projectId, metadata)
 
@@ -195,8 +227,6 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
       title: `Central eGP project ${projectId}`,
 
       detailUrl: detailUrl.toString(),
-
-      ...details,
     }
   }
 
@@ -295,18 +325,23 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
 
     const entries = extractTorPdfs(archive)
 
-    const documents = Object.entries(entries).map(([entryName, content]) => ({
-      fileName: path.posix.basename(entryName.replaceAll('\\', '/')),
+    const documents = Object.entries(entries)
+      .sort(
+        ([a], [b]) =>
+          torFileRank(a) - torFileRank(b) || a.localeCompare(b, 'en', { numeric: true }),
+      )
+      .map(([entryName, content]) => ({
+        fileName: path.posix.basename(entryName.replaceAll('\\', '/')),
 
-      mimeType: 'application/pdf',
+        mimeType: 'application/pdf',
 
-      content: Buffer.from(content),
+        content: Buffer.from(content),
 
-      sourceUrl: `${url.toString()}#entry=${encodeURIComponent(entryName)}`,
-    }))
+        sourceUrl: `${url.toString()}#entry=${encodeURIComponent(entryName)}`,
+      }))
 
     if (documents.length === 0) {
-      throw new Error(
+      throw new NoTorDocumentsError(
         `No TOR PDF was found in ${metadata.archiveName} for Central eGP project ${projectId}`,
       )
     }
@@ -390,7 +425,10 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
     )
 
     if (!response.ok) {
-      throw new Error(`Central eGP token request failed (${response.status}) for ${projectId}`)
+      throw new CentralEgpHttpError(
+        `Central eGP token request failed (${response.status}) for ${projectId}`,
+        response.status,
+      )
     }
 
     const payload: unknown = await response.json()
@@ -425,7 +463,10 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
     )
 
     if (!response.ok) {
-      throw new Error(`Central eGP ${label} request failed (${response.status}) for ${projectId}`)
+      throw new CentralEgpHttpError(
+        `Central eGP ${label} request failed (${response.status}) for ${projectId}`,
+        response.status,
+      )
     }
 
     return response.json()
@@ -742,6 +783,13 @@ function assertProjectId(projectId: string): void {
 }
 
 function parseArchiveMetadata(payload: unknown, projectId: string): ArchiveMetadata {
+  // eGP answers 200 with `data: null` (E0001) when no archive was published.
+  if (isRecord(payload) && payload.data === null) {
+    throw new NoTorDocumentsError(
+      `Central eGP has no announcement archive for project ${projectId}`,
+    )
+  }
+
   if (!isRecord(payload) || !isRecord(payload.data)) {
     throw new Error(`Central eGP returned malformed metadata for ${projectId}`)
   }
@@ -759,7 +807,9 @@ function parseArchiveMetadata(payload: unknown, projectId: string): ArchiveMetad
     archiveName.length === 0 ||
     (returnedProjectId !== undefined && returnedProjectId !== projectId)
   ) {
-    throw new Error(`Central eGP has no downloadable announcement archive for ${projectId}`)
+    throw new NoTorDocumentsError(
+      `Central eGP has no downloadable announcement archive for ${projectId}`,
+    )
   }
 
   return {
@@ -827,12 +877,18 @@ function assertSafeArchivePath(entryName: string): void {
   }
 }
 
+function torFileRank(entryName: string): number {
+  const fileName = path.posix.basename(entryName.replaceAll('\\', '/')).toLowerCase()
+
+  if (!fileName.endsWith('.pdf')) {
+    return -1
+  }
+
+  return TOR_FILE_PREFIXES.findIndex((prefix) => fileName.startsWith(prefix))
+}
+
 function isTorPdf(entryName: string): boolean {
-  const normalized = entryName.replaceAll('\\', '/')
-
-  const fileName = path.posix.basename(normalized)
-
-  return fileName.toLowerCase().endsWith('.pdf') && TOR_FILE_PATTERN.test(fileName)
+  return torFileRank(entryName) !== -1
 }
 
 async function readResponseWithLimit(response: Response, maxBytes: number): Promise<Buffer> {

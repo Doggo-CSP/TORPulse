@@ -61,10 +61,14 @@ test('addBookmark upserts on the (userId, torId) pair', async (context) => {
   const torId = new Types.ObjectId().toString()
   let capturedOptions: unknown
 
-  context.mock.method(UserBookmarkModel, 'findOneAndUpdate', async (_filter: unknown, _update: unknown, options: unknown) => {
-    capturedOptions = options
-    return { userId, torId }
-  })
+  context.mock.method(
+    UserBookmarkModel,
+    'findOneAndUpdate',
+    async (_filter: unknown, _update: unknown, options: unknown) => {
+      capturedOptions = options
+      return { userId, torId }
+    },
+  )
 
   await addBookmark(userId, torId)
 

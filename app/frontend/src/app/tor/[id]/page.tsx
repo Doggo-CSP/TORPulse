@@ -127,7 +127,13 @@ export default function TorDetailPage({
     { label: "ราคากลาง", value: formatBaht(tor.midPriceBaht) },
     { label: "ราคาที่ชนะการเสนอราคา", value: formatBaht(tor.awardedPriceBaht) },
     { label: "ประกาศเมื่อ", value: formatDate(tor.createdAt) },
-    { label: "ปิดรับข้อเสนอ", value: formatDate(tor.submissionDeadline) },
+    {
+      label: "ปิดรับข้อเสนอ",
+      // No exact day (e.g. "มกราคม 2569") -> show the TOR's own wording.
+      value: tor.submissionDeadline
+        ? formatDate(tor.submissionDeadline)
+        : (tor.submissionDeadlineText ?? "-"),
+    },
     { label: "วิเคราะห์เมื่อ", value: formatDate(tor.analyzedAt) },
     { label: "อัปเดตล่าสุด", value: formatDate(tor.updatedAt) },
   ];

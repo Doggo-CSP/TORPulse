@@ -15,6 +15,7 @@ import {
 } from '../../modules/ingestion/data-source.repository.js'
 import { IngestionJobModel } from '../../modules/ingestion/ingestion-job.model.js'
 import { enqueueDiscoveredProjects } from '../../modules/ingestion/ingestion-job.repository.js'
+import { updateTorSourceMetadata } from '../../modules/tor/tor.repository.js'
 
 const PAGE_SIZE = 1_000
 
@@ -23,6 +24,7 @@ interface SyncTotals {
   discovered: number
   queued: number
   existing: number
+  torsUpdated: number
   failedKeywords: string[]
 }
 
@@ -119,6 +121,7 @@ async function syncGovSpendingProjects(
     discovered: 0,
     queued: 0,
     existing: 0,
+    torsUpdated: 0,
     failedKeywords: [],
   }
 
@@ -135,6 +138,7 @@ async function syncGovSpendingProjects(
           signal,
         })
         const queueResult = await enqueueDiscoveredProjects(dataSourceId, page.projects)
+        totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
 
         totals.pages += 1
         totals.discovered += page.projects.length

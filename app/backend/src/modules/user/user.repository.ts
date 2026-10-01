@@ -8,7 +8,10 @@ export async function findUserById(userId: Types.ObjectId | string) {
   return User.findById(userId)
 }
 
-export async function updateUserProfile(userId: Types.ObjectId | string, fields: UpdateProfileInput) {
+export async function updateUserProfile(
+  userId: Types.ObjectId | string,
+  fields: UpdateProfileInput,
+) {
   return User.findByIdAndUpdate(userId, { $set: fields }, { new: true, runValidators: true })
 }
 

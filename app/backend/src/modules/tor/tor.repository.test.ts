@@ -4,7 +4,11 @@ import test from 'node:test'
 import { Types } from 'mongoose'
 
 import { TorModel } from './tor.model.js'
-import { upsertTor } from './tor.repository.js'
+import {
+  torFieldsFromSourceMetadata,
+  updateTorSourceMetadata,
+  upsertTor,
+} from './tor.repository.js'
 import type { UpsertTorInput } from './tor.types.js'
 
 test('upserts by source identity and returns the persisted TOR', async (context) => {
@@ -70,3 +74,65 @@ function createTorInput(): UpsertTorInput {
     documents: [],
   }
 }
+
+test('maps GovSpending metadata to TOR fields and drops nulls', () => {
+  const announceDate = new Date('2025-06-19T00:00:00Z')
+
+  assert.deepEqual(
+    torFieldsFromSourceMetadata({
+      title: 'ignored',
+      departmentName: 'Dept',
+      departmentSubName: null,
+      projectStatus: 'ระหว่างดำเนินการ',
+      fiscalYear: 2568,
+      announceDate,
+      budgetBaht: 100,
+      midPriceBaht: 90,
+      awardedPriceBaht: null,
+    }),
+    {
+      departmentName: 'Dept',
+      projectStatus: 'ระหว่างดำเนินการ',
+      fiscalYear: 2568,
+      announceDate,
+      budgetBaht: 100,
+      midPriceBaht: 90,
+    },
+  )
+  assert.deepEqual(torFieldsFromSourceMetadata(null), {})
+})
+
+test('refreshes existing TORs without creating new ones', async (context) => {
+  const dataSourceId = new Types.ObjectId()
+  let operations: Array<{ updateOne: Record<string, unknown> }> = []
+  context.mock.method(TorModel, 'bulkWrite', async (ops: typeof operations) => {
+    operations = ops
+    return { modifiedCount: 1 }
+  })
+
+  const modified = await updateTorSourceMetadata(dataSourceId, [
+    {
+      externalId: '68069160377',
+      metadata: {
+        title: 'Project',
+        departmentName: 'Dept',
+        departmentSubName: null,
+        projectStatus: null,
+        fiscalYear: 2568,
+        announceDate: null,
+        budgetBaht: null,
+        midPriceBaht: 90,
+        awardedPriceBaht: 80,
+      },
+    },
+  ])
+
+  assert.equal(modified, 1)
+  assert.deepEqual(operations[0]?.updateOne, {
+    filter: { dataSourceId, externalId: '68069160377', sourceVersion: 'initial' },
+    update: {
+      $set: { departmentName: 'Dept', fiscalYear: 2568, midPriceBaht: 90, awardedPriceBaht: 80 },
+    },
+  })
+  assert.equal('upsert' in (operations[0]?.updateOne ?? {}), false)
+})

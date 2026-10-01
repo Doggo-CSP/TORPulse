@@ -1,16 +1,13 @@
 import { z } from 'zod'
 
-import {
-  PROCUREMENT_LIST_SORT_FIELDS,
-  REPORT_CATEGORY_LABELS,
-  REPORT_PERIODS,
-} from './report.constants.js'
+import { PROCUREMENT_LIST_SORT_FIELDS, REPORT_PERIODS } from './report.constants.js'
 
-const categoryLabelValues = Object.values(REPORT_CATEGORY_LABELS) as [string, ...string[]]
+// Category key or name; checked against the tor_categories collection in the handler.
+const categoryParam = z.string().trim().min(1).optional()
 
 export const priceOverviewQuerySchema = z.object({
   period: z.enum(REPORT_PERIODS).optional().default('all'),
-  category: z.enum(categoryLabelValues).optional(),
+  category: categoryParam,
   agencyName: z.string().min(1).optional(),
 })
 
@@ -23,7 +20,7 @@ export const categoryComparisonQuerySchema = z.object({
 
 export const procurementListQuerySchema = z.object({
   period: z.enum(REPORT_PERIODS).optional().default('all'),
-  category: z.enum(categoryLabelValues).optional(),
+  category: categoryParam,
   agencyName: z.string().min(1).optional(),
   budget_min: z.coerce.number().min(0).optional(),
   budget_max: z.coerce.number().min(0).optional(),
