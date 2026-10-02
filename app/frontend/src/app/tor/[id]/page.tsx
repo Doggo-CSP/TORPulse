@@ -8,8 +8,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useUserProfile } from "@/hooks/use-user-profile";
 import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 import { BookmarkIcon as BookmarkOutlineIcon } from "@heroicons/react/24/outline";
-// NOTE: ปรับ path ให้ตรงกับที่วางไฟล์ tors.ts (ไฟล์ที่มี formatThaiDate) ในโปรเจกต์ของคุณ
-import { formatThaiDate } from "@/api/tor.api";
+import { formatThaiDate, getDeadlineInfo } from "@/api/tor.api";
+import { DeadlineBadge } from "@/app/components/deadline_badge";
 
 const formatBaht = (amount: number | null) =>
     amount === null
@@ -115,6 +115,19 @@ export default function TorDetailPage({
         );
     }
 
+    // วันที่ใช้เทียบว่า deadline ต้องไม่อยู่ก่อนวันประกาศ
+    const since = tor.announcementDate ?? tor.createdAt;
+    const deadlineInfo = getDeadlineInfo(tor.submissionDeadline, since);
+    const deadlineUnreliable =
+        deadlineInfo.label === "วันปิดรับไม่น่าเชื่อถือ";
+
+    console.log({
+        raw: tor.submissionDeadline,
+        announcementDate: tor.announcementDate,
+        createdAt: tor.createdAt,
+        deadlineInfo,
+    });
+
     const metaRows = [
         { label: "เลขที่โครงการ", value: tor.externalId },
         { label: "ชื่อโครงการ", value: tor.projectTitle },
@@ -127,8 +140,11 @@ export default function TorDetailPage({
         { label: "วงเงิน", value: formatBaht(tor.budgetBaht) },
         { label: "ราคากลาง", value: formatBaht(tor.midPriceBaht) },
         { label: "ราคาที่ชนะการเสนอราคา", value: formatBaht(tor.awardedPriceBaht) },
-        { label: "ประกาศเมื่อ", value: formatDate(tor.createdAt) },
-        { label: "ปิดรับข้อเสนอ", value: formatDate(tor.submissionDeadline, { fallbackDay: "last" }) },
+        { label: "ประกาศเมื่อ", value: formatDate(since) },
+        {
+            label: "ปิดรับข้อเสนอ",
+            value: formatDate(tor.submissionDeadline, { fallbackDay: "last" }),
+        },
         { label: "วิเคราะห์เมื่อ", value: formatDate(tor.analyzedAt) },
         { label: "อัปเดตล่าสุด", value: formatDate(tor.updatedAt) },
     ];
@@ -165,6 +181,13 @@ export default function TorDetailPage({
                         <p className="mt-2 text-sm text-muted-foreground">
                             {tor.agencyName ?? "ไม่ระบุหน่วยงาน"}
                         </p>
+                        {/* แสดงเฉพาะจอเล็ก เพราะจอใหญ่มีการ์ดใน sidebar แล้ว */}
+                        <div className="mt-3 lg:hidden">
+                            <DeadlineBadge
+                                deadline={tor.submissionDeadline}
+                                since={since}
+                            />
+                        </div>
                     </div>
 
                     <div className="flex flex-col sm:flex-row md:flex-col gap-3 min-w-[220px]">
@@ -291,6 +314,28 @@ export default function TorDetailPage({
                     </div>
 
                     <aside className="space-y-5">
+                        {tor.submissionDeadline && (
+                            <div className="panel p-5">
+                                <p className="label-eyebrow mb-3">กำหนดปิดรับข้อเสนอ</p>
+                                <p className="text-base font-semibold">
+                                    {formatDate(tor.submissionDeadline, {
+                                        fallbackDay: "last",
+                                    })}
+                                </p>
+                                <div className="mt-2">
+                                    <DeadlineBadge
+                                        deadline={tor.submissionDeadline}
+                                        since={since}
+                                    />
+                                </div>
+                                {deadlineUnreliable && (
+                                    <p className="mt-2 text-xs leading-relaxed text-amber-700">
+                                        วันปิดรับอาจไม่ถูกต้อง กรุณาตรวจสอบจากแหล่งข้อมูลต้นทาง
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
                         {tor.contactInformation.length > 0 && (
                             <div className="panel p-5">
                                 <p className="label-eyebrow mb-3">ติดต่อสอบถาม</p>
