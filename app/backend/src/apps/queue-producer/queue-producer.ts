@@ -6,6 +6,7 @@ import { BmaDiscoveryAdapter } from '../../modules/ingestion/adapters/bma-discov
 import {
   getThaiFiscalYear,
   GovSpendingDiscoveryAdapter,
+  GovSpendingRequestError,
 } from '../../modules/ingestion/adapters/govspending-discovery.adapter.js'
 import { DataSourceModel } from '../../modules/ingestion/data-source.model.js'
 import {
@@ -92,7 +93,7 @@ function configuredSources(): DiscoverySource[] {
           dataSourceId,
           producerId,
           adapter,
-          env.GOVSPENDING_FISCAL_YEAR ?? getThaiFiscalYear(),
+          govSpendingFiscalYears(),
           env.GOVSPENDING_KEYWORDS,
           signal,
         ),
@@ -156,6 +157,17 @@ async function runScheduledSync(
   }
 }
 
+// GovSpending returns 500 for a fiscal year with no data yet (e.g. right after the
+// 1 October rollover), so fall back to the previous year unless one is pinned.
+function govSpendingFiscalYears(): number[] {
+  if (env.GOVSPENDING_FISCAL_YEAR) {
+    return [env.GOVSPENDING_FISCAL_YEAR]
+  }
+
+  const current = getThaiFiscalYear()
+  return [current, current - 1]
+}
+
 function emptyTotals(): SyncTotals {
   return {
     pages: 0,
@@ -171,48 +183,65 @@ async function syncGovSpendingProjects(
   dataSourceId: DataSourceId,
   producerId: string,
   adapter: GovSpendingDiscoveryAdapter,
-  fiscalYear: number,
+  fiscalYears: number[],
   keywords: string[],
   signal: AbortSignal,
 ): Promise<SyncTotals> {
   const totals = emptyTotals()
 
   for (const keyword of keywords) {
-    try {
+    for (const [index, fiscalYear] of fiscalYears.entries()) {
+      const hasFallback = index < fiscalYears.length - 1
       let offset = 0
 
-      while (!signal.aborted) {
-        const page = await adapter.listProjects({
-          fiscalYear,
-          keyword,
-          offset,
-          limit: PAGE_SIZE,
-          signal,
-        })
-        const queueResult = await enqueueDiscoveredProjects(dataSourceId, page.projects)
-        totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
+      try {
+        while (!signal.aborted) {
+          const page = await adapter.listProjects({
+            fiscalYear,
+            keyword,
+            offset,
+            limit: PAGE_SIZE,
+            signal,
+          })
+          const queueResult = await enqueueDiscoveredProjects(dataSourceId, page.projects)
+          totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
 
-        totals.pages += 1
-        totals.discovered += page.projects.length
-        totals.queued += queueResult.queued
-        totals.existing += queueResult.existing
+          totals.pages += 1
+          totals.discovered += page.projects.length
+          totals.queued += queueResult.queued
+          totals.existing += queueResult.existing
 
-        if (!(await renewProducerLease(dataSourceId, producerId))) {
-          throw new ProducerLeaseLostError('Queue producer lost the GovSpending lease')
+          if (!(await renewProducerLease(dataSourceId, producerId))) {
+            throw new ProducerLeaseLostError('Queue producer lost the GovSpending lease')
+          }
+
+          offset += page.projects.length
+          if (page.projects.length === 0 || offset >= page.total) {
+            break
+          }
         }
 
-        offset += page.projects.length
-        if (page.projects.length === 0 || offset >= page.total) {
-          break
+        break
+      } catch (error) {
+        if (error instanceof ProducerLeaseLostError || signal.aborted) {
+          throw error
         }
-      }
-    } catch (error) {
-      if (error instanceof ProducerLeaseLostError || signal.aborted) {
-        throw error
-      }
 
-      totals.failedKeywords.push(keyword)
-      console.error('GovSpending keyword sync failed', { keyword, error })
+        const yearUnavailable =
+          error instanceof GovSpendingRequestError && error.status >= 500 && offset === 0
+        if (yearUnavailable && hasFallback) {
+          console.warn('GovSpending fiscal year unavailable, falling back', {
+            keyword,
+            fiscalYear,
+            fallbackYear: fiscalYears[index + 1],
+          })
+          continue
+        }
+
+        totals.failedKeywords.push(keyword)
+        console.error('GovSpending keyword sync failed', { keyword, fiscalYear, error })
+        break
+      }
     }
   }
 
