@@ -3,15 +3,24 @@ import { Types } from 'mongoose'
 import { DataSourceModel } from './data-source.model.js'
 
 const GOVSPENDING_SOURCE_KEY = 'govspending-egp'
+const BMA_SOURCE_KEY = 'bma-egp'
 const PRODUCER_LEASE_MS = 15 * 60_000
 
-export async function ensureGovSpendingDataSource() {
+export function ensureGovSpendingDataSource() {
+  return ensureDataSource(GOVSPENDING_SOURCE_KEY, 'GovSpending e-GP discovery')
+}
+
+export function ensureBmaDataSource() {
+  return ensureDataSource(BMA_SOURCE_KEY, 'BMA e-GP discovery')
+}
+
+async function ensureDataSource(key: string, name: string) {
   try {
     return await DataSourceModel.findOneAndUpdate(
-      { key: GOVSPENDING_SOURCE_KEY },
+      { key },
       {
         $setOnInsert: {
-          name: 'GovSpending e-GP discovery',
+          name,
           enabled: true,
           lockedBy: null,
           lockedUntil: null,
@@ -27,7 +36,7 @@ export async function ensureGovSpendingDataSource() {
   } catch (error) {
     // Two new producer instances can race while creating the singleton source.
     if (isDuplicateKeyError(error)) {
-      return DataSourceModel.findOne({ key: GOVSPENDING_SOURCE_KEY }).exec()
+      return DataSourceModel.findOne({ key }).exec()
     }
 
     throw error

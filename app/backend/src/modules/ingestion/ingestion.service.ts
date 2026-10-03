@@ -30,8 +30,12 @@ export type IngestionResult =
   | { type: 'review_required'; reason: string }
   | { type: 'skipped'; reason: string }
 
+const centralEgpAdapter = new CentralEgpAdapter()
+
 const adapters: Record<string, ProcurementSourceAdapter> = {
-  central_egp: new CentralEgpAdapter(),
+  central_egp: centralEgpAdapter,
+  // BMA projects are published on Central eGP under the same project id.
+  bma_egp: centralEgpAdapter,
 }
 
 const torAnalyzers = {

@@ -9,6 +9,7 @@ const LEASE_DURATION_MS = 5 * 60_000
 export async function enqueueDiscoveredProjects(
   dataSourceId: Types.ObjectId,
   projects: DiscoveredProcurementProject[],
+  sourceAdapter: 'central_egp' | 'bma_egp' = 'central_egp',
 ): Promise<{ queued: number; existing: number }> {
   const uniqueProjects = [
     ...new Map(projects.map((project) => [project.externalId, project])).values(),
@@ -31,7 +32,7 @@ export async function enqueueDiscoveredProjects(
             sourceMetadata: project.metadata,
           },
           $setOnInsert: {
-            sourceAdapter: 'central_egp',
+            sourceAdapter,
             status: 'queued',
             currentStage: 'queued',
             attempCount: 0,

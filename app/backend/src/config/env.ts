@@ -21,6 +21,14 @@ const govSpendingKeywords = (
   .split(',')
   .map((keyword) => keyword.trim())
   .filter(Boolean)
+const bmaSyncEnabled = (process.env.BMA_SYNC_ENABLED ?? 'true').trim().toLowerCase() !== 'false'
+const bmaBudgetYear = process.env.BMA_BUDGET_YEAR ? Number(process.env.BMA_BUDGET_YEAR) : undefined
+// BMA project titles are Thai, so it falls back to the GovSpending keywords.
+const bmaKeywords = process.env.BMA_KEYWORDS
+  ? process.env.BMA_KEYWORDS.split(',')
+      .map((keyword) => keyword.trim())
+      .filter(Boolean)
+  : govSpendingKeywords
 const nodeEnv = process.env.NODE_ENV ?? 'development'
 
 if (Number.isNaN(port)) {
@@ -52,6 +60,10 @@ if (
   throw new Error('GOVSPENDING_FISCAL_YEAR must be a valid Thai fiscal year')
 }
 
+if (bmaBudgetYear !== undefined && (!Number.isInteger(bmaBudgetYear) || bmaBudgetYear < 2500)) {
+  throw new Error('BMA_BUDGET_YEAR must be a valid Thai fiscal year')
+}
+
 export const env = {
   PORT: port,
   NODE_ENV: nodeEnv,
@@ -68,4 +80,7 @@ export const env = {
   GOVSPENDING_SYNC_INTERVAL_MS: govSpendingSyncIntervalMs,
   GOVSPENDING_FISCAL_YEAR: govSpendingFiscalYear,
   GOVSPENDING_KEYWORDS: govSpendingKeywords,
+  BMA_SYNC_ENABLED: bmaSyncEnabled,
+  BMA_BUDGET_YEAR: bmaBudgetYear,
+  BMA_KEYWORDS: bmaKeywords,
 }
