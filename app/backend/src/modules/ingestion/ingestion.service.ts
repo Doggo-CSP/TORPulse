@@ -107,6 +107,16 @@ export async function processIngestionJob(
     categoryCatalog.map(({ key }) => key),
   )
 
+  // The announcement PDF states the exact bidding window; prefer it over the LLM's reading.
+  const announcementDeadline =
+    adapter instanceof CentralEgpAdapter ? await adapter.getSubmitDeadline(job.externalId) : null
+  const deadline = announcementDeadline?.date
+    ? { text: announcementDeadline.text, date: announcementDeadline.date }
+    : {
+        text: cleanDateText(extractedTor.submissionDeadline),
+        date: parseThaiDate(extractedTor.submissionDeadline),
+      }
+
   await updateStage('storing')
   const sourceMetadata = job.sourceMetadata ?? null
   const tor = await upsertTor({
@@ -139,8 +149,8 @@ export async function processIngestionJob(
     // GovSpending owns department, status, year, announce date and prices,
     // and its project budget wins over the LLM-extracted one.
     ...torFieldsFromSourceMetadata(sourceMetadata),
-    submissionDeadline: cleanDateText(extractedTor.submissionDeadline),
-    submissionDeadlineAt: parseThaiDate(extractedTor.submissionDeadline),
+    submissionDeadline: deadline.text,
+    submissionDeadlineAt: deadline.date,
     contactInformation: extractedTor.contactInformation,
     classificationReason: extractedTor.classificationReason,
     confidence: extractedTor.confidence,

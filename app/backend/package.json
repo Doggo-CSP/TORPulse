@@ -14,8 +14,8 @@
     "test": "npm run test:central-egp && npm run test:producer && npm run test:tor && npm run test:auth && npm run test:user && npm run test:homepage && npm run test:report",
     "test:queue-upsert": "tsx src/scripts/test-ingestion-queue.ts",
     "test:central-egp": "tsx --test src/modules/ingestion/adapters/central-egp.adapters.test.ts",
-    "test:producer": "tsx --test src/modules/ingestion/adapters/govspending-discovery.adapter.test.ts src/apps/queue-producer/queue-producer.test.ts",
-    "test:tor": "tsx --test src/modules/tor/tor.model.test.ts src/modules/tor/tor.repository.test.ts src/modules/tor/tor.controller.test.ts src/modules/ingestion/ingestion-job.repository.test.ts src/modules/ingestion/ingestion-report.test.ts src/modules/ingestion/thai-date.test.ts src/modules/ingestion/missing-tor-repair.test.ts src/modules/ingestion/central-egp-details-backfill.test.ts src/modules/ingestion/extraction/deepseek-tor-extractor.test.ts src/modules/ingestion/extraction/gemini-tor-extractor.test.ts",
+    "test:producer": "tsx --test src/modules/ingestion/adapters/govspending-discovery.adapter.test.ts src/apps/queue-producer/queue-producer.test.ts src/modules/ingestion/adapters/egp-announcement-discovery.adapter.test.ts",
+    "test:tor": "tsx --test src/modules/tor/tor.model.test.ts src/modules/tor/tor.repository.test.ts src/modules/tor/tor.controller.test.ts src/modules/ingestion/ingestion-job.repository.test.ts src/modules/ingestion/ingestion-report.test.ts src/modules/ingestion/thai-date.test.ts src/modules/ingestion/egp-submit-deadline.test.ts src/modules/ingestion/missing-tor-repair.test.ts src/modules/ingestion/central-egp-details-backfill.test.ts src/modules/ingestion/extraction/deepseek-tor-extractor.test.ts src/modules/ingestion/extraction/gemini-tor-extractor.test.ts",
     "test:auth": "tsx --test src/modules/auth/auth.routes.test.ts src/modules/auth/auth.config.test.ts",
     "test:user": "tsx --test src/modules/user/user-bookmark.model.test.ts src/modules/user/user.repository.test.ts src/modules/user/user.routes.test.ts",
     "test:homepage": "tsx --test src/modules/tor/tor.controller.test.ts && tsx --test src/modules/homepage/homepage.routes.test.ts && tsx --test src/modules/tor/tor.routes.test.ts",
@@ -28,6 +28,7 @@
     "backfill:egp-details": "tsx src/scripts/backfill-central-egp-details.ts",
     "set-admin": "tsx src/scripts/set-admin.ts",
     "sandbox:egp": "tsx src/scripts/sandbox-egp-announcements.ts",
+    "discover:egp": "tsx src/scripts/discover-egp-announcements.ts",
     "type-check": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

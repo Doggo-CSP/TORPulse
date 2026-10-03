@@ -3,96 +3,146 @@ import path from 'node:path'
 import { parseArgs } from 'node:util'
 
 import { CentralEgpAdapter } from '../modules/ingestion/adapters/central-egp.adapters.js'
-
-const ANNOUNCEMENT_URL =
-  'https://process5.gprocurement.go.th/egp-oann10-service/pb/a-egp-allt-project/announcement'
+import {
+  fetchAnnouncements,
+  tokenMinutesLeft,
+  type EgpAnnouncement,
+} from '../modules/ingestion/adapters/egp-announcement-discovery.adapter.js'
+import {
+  extractSubmitDeadlineFromPdf,
+  fetchAnnouncementPdf,
+  fetchAnnouncementTemplateId,
+  formatBangkokDateTime,
+  type SubmitDeadline,
+} from '../modules/ingestion/egp-submit-deadline.js'
 
 const DEFAULT_OUT_DIR = 'sandbox-output/egp'
 
-interface EgpAnnouncement {
-  projectId: string
-  projectName: string
-  deptName: string | null
-  deptSubName: string | null
-  announceDate: string | null
-  announceType: string | null
-  methodId: string | null
-  stepId: string | null
-  projectStatus: string | null
-  projectMoney: number | null
-  priceBuild: number | null
-  flowName: string | null
-}
-
-interface EgpAnnouncementResponse {
-  data?: EgpAnnouncement[]
-  validateCfTurnTile?: boolean
-  response?: { responseCode: number; responseDesc: string }
-}
+// Same pacing as CentralEgpAdapter (EGP_MIN_REQUEST_INTERVAL_MS).
+const EGP_REQUEST_GAP_MS = 1_200
 
 // Usage:
-//   EGP_ANNOUNCEMENT_TOKEN=<token> npm run sandbox:egp -- [--budget-year 2570] [--announce-type 1]
-//     [--page 1] [--limit 10] [--download] [--out sandbox-output/egp]
+//   EGP_ANNOUNCEMENT_TOKEN=<token> npm run sandbox:egp -- [--budget-year 2570] [--announce-type 1,2,3]
+//     [--page 1] [--limit 10] [--download] [--out sandbox-output/egp] [--timeout 180]
+//   npm run sandbox:egp -- --project 69099462238 [--download]
 //
-// Sandbox: lists the eGP announcement search (announceType 1 = ร่าง TOR / ร่างเอกสารประกวดราคา) and,
-// with --download, fetches each project's TOR PDFs through CentralEgpAdapter. No DB writes.
+// Sandbox: lists the eGP announcement search for each announceType (1 = ร่าง TOR / ร่างเอกสารประกวดราคา,
+// 2, 3) and resolves each project's submit deadline: infoProcureDocAnnounZip -> buildName2 (template id)
+// -> template view-pdf (ประกาศ PDF) -> parse "เสนอราคา ... ในวันที่ ... ถึง hh.mm น.". With --download,
+// also fetches the TOR PDFs through CentralEgpAdapter. No DB writes. --project skips the search.
 //
 // The search endpoint is gated by Cloudflare Turnstile, so the token must come from a real
 // browser session: open https://process5.gprocurement.go.th/egp-agpc01-web/announcement, run a
 // search, then copy the X-Announcement-Token request header from DevTools > Network. It expires
-// ~20 minutes after it is issued. Only the search needs it; TOR download does not.
+// ~20 minutes after it is issued. Only the search needs it; the deadline and TOR download do not.
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       'budget-year': { type: 'string', default: '2570' },
-      'announce-type': { type: 'string', default: '1' },
+      'announce-type': { type: 'string', default: '1,2,3' },
       page: { type: 'string', default: '1' },
       limit: { type: 'string' },
+      project: { type: 'string' },
       download: { type: 'boolean', default: false },
       out: { type: 'string', default: DEFAULT_OUT_DIR },
+      timeout: { type: 'string', default: '180' },
     },
   })
+  const timeoutMs = Number(values.timeout) * 1000
 
-  const token = process.env.EGP_ANNOUNCEMENT_TOKEN?.trim()
-  if (!token) {
-    throw new Error('EGP_ANNOUNCEMENT_TOKEN is not set (see usage at the top of this script)')
+  let selected: EgpAnnouncement[]
+  if (values.project) {
+    selected = [{ projectId: values.project } as EgpAnnouncement]
+  } else {
+    const token = process.env.EGP_ANNOUNCEMENT_TOKEN?.trim()
+    if (!token) {
+      throw new Error('EGP_ANNOUNCEMENT_TOKEN is not set (see usage at the top of this script)')
+    }
+    const minutesLeft = tokenMinutesLeft(token)
+    if (minutesLeft !== null) {
+      console.log(
+        minutesLeft < 0
+          ? `Token expired ${-minutesLeft} min ago; the request will likely be rejected`
+          : `Token valid for ~${minutesLeft} more min`,
+      )
+    }
+
+    const announceTypes = values['announce-type'].split(',').map((type) => type.trim())
+    const limit = values.limit ? Number(values.limit) : Infinity
+    selected = []
+    for (const announceType of announceTypes) {
+      const announcements = await fetchAnnouncements({
+        token,
+        budgetYear: Number(values['budget-year']),
+        announceType,
+        page: Number(values.page),
+      })
+      console.log(
+        `announceType ${announceType}: fetched ${announcements.length} announcements (page ${values.page})`,
+      )
+      selected.push(
+        ...announcements
+          .slice(0, limit)
+          .map((a) => ({ ...a, announceType: a.announceType ?? announceType })),
+      )
+      await sleep(EGP_REQUEST_GAP_MS)
+    }
   }
-  warnIfTokenExpired(token)
 
-  const announcements = await fetchAnnouncements(token, {
-    budgetYear: values['budget-year'],
-    announceType: values['announce-type'],
-    page: values.page,
-  })
-  const limit = values.limit ? Number(values.limit) : announcements.length
-  const selected = announcements.slice(0, limit)
+  const deadlines = new Map<string, ProjectDeadline>()
+  for (const announcement of selected) {
+    const deadline = await resolveDeadline(announcement.projectId, timeoutMs)
+    deadlines.set(announcement.projectId, deadline)
+    if (deadline.error) console.error(`${announcement.projectId}: ${deadline.error}`)
+    await sleep(EGP_REQUEST_GAP_MS)
+  }
 
-  console.log(`Fetched ${announcements.length} announcements (page ${values.page})`)
   console.table(
-    selected.map((a) => ({
-      projectId: a.projectId,
-      announceDate: a.announceDate?.slice(0, 10),
-      dept: a.deptName,
-      budget: a.projectMoney,
-      step: a.stepId,
-      name: truncate(a.projectName, 60),
-    })),
+    selected.map((a) => {
+      const deadline = deadlines.get(a.projectId)
+      return {
+        type: a.announceType,
+        projectId: a.projectId,
+        announceDate: a.announceDate?.slice(0, 10),
+        templateId: deadline?.templateId,
+        submitDeadline: deadline?.submitDeadline?.date
+          ? formatBangkokDateTime(deadline.submitDeadline.date)
+          : (deadline?.submitDeadline?.text ?? null),
+        dept: a.deptName,
+        name: a.projectName ? truncate(a.projectName, 50) : undefined,
+      }
+    }),
   )
 
   if (!values.download) return
 
-  const adapter = new CentralEgpAdapter()
+  const adapter = new CentralEgpAdapter({ requestTimeoutMs: timeoutMs })
   for (const announcement of selected) {
     const projectDir = path.join(values.out, announcement.projectId)
+    const deadline = deadlines.get(announcement.projectId)
     try {
-      const project = await adapter.getProject(announcement.projectId)
-      const documents = await adapter.downloadDocuments(project)
-
       await mkdir(projectDir, { recursive: true })
       await writeFile(
         path.join(projectDir, 'announcement.json'),
-        JSON.stringify(announcement, null, 2),
+        JSON.stringify(
+          {
+            ...announcement,
+            templateId: deadline?.templateId ?? null,
+            submitDeadline: deadline?.submitDeadline?.date
+              ? formatBangkokDateTime(deadline.submitDeadline.date)
+              : null,
+            submitDeadlineText: deadline?.submitDeadline?.text ?? null,
+          },
+          null,
+          2,
+        ),
       )
+      if (deadline?.pdf) {
+        await writeFile(path.join(projectDir, 'announcement.pdf'), deadline.pdf)
+      }
+
+      const project = await adapter.getProject(announcement.projectId)
+      const documents = await adapter.downloadDocuments(project)
       for (const document of documents) {
         await writeFile(path.join(projectDir, document.fileName), document.content)
       }
@@ -107,47 +157,31 @@ async function main(): Promise<void> {
   }
 }
 
-async function fetchAnnouncements(
-  token: string,
-  query: { budgetYear: string; announceType: string; page: string },
-): Promise<EgpAnnouncement[]> {
-  const url = new URL(ANNOUNCEMENT_URL)
-  url.searchParams.set('budgetYear', query.budgetYear)
-  url.searchParams.set('announceType', query.announceType)
-  url.searchParams.set('announcementTodayFlag', 'false')
-  url.searchParams.set('page', query.page)
-
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/json, text/plain, */*',
-      'Content-Type': 'application/json',
-      'X-Announcement-Token': token,
-    },
-  })
-  if (!response.ok) {
-    throw new Error(`eGP announcement search failed: HTTP ${response.status}`)
-  }
-
-  const payload = (await response.json()) as EgpAnnouncementResponse
-  if (payload.validateCfTurnTile === false) {
-    throw new Error(
-      'eGP rejected the token (validateCfTurnTile=false). Copy a fresh X-Announcement-Token from the browser.',
-    )
-  }
-  return payload.data ?? []
+interface ProjectDeadline {
+  templateId: string | null
+  pdf: Buffer | null
+  submitDeadline: SubmitDeadline | null
+  error?: string
 }
 
-// Token is base64("EGP-ANNOUNCEMENT-KEY:<expiresAtMs>:<signature>").
-function warnIfTokenExpired(token: string): void {
-  const expiresAtMs = Number(Buffer.from(token, 'base64').toString('utf8').split(':')[1])
-  if (!Number.isFinite(expiresAtMs)) return
+async function resolveDeadline(projectId: string, timeoutMs: number): Promise<ProjectDeadline> {
+  const result: ProjectDeadline = { templateId: null, pdf: null, submitDeadline: null }
+  try {
+    result.templateId = await fetchAnnouncementTemplateId(projectId, { timeoutMs })
+    if (!result.templateId) return { ...result, error: 'no buildName2 (announcement template)' }
 
-  const minutesLeft = Math.floor((expiresAtMs - Date.now()) / 60_000)
-  if (minutesLeft < 0) {
-    console.warn(`Token expired ${-minutesLeft} min ago; the request will likely be rejected`)
-  } else {
-    console.log(`Token valid for ~${minutesLeft} more min`)
+    await sleep(EGP_REQUEST_GAP_MS)
+    result.pdf = await fetchAnnouncementPdf(result.templateId, { timeoutMs })
+    result.submitDeadline = await extractSubmitDeadlineFromPdf(result.pdf)
+    if (!result.submitDeadline) return { ...result, error: 'submit deadline not found in PDF' }
+    return result
+  } catch (error) {
+    return { ...result, error: error instanceof Error ? error.message : String(error) }
   }
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 function truncate(value: string, max: number): string {

@@ -3,6 +3,12 @@ import path from 'node:path'
 
 import { unzipSync, type UnzipFileInfo } from 'fflate'
 
+import {
+  extractSubmitDeadlineFromPdf,
+  fetchAnnouncementPdf,
+  fetchAnnouncementTemplateId,
+  type SubmitDeadline,
+} from '../egp-submit-deadline.js'
 import type {
   DownloadDocument,
   ProcurementProject,
@@ -276,6 +282,34 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
       midPriceBaht: nullablePrice(procurementDetail.priceBuild, 'priceBuild', projectId),
 
       awardedPriceBaht: nullablePrice(procurementDetail.priceAgree, 'priceAgree', projectId),
+    }
+  }
+
+  /**
+   * Submit deadline from the announcement PDF (ประกาศ), which states the
+   * bidding window. Best effort: returns null when the project has no
+   * announcement template or the deadline cannot be parsed.
+   */
+  public async getSubmitDeadline(externalId: string): Promise<SubmitDeadline | null> {
+    const projectId = externalId.trim()
+
+    assertProjectId(projectId)
+
+    const fetchImpl = ((input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+      this.limitedFetch(input, init, projectId, 'announcement PDF')) as typeof fetch
+
+    try {
+      const templateId = await fetchAnnouncementTemplateId(projectId, { fetchImpl })
+      if (!templateId) return null
+
+      const pdf = await fetchAnnouncementPdf(templateId, { fetchImpl })
+      return await extractSubmitDeadlineFromPdf(pdf)
+    } catch (error) {
+      console.warn(
+        `[Central eGP] Could not read the submit deadline for ${projectId}: ` +
+          (error instanceof Error ? error.message : String(error)),
+      )
+      return null
     }
   }
 
