@@ -80,6 +80,12 @@ export interface GovSpendingDiscoveryAdapterOptions {
   requestTimeoutMs?: number
 }
 
+export class GovSpendingRequestError extends Error {
+  public constructor(public readonly status: number) {
+    super(`GovSpending request failed with status ${status}`)
+  }
+}
+
 export function getThaiFiscalYear(date = new Date()): number {
   return date.getUTCFullYear() + (date.getUTCMonth() >= 9 ? 544 : 543)
 }
@@ -136,7 +142,7 @@ export class GovSpendingDiscoveryAdapter {
     })
 
     if (!response.ok) {
-      throw new Error(`GovSpending request failed with status ${response.status}`)
+      throw new GovSpendingRequestError(response.status)
     }
 
     const parsed = responseSchema.safeParse(await response.json())
