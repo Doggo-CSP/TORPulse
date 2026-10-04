@@ -269,6 +269,7 @@ export default function HomePage() {
       technologies: techs.length > 0 ? techs.join(",") : undefined, // needs backend $in support — see below
       page: currentPage,
       limit: ITEMS_PER_PAGE,
+      sort: "deadline" as const,
     }),
     [debouncedName, budgetYear, debouncedBudgetMin, debouncedBudgetMax, techs, currentPage],
   );

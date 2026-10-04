@@ -280,6 +280,27 @@ function parseStringParam(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
+// Today's date (YYYY-MM-DD) in Thai time, comparable with `submissionDeadline`.
+function todayInBangkok(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
+}
+
+// Open TORs closing soonest first, then already-closed TORs (most recently
+// closed first), then TORs with no known deadline. Ties keep newest-first order.
+export function compareByDeadline(
+  a: { submissionDeadline: string | null },
+  b: { submissionDeadline: string | null },
+  today: string,
+): number {
+  const rank = (d: string | null) => (d === null ? 2 : d >= today ? 0 : 1)
+  const rankA = rank(a.submissionDeadline)
+  const rankB = rank(b.submissionDeadline)
+  if (rankA !== rankB) return rankA - rankB
+  if (rankA === 2) return 0
+  const cmp = a.submissionDeadline!.localeCompare(b.submissionDeadline!)
+  return rankA === 0 ? cmp : -cmp
+}
+
 export async function listTorsHandler(req: Request, res: Response): Promise<void> {
   const q = parseStringParam(req.query.q)
   const budgetMin = parseNumberParam(req.query.budget_min)
@@ -288,6 +309,7 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
   const technology = parseStringParam(req.query.technologies)
   const page = Math.max(1, parseNumberParam(req.query.page) ?? 1)
   const limit = Math.min(MAX_LIMIT, Math.max(1, parseNumberParam(req.query.limit) ?? DEFAULT_LIMIT))
+  const sort = parseStringParam(req.query.sort)
 
   const query: Record<string, unknown> = { ...PUBLIC_TOR_FILTER }
   if (q) query.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
@@ -313,6 +335,10 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
     getCategoryNameMap(),
   ])
   const items = docs.map((tor) => toTorListItem(tor, categoryNames))
+  if (sort === 'deadline') {
+    const today = todayInBangkok()
+    items.sort((a, b) => compareByDeadline(a, b, today))
+  }
 
   const total = items.length
   const totalPages = total === 0 ? 0 : Math.ceil(total / limit)

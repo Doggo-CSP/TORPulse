@@ -40,6 +40,7 @@ export function useTors(params: FetchTorsParams) {
       params.technologies ?? "all",
       params.page ?? 1,
       params.limit ?? 4,
+      params.sort ?? "newest",
     ],
     queryFn: () => fetchTors(params),
     staleTime: 30 * 1000, // 30 seconds
