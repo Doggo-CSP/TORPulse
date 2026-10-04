@@ -64,8 +64,10 @@ export interface RecommendedTorItem extends TorListItem {
 }
 
 export interface TorFilterOptions {
-  years: number[];
-  technologies: string[];
+  years: number[]; // fiscal years (พ.ศ.), newest first
+  departments: string[];
+  statuses: string[];
+  categories: { key: string; name: string }[];
 }
 
 export interface FetchTorsParams {
@@ -73,7 +75,9 @@ export interface FetchTorsParams {
   budget_min?: number;
   budget_max?: number;
   year?: number | string;
-  technologies?: string;
+  department?: string;
+  status?: string;
+  categories?: string; // comma-separated category keys
   page?: number;
   limit?: number;
   sort?: "newest" | "deadline";
@@ -96,7 +100,7 @@ export async function fetchTorById(id: string): Promise<TorDetail | null> {
 }
 
 /**
- * Fetch filter options (available years and technologies from database)
+ * Fetch filter options (fiscal years, departments, statuses, categories from database)
  */
 export async function fetchTorFilterOptions(): Promise<TorFilterOptions> {
   const res = await fetch(`${apiUrl}/api/v1/tors/filter-options`);
@@ -128,13 +132,11 @@ export async function fetchTors(params: FetchTorsParams = {}): Promise<FetchTors
     searchParams.set("budget_max", String(params.budget_max));
   }
 
-  if (
-    params.technologies &&
-    params.technologies !== "all" &&
-    params.technologies !== "ทั้งหมด" &&
-    params.technologies.trim() !== ""
-  ) {
-    searchParams.set("technologies", params.technologies.trim());
+  for (const key of ["department", "status", "categories"] as const) {
+    const value = params[key]?.trim();
+    if (value && value !== "all" && value !== "ทั้งหมด") {
+      searchParams.set(key, value);
+    }
   }
 
   if (params.page !== undefined && params.page > 0) {

@@ -31,6 +31,10 @@ interface TorFixtureSpec {
   awardedPriceBaht: number | null
   technologies: string[]
   recency: 'this_week' | 'last_week'
+  // Procurement metadata, only on 004, for the /tors filter tests.
+  fiscalYear?: number
+  departmentName?: string
+  projectStatus?: string
 }
 
 // Hand-authored, fixed dataset (not random) so tests can assert exact numbers:
@@ -95,6 +99,10 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     awardedPriceBaht: null,
     technologies: ['Flutter'],
     recency: 'this_week',
+    fiscalYear: 2568,
+    departmentName: 'กรมบัญชีกลาง',
+    // Trailing space mirrors messy source data; filters must still match it.
+    projectStatus: 'ระหว่างดำเนินการ ',
   },
   {
     externalId: `${SEED_PREFIX}005`,
@@ -197,6 +205,9 @@ export async function seedHomepageTors(): Promise<void> {
       detailUrl: `https://example.com/${fixture.externalId}`,
       projectTitle: `Seed project ${fixture.externalId}`,
       agencyName: fixture.agencyName,
+      departmentName: fixture.departmentName ?? null,
+      projectStatus: fixture.projectStatus ?? null,
+      fiscalYear: fixture.fiscalYear ?? null,
       summary: null,
       objectives: [],
       requirements: [],

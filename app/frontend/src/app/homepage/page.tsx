@@ -99,8 +99,6 @@ const PriceComparisonChart = dynamic(
 const baht = (n: number) => "฿" + (n / 1_000_000).toFixed(1) + " ล้าน";
 const toMillion = (n: number) => (n / 1_000_000).toFixed(1);
 
-const statuses = ["ทั้งหมด", "เปิดรับสมัคร", "ใกล้ปิดรับ", "ปิดรับสมัครแล้ว"];
-
 const ITEMS_PER_PAGE = 4;
 
 const categorySplit = [
@@ -141,16 +139,21 @@ export default function HomePage() {
   const { profile, loading: profileLoading } = useUserProfile(!!user);
   const { summary, analytics, loadingSummary } = useHomepage();
 
-  // filter metadata (years + technologies) comes from the backend now
+  // filter options (fiscal years, departments, statuses, categories) come from the TORs in the database
   const { data: filterOptions } = useTorFilterOptions();
   const budgetYears = useMemo(
     () => ["ทั้งหมด", ...(filterOptions?.years.map(String) ?? [])],
     [filterOptions],
   );
-  const techOptions = useMemo(
-    () => ["ทั้งหมด", ...(filterOptions?.technologies ?? [])],
+  const departments = useMemo(
+    () => ["ทั้งหมด", ...(filterOptions?.departments ?? [])],
     [filterOptions],
   );
+  const statuses = useMemo(
+    () => ["ทั้งหมด", ...(filterOptions?.statuses ?? [])],
+    [filterOptions],
+  );
+  const categoryOptions = filterOptions?.categories ?? [];
 
   const displayedCategorySplit = useMemo(() => {
     if (analytics?.categoryDistribution && analytics.categoryDistribution.length > 0) {
@@ -222,26 +225,12 @@ export default function HomePage() {
   const [debouncedBudgetMax] = useDebounce(budgetMaxInput, 800);
 
   const [budgetYear, setBudgetYear] = useState("ทั้งหมด");
-  const [agency, setAgency] = useState("ทั้งหมด"); // not sent to API yet — see note below
-  const [status, setStatus] = useState("ทั้งหมด"); // not sent to API yet — see note below
-  const [egpOnly, setEgpOnly] = useState(false); // not sent to API yet — see note below
-  const [techs, setTechs] = useState<string[]>([]);
-  const [techSearch, setTechSearch] = useState("");
-  const [techExpanded, setTechExpanded] = useState(false);
+  const [department, setDepartment] = useState("ทั้งหมด");
+  const [status, setStatus] = useState("ทั้งหมด");
+  const [categories, setCategories] = useState<string[]>([]); // selected category keys
 
-  const TECH_COLLAPSED_COUNT = 24;
-
-  const filteredTechOptions = useMemo(() => {
-    if (!techSearch.trim()) return techOptions.filter((t) => t !== "ทั้งหมด");
-    const q = techSearch.trim().toLowerCase();
-    return techOptions.filter((t) => t !== "ทั้งหมด" && t.toLowerCase().includes(q));
-  },  [techOptions, techSearch]);
-
-  const visibleTechOptions =
-    techExpanded || techSearch.trim() ? filteredTechOptions : filteredTechOptions.slice(0, TECH_COLLAPSED_COUNT);
-
-  const toggleTech = (t: string) => {
-    setTechs((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  const toggleCategory = (key: string) => {
+    setCategories((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]));
     setCurrentPage(1);
   };
 
@@ -267,12 +256,14 @@ export default function HomePage() {
       year: budgetYear === "ทั้งหมด" ? undefined : Number(budgetYear),
       budget_min: debouncedBudgetMin ? Number(debouncedBudgetMin) * 1_000_000 : undefined,
       budget_max: debouncedBudgetMax ? Number(debouncedBudgetMax) * 1_000_000 : undefined,
-      technologies: techs.length > 0 ? techs.join(",") : undefined, // needs backend $in support — see below
+      department,
+      status,
+      categories: categories.length > 0 ? categories.join(",") : undefined,
       page: currentPage,
       limit: ITEMS_PER_PAGE,
       sort: "deadline" as const,
     }),
-    [debouncedName, budgetYear, debouncedBudgetMin, debouncedBudgetMax, techs, currentPage],
+    [debouncedName, budgetYear, debouncedBudgetMin, debouncedBudgetMax, department, status, categories, currentPage],
   );
 
   const { data, isLoading: searching, error: searchError } = useTors(requestParams);
@@ -285,11 +276,9 @@ export default function HomePage() {
     setBudgetMinInput("");
     setBudgetMaxInput("");
     setBudgetYear("ทั้งหมด");
-    setAgency("ทั้งหมด");
+    setDepartment("ทั้งหมด");
     setStatus("ทั้งหมด");
-    setEgpOnly(false);
-    setTechs([]);
-    setTechSearch("");
+    setCategories([]);
     setCurrentPage(1);
   };
 
@@ -423,7 +412,10 @@ export default function HomePage() {
                   </label>
                   <select
                     value={budgetYear}
-                    onChange={(e) => setBudgetYear(e.target.value)}
+                    onChange={(e) => {
+                      setBudgetYear(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
                   >
                     {budgetYears.map((y) => (
@@ -455,19 +447,21 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* NOTE: agency / status / EGP-only have no backend query param yet.
-                    They're kept as UI-only state for now — not applied to results.
-                    Confirm with backend whether these should be added to /api/v1/tors. */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
                     หน่วยงาน
                   </label>
                   <select
-                    value={agency}
-                    onChange={(e) => setAgency(e.target.value)}
+                    value={department}
+                    onChange={(e) => {
+                      setDepartment(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
                   >
-                    <option>ทั้งหมด</option>
+                    {departments.map((d) => (
+                      <option key={d}>{d}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -477,7 +471,10 @@ export default function HomePage() {
                   </label>
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value)}
+                    onChange={(e) => {
+                      setStatus(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
                   >
                     {statuses.map((s) => (
@@ -485,78 +482,56 @@ export default function HomePage() {
                     ))}
                   </select>
                 </div>
-
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={egpOnly}
-                      onChange={(e) => setEgpOnly(e.target.checked)}
-                      className="h-4 w-4 rounded border-input"
-                    />
-                    เฉพาะรายการที่มีใน EGP
-                  </label>
-                </div>
               </div>
 
               <div className="mt-5 border-t border-border pt-5">
                 <div className="flex items-center justify-between">
                   <p className="label-eyebrow">
-                    เทคโนโลยี{techs.length > 0 && <span className="text-primary"> ({techs.length} เลือก)</span>}
+                    หมวดหมู่{categories.length > 0 && <span className="text-primary"> ({categories.length} เลือก)</span>}
                   </p>
-                  {techs.length > 0 && (
+                  {categories.length > 0 && (
                     <button
-                      onClick={() => setTechs([])}
+                      onClick={() => {
+                        setCategories([]);
+                        setCurrentPage(1);
+                      }}
                       className="text-xs text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      ล้างเทคโนโลยี
+                      ล้างหมวดหมู่
                     </button>
                   )}
                 </div>
 
-                <input
-                  value={techSearch}
-                  onChange={(e) => setTechSearch(e.target.value)}
-                  placeholder="ค้นหาเทคโนโลยี..."
-                  className="mt-2 w-full max-w-xs rounded-md border border-input bg-background px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-ring"
-                />
-
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
-                    onClick={() => setTechs([])}
+                    onClick={() => {
+                      setCategories([]);
+                      setCurrentPage(1);
+                    }}
                     className={
                       "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
-                      (techs.length === 0
+                      (categories.length === 0
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border text-muted-foreground hover:text-foreground")
                     }
                   >
                     ทั้งหมด
                   </button>
-                  {visibleTechOptions.map((f) => (
+                  {categoryOptions.map((c) => (
                     <button
-                      key={f}
-                      onClick={() => toggleTech(f)}
+                      key={c.key}
+                      onClick={() => toggleCategory(c.key)}
                       className={
                         "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
-                        (techs.includes(f)
+                        (categories.includes(c.key)
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border text-muted-foreground hover:text-foreground")
                       }
                     >
-                      {f}
+                      {c.name}
                     </button>
                   ))}
                 </div>
-
-                {!techSearch.trim() && filteredTechOptions.length > TECH_COLLAPSED_COUNT && (
-                  <button
-                    onClick={() => setTechExpanded((v) => !v)}
-                    className="mt-3 text-xs font-medium text-primary hover:underline"
-                  >
-                    {techExpanded ? "แสดงน้อยลง ▲" : `แสดงทั้งหมด (${filteredTechOptions.length}) ▼`}
-                  </button>
-                )}
               </div>
 
               <div className="mt-6 flex items-center justify-end gap-3">
