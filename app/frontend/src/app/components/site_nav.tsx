@@ -22,7 +22,9 @@ import {
   ChevronDownIcon,
   Cog8ToothIcon,
   UserIcon,
+  EnvelopeIcon,
 } from "@heroicons/react/16/solid";
+import { BellIcon } from "@heroicons/react/24/outline";
 import { useAuth } from "@/hooks/use-auth";
 
 export function SiteNav() {
@@ -52,7 +54,20 @@ export function SiteNav() {
       <NavbarSpacer />
 
       {/* Right-side actions */}
-      <NavbarSection>
+      <NavbarSection className="flex items-center gap-2">
+        {/* Notification Bell Icon */}
+        <NavbarItem
+          href="/email-preview"
+          aria-label="การแจ้งเตือนและอีเมล"
+          title="การแจ้งเตือน & พรีวิวอีเมล"
+          className="relative grid size-9 place-items-center rounded-xl text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
+        >
+          <BellIcon className="size-5" />
+          <span className="absolute top-1.5 right-1.5 flex size-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
+            <span className="relative inline-flex size-2 rounded-full bg-amber-500"></span>
+          </span>
+        </NavbarItem>
         {loading ? null : user ? (
           /* ── Logged-in user dropdown ── */
           <Dropdown>
@@ -69,6 +84,10 @@ export function SiteNav() {
               <DropdownItem href="/profile">
                 <UserIcon className="size-4" />
                 <DropdownLabel>โปรไฟล์ของฉัน</DropdownLabel>
+              </DropdownItem>
+              <DropdownItem href="/email-preview">
+                <EnvelopeIcon className="size-4" />
+                <DropdownLabel>พรีวิวอีเมลแจ้งเตือน</DropdownLabel>
               </DropdownItem>
               <DropdownItem href="/settings">
                 <Cog8ToothIcon className="size-4" />

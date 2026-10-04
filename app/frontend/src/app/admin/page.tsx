@@ -79,6 +79,12 @@ const STATUS_CONFIG: Record<
     badgeText: "text-green-700",
     dot: "bg-green-500",
   },
+  pending: {
+    label: "รออนุมัติ",
+    badgeBg: "bg-amber-50 text-amber-700 border-amber-200",
+    badgeText: "text-amber-700",
+    dot: "bg-amber-500",
+  },
   suspended: {
     label: "ระงับการใช้งาน",
     badgeBg: "bg-rose-50 text-rose-700 border-rose-200",

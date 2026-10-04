@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDebounce } from "use-debounce";
 import { SiteNav } from "@/app/components/site_nav";
 import { useAuth } from "@/hooks/use-auth";
@@ -213,6 +214,23 @@ export default function HomePage() {
   const { data: recommendedTors = [] } = useTorRecommendations(isLoggedIn);
 
   const [filtersOpen, setFiltersOpen] = useState(true);
+  // 0 = show all; 7 = last 7 days
+  const [recentDays, setRecentDays] = useState(0);
+
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Read ?recent=week from URL and apply the filter + scroll to results
+  useEffect(() => {
+    if (searchParams.get("recent") === "week") {
+      setRecentDays(7);
+      setCurrentPage(1);
+      setTimeout(() => {
+        document.getElementById("search-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Immediate (UI-bound) states
   const [nameInput, setNameInput] = useState("");
@@ -262,8 +280,9 @@ export default function HomePage() {
       page: currentPage,
       limit: ITEMS_PER_PAGE,
       sort: "deadline" as const,
+      days: recentDays > 0 ? recentDays : undefined,
     }),
-    [debouncedName, budgetYear, debouncedBudgetMin, debouncedBudgetMax, department, status, categories, currentPage],
+    [debouncedName, budgetYear, debouncedBudgetMin, debouncedBudgetMax, department, status, categories, currentPage, recentDays],
   );
 
   const { data, isLoading: searching, error: searchError } = useTors(requestParams);
@@ -304,8 +323,11 @@ export default function HomePage() {
               และค้นพบโครงการที่ตรงกับความสามารถของทีมคุณ
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <button className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground">
-                ดู TOR แบบผู้เยี่ยมชม
+              <button
+                onClick={() => router.push("/?recent=week")}
+                className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                ✨ ดู TOR ใหม่สัปดาห์นี้
               </button>
               <button className="rounded-md border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
                 สร้างโปรไฟล์บริษัท
@@ -350,7 +372,7 @@ export default function HomePage() {
                     : "฿3.4 พันล้าน",
                 },
                 {
-                  k: "ประกาศใหม่สัปดาห์นี้",
+                  k: "ประกาศใหม่เข้าระบบสัปดาห์นี้",
                   v: summary
                     ? summary.new_this_week.toLocaleString("th-TH")
                     : loadingSummary
@@ -375,7 +397,7 @@ export default function HomePage() {
         </section>
 
         {/* Search + filter panel */}
-        <section className="panel overflow-hidden">
+        <section id="search-section" className="panel overflow-hidden">
           <div className="flex items-center justify-between bg-[#F8FAF7] px-6 py-4">
             <h2 className="text-lg font-semibold">ค้นหารายการ TOR ที่ต้องการ</h2>
             <button

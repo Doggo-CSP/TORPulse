@@ -252,22 +252,6 @@ export default function TorDetailPage({
                             </div>
                         </section>
 
-                        {tor.technologies.length > 0 && (
-                            <section className="panel p-6">
-                                <p className="label-eyebrow mb-3">เทคโนโลยีที่ระบุ</p>
-                                <div className="flex flex-wrap gap-2">
-                                    {tor.technologies.map((technology) => (
-                                        <span
-                                            key={technology}
-                                            className="rounded-full border border-border bg-surface-2 px-3 py-1 text-xs font-medium text-accent"
-                                        >
-                                            {technology}
-                                        </span>
-                                    ))}
-                                </div>
-                            </section>
-                        )}
-
                         {detailSections.map(({ title, items }) =>
                             items.length > 0 ? (
                                 <section key={title} className="panel p-6">
@@ -288,16 +272,6 @@ export default function TorDetailPage({
                                 </section>
                             ) : null,
                         )}
-
-                        <section className="panel p-6">
-                            <p className="label-eyebrow mb-3">ผลการวิเคราะห์</p>
-                            <p className="text-sm leading-relaxed text-muted-foreground">
-                                {tor.classificationReason}
-                            </p>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                ความมั่นใจ {(tor.confidence * 100).toFixed(0)}%
-                            </p>
-                        </section>
                     </div>
 
                     <aside className="space-y-5">
@@ -323,6 +297,32 @@ export default function TorDetailPage({
                                 )}
                             </div>
                         )}
+
+                        {tor.technologies.length > 0 && (
+                            <div className="panel p-5">
+                                <p className="label-eyebrow mb-3">เทคโนโลยีที่ระบุ</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {tor.technologies.map((technology) => (
+                                        <span
+                                            key={technology}
+                                            className="rounded-full border border-border bg-surface-2 px-3 py-1 text-xs font-medium text-accent"
+                                        >
+                                            {technology}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="panel p-5">
+                            <p className="label-eyebrow mb-3">ผลการวิเคราะห์</p>
+                            <p className="text-sm leading-relaxed text-muted-foreground">
+                                {tor.classificationReason}
+                            </p>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                ความมั่นใจ {(tor.confidence * 100).toFixed(0)}%
+                            </p>
+                        </div>
 
                         {tor.contactInformation.length > 0 && (
                             <div className="panel p-5">
