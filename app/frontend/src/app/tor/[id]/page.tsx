@@ -41,18 +41,6 @@ function PageMessage({ title, detail }: { title: string; detail: string }) {
     );
 }
 
-function FileIcon({ mimeType }: { mimeType: string }) {
-    return (
-        <svg
-            className={`h-4 w-4 ${mimeType === "application/pdf" ? "text-destructive" : "text-blue-500"}`}
-            fill="currentColor"
-            viewBox="0 0 20 20"
-        >
-            <path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-        </svg>
-    );
-}
-
 export default function TorDetailPage({
     params,
 }: {
@@ -138,18 +126,13 @@ export default function TorDetailPage({
         { label: "หน่วยงาน", value: tor.departmentName ?? "-" },
         { label: "หน่วยงานย่อย", value: tor.departmentSubName ?? "-" },
         { label: "สถานะโครงการ", value: tor.projectStatus ?? "-" },
-        { label: "แหล่งข้อมูล", value: tor.sourceAdapter },
-        { label: "รุ่นข้อมูล", value: tor.sourceVersion },
         { label: "วงเงิน", value: formatBaht(tor.budgetBaht) },
         { label: "ราคากลาง", value: formatBaht(tor.midPriceBaht) },
         { label: "ราคาที่ชนะการเสนอราคา", value: formatBaht(tor.awardedPriceBaht) },
-        { label: "ประกาศเมื่อ", value: formatDate(since) },
         {
             label: "ปิดรับข้อเสนอ",
             value: formatDate(submissionDeadline, { fallbackDay: "last" }),
         },
-        { label: "วิเคราะห์เมื่อ", value: formatDate(tor.analyzedAt) },
-        { label: "อัปเดตล่าสุด", value: formatDate(tor.updatedAt) },
     ];
 
     const detailSections = [
@@ -349,29 +332,6 @@ export default function TorDetailPage({
                                             className="text-xs leading-relaxed text-muted-foreground"
                                         >
                                             {contact}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {tor.documents.length > 0 && (
-                            <div className="panel p-5">
-                                <p className="label-eyebrow mb-3">เอกสารแนบ</p>
-                                <ul className="space-y-2">
-                                    {tor.documents.map((document) => (
-                                        <li key={document.sourceUrl}>
-                                            <a
-                                                href={document.sourceUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="flex items-center gap-2 rounded-lg border border-border p-2.5 text-xs transition-colors hover:bg-surface-2"
-                                            >
-                                                <FileIcon mimeType={document.mimeType} />
-                                                <span className="flex-1 break-all leading-snug text-muted-foreground">
-                                                    {document.fileName}
-                                                </span>
-                                            </a>
                                         </li>
                                     ))}
                                 </ul>
