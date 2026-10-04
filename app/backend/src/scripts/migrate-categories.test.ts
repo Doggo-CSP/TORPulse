@@ -2,7 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { LEGACY_INTEREST_IDS } from '../modules/category/category.constants.js'
-import { deriveOldCategory, mapInterests, planTorCategory } from './migrate-categories.js'
+import {
+  deriveOldCategory,
+  mapInterests,
+  mapLegacyTorCategories,
+  planTorCategory,
+} from './migrate-categories.js'
 
 const KEYS = new Set(Object.values(LEGACY_INTEREST_IDS))
 
@@ -70,4 +75,20 @@ test('mapInterests reports unknown values instead of dropping them', () => {
 
   assert.deepEqual(result.unmapped, ['blockchain'])
   assert.equal(result.changed, false)
+})
+
+test('mapLegacyTorCategories renames legacy TOR keys and keeps the AI choice', () => {
+  assert.deepEqual(mapLegacyTorCategories({ category: 'ai', categories: ['ai', 'cloud', 'web'] }), {
+    category: 'ai_ml',
+    categories: ['ai_ml', 'cloud_infrastructure', 'web_application'],
+  })
+  assert.deepEqual(mapLegacyTorCategories({ category: 'cybersecurity', categories: ['data'] }), {
+    category: 'cybersecurity',
+    categories: ['data_bi'],
+  })
+  assert.equal(
+    mapLegacyTorCategories({ category: 'web_application', categories: ['web_application'] }),
+    null,
+  )
+  assert.equal(mapLegacyTorCategories({ category: null, categories: [] }), null)
 })

@@ -8,8 +8,10 @@ import { deriveCategory } from '../modules/tor/tor.controller.js'
 import { TorModel } from '../modules/tor/tor.model.js'
 
 // Moves existing data onto the 8-category set. Safe to re-run.
-//   npm run migrate:categories                          -> dry run of user interests (default)
-//   npm run migrate:categories -- --apply               -> rewrites user interests only
+//   npm run migrate:categories                          -> dry run of user interests and legacy
+//                                                          TOR keys (default)
+//   npm run migrate:categories -- --apply               -> rewrites user interests and renames
+//                                                          legacy TOR keys ("web" -> "web_application")
 //   npm run migrate:categories -- --include-tors        -> also plans TOR categories (dry run)
 // TOR categorisation from real data is next sprint's work: do not combine --include-tors with
 // --apply on a shared or production database.
@@ -74,6 +76,23 @@ export function planTorCategory(tor: TorForMigration): TorMigrationPlan {
   // A missing stored category is written even when the derived value did not move.
   if (tor.category === to) return { type: 'unchanged', category: to }
   return { type: 'update', from, to }
+}
+
+// Renames legacy keys ("web", "ai", ...) stored by the old AI classifier to their category keys,
+// keeping the AI's choice. Returns null when nothing changes.
+export function mapLegacyTorCategories(tor: {
+  category?: string | null
+  categories?: string[] | null
+}): { category: string | null; categories: string[] } | null {
+  const rename = (key: string) => LEGACY_INTEREST_IDS[key] ?? key
+  const category = tor.category ? rename(tor.category) : (tor.category ?? null)
+  const categories = [...new Set((tor.categories ?? []).map(rename))]
+
+  const changed =
+    category !== (tor.category ?? null) ||
+    categories.length !== (tor.categories ?? []).length ||
+    categories.some((key, i) => key !== tor.categories?.[i])
+  return changed ? { category, categories } : null
 }
 
 // categoryKeys: every key in the categories collection (hidden ones included).
@@ -149,6 +168,21 @@ async function migrateCategories(apply: boolean, includeTors: boolean): Promise<
       }
     }
 
+    // --- Legacy TOR keys (always) -----------------------------------------
+    const legacyKeys = Object.keys(LEGACY_INTEREST_IDS).filter(
+      (key) => LEGACY_INTEREST_IDS[key] !== key,
+    )
+    const legacyTors = await TorModel.find(
+      { $or: [{ category: { $in: legacyKeys } }, { categories: { $in: legacyKeys } }] },
+      { category: 1, categories: 1 },
+    ).lean()
+    const legacyWrites: { _id: unknown; category: string | null; categories: string[] }[] = []
+    for (const tor of legacyTors) {
+      const mapped = mapLegacyTorCategories(tor)
+      if (mapped) legacyWrites.push({ _id: tor._id, ...mapped })
+    }
+    console.log(`TORs with legacy category keys to rename: ${legacyWrites.length}`)
+
     // --- User interests ---------------------------------------------------
     const users = await User.find(
       { interests: { $exists: true, $ne: [] } },
@@ -185,6 +219,13 @@ async function migrateCategories(apply: boolean, includeTors: boolean): Promise<
         })),
       )
     }
+    if (legacyWrites.length > 0) {
+      await TorModel.bulkWrite(
+        legacyWrites.map(({ _id, category, categories }) => ({
+          updateOne: { filter: { _id }, update: { $set: { category, categories } } },
+        })),
+      )
+    }
     if (userWrites.length > 0) {
       await User.bulkWrite(
         userWrites.map((write) => ({
@@ -195,7 +236,9 @@ async function migrateCategories(apply: boolean, includeTors: boolean): Promise<
         })),
       )
     }
-    console.log(`Wrote ${torWrites.length} TORs and ${userWrites.length} users`)
+    console.log(
+      `Wrote ${torWrites.length} TORs, renamed legacy keys on ${legacyWrites.length} TORs, and ${userWrites.length} users`,
+    )
   } finally {
     await database.disconnect()
   }
