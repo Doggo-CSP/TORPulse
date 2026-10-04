@@ -10,6 +10,7 @@ import { useUserProfile } from "@/hooks/use-user-profile";
 import { useHomepage } from "@/hooks/use-homepage";
 import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
 import { useTorFilterOptions, useTorRecommendations, useTors } from "@/hooks/use-tors";
+import { DeadlineBadge } from "@/app/components/deadline_badge";
 
 const PriceComparisonChart = dynamic(
   () =>
@@ -604,6 +605,14 @@ export default function HomePage() {
                       <h3 className="mt-2 text-[15px] leading-snug font-medium">
                         {t.projectTitle}
                       </h3>
+                      <div className="mt-1.5">
+                        <DeadlineBadge
+                          deadline={t.submissionDeadline ?? t.submissionDeadlineText}
+                          since={t.announcementDate ?? t.createdAt}
+                          projectStatus={t.projectStatus}
+                          openOnly
+                        />
+                      </div>
                       <p className="mt-1 text-sm text-muted-foreground">
                         {t.agencyName ?? "หน่วยงานรัฐ"}
                       </p>

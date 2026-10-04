@@ -172,6 +172,7 @@ export default function TorDetailPage({
                             <DeadlineBadge
                                 deadline={submissionDeadline}
                                 since={since}
+                                projectStatus={tor.projectStatus}
                             />
                         </div>
                     </div>
@@ -312,6 +313,7 @@ export default function TorDetailPage({
                                     <DeadlineBadge
                                         deadline={submissionDeadline}
                                         since={since}
+                                        projectStatus={tor.projectStatus}
                                     />
                                 </div>
                                 {deadlineUnreliable && (

@@ -214,6 +214,7 @@ interface TorLeanFields {
   budgetBaht?: number | null
   submissionDeadline?: string | null
   submissionDeadlineAt?: Date | null
+  projectStatus?: string | null
   technologies?: string[]
   category?: string | null
   categories?: string[]
@@ -231,6 +232,7 @@ export function toTorListItem(tor: TorLeanFields, categoryNames: Map<string, str
     agencyName: tor.agencyName ?? null,
     budgetBaht: tor.budgetBaht ?? null,
     ...deadlineFields(tor),
+    projectStatus: tor.projectStatus ?? null,
     technologies: tor.technologies ?? [],
     createdAt: tor.createdAt,
     category,
@@ -285,16 +287,27 @@ function todayInBangkok(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
 }
 
+// Project statuses meaning bidding is over, whatever the deadline says.
+const BIDDING_CLOSED_STATUSES = ['ระหว่างดำเนินการ']
+
+export function isBiddingClosedStatus(status: string | null | undefined): boolean {
+  return !!status && BIDDING_CLOSED_STATUSES.includes(status.trim())
+}
+
 // Open TORs closing soonest first, then already-closed TORs (most recently
 // closed first), then TORs with no known deadline. Ties keep newest-first order.
 export function compareByDeadline(
-  a: { submissionDeadline: string | null },
-  b: { submissionDeadline: string | null },
+  a: { submissionDeadline: string | null; projectStatus?: string | null },
+  b: { submissionDeadline: string | null; projectStatus?: string | null },
   today: string,
 ): number {
-  const rank = (d: string | null) => (d === null ? 2 : d >= today ? 0 : 1)
-  const rankA = rank(a.submissionDeadline)
-  const rankB = rank(b.submissionDeadline)
+  const rank = (t: { submissionDeadline: string | null; projectStatus?: string | null }) => {
+    const d = t.submissionDeadline
+    if (d === null) return 2
+    return d >= today && !isBiddingClosedStatus(t.projectStatus) ? 0 : 1
+  }
+  const rankA = rank(a)
+  const rankB = rank(b)
   if (rankA !== rankB) return rankA - rankB
   if (rankA === 2) return 0
   const cmp = a.submissionDeadline!.localeCompare(b.submissionDeadline!)

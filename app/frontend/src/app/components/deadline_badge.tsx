@@ -1,14 +1,21 @@
-import { getDeadlineInfo } from "@/api/tor.api";
+import { getDeadlineInfo, isBiddingClosedStatus } from "@/api/tor.api";
 
 export function DeadlineBadge({
     deadline,
     since,
+    projectStatus,
+    openOnly = false,
 }: {
     deadline: string | null;
     since?: string | null; // announcementDate ?? createdAt
+    projectStatus?: string | null; // some statuses mean bidding already closed
+    openOnly?: boolean; // hide the badge once bidding has closed
 }) {
-    const { daysLeft, label, tone } = getDeadlineInfo(deadline, since);
+    const { daysLeft, label, tone } = isBiddingClosedStatus(projectStatus)
+        ? { daysLeft: null, label: "ปิดรับแล้ว", tone: "closed" as const }
+        : getDeadlineInfo(deadline, since);
     if (tone === "unknown") return null;
+    if (openOnly && tone === "closed") return null;
 
     const style =
         tone === "closed"
