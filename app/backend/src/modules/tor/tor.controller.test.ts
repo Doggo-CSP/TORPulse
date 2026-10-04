@@ -319,3 +319,17 @@ test('compareByDeadline: open soonest first, then closed most recent first, then
     ['today', 'open-soon', 'open-late', 'closed-recent', 'closed-old', 'none'],
   )
 })
+
+test('compareByDeadline: in-progress projects count as closed even with a future deadline', () => {
+  const tors = [
+    { id: 'in-progress', submissionDeadline: '2026-10-05', projectStatus: ' ระหว่างดำเนินการ ' },
+    { id: 'open-late', submissionDeadline: '2026-12-01', projectStatus: null },
+  ]
+
+  const sorted = [...tors].sort((a, b) => compareByDeadline(a, b, '2026-10-04'))
+
+  assert.deepEqual(
+    sorted.map((t) => t.id),
+    ['open-late', 'in-progress'],
+  )
+})

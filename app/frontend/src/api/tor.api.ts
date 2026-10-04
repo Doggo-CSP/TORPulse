@@ -51,6 +51,7 @@ export interface TorListItem {
   // YYYY-MM-DD or null; submissionDeadlineText is the raw text from the TOR.
   submissionDeadline: string | null;
   submissionDeadlineText: string | null;
+  projectStatus: string | null;
   technologies: string[];
   createdAt: string;
   // Primary TOR category key; `categories` lists every matching key, primary first.
@@ -412,6 +413,13 @@ export function getDeadlineInfo(
 
   const label = `เหลืออีก ${prefix}${formatRemaining(daysLeft)}`;
   return { daysLeft, label, tone: daysLeft <= 7 ? "soon" : "open", approximate };
+}
+
+// Project statuses meaning bidding is over, whatever the deadline says.
+const BIDDING_CLOSED_STATUSES = ["ระหว่างดำเนินการ"];
+
+export function isBiddingClosedStatus(status?: string | null): boolean {
+  return !!status && BIDDING_CLOSED_STATUSES.includes(status.trim());
 }
 
 /**
