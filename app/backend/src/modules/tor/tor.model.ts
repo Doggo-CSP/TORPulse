@@ -1,5 +1,13 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
+export const TOR_REVIEW_STATUSES = ['unverified', 'verified', 'archived', 'deleted'] as const
+export type TorReviewStatus = (typeof TOR_REVIEW_STATUSES)[number]
+
+// Archived and soft-deleted TORs stay in the database but are hidden from public endpoints.
+// Records created before reviewStatus existed have no value and stay visible.
+export const HIDDEN_TOR_REVIEW_STATUSES: TorReviewStatus[] = ['archived', 'deleted']
+export const PUBLIC_TOR_FILTER = { reviewStatus: { $nin: HIDDEN_TOR_REVIEW_STATUSES } }
+
 const sourceDocumentSchema = new Schema(
   {
     fileName: {
@@ -107,7 +115,8 @@ const torSchema = new Schema(
       required: true,
       default: [],
     },
-    // Keys from the tor_categories collection, set by the AI classifier.
+    // Keys of the categories collection, set by the AI classifier or an admin override. Checked
+    // by the admin API, not by an enum, because admins can add categories.
     category: {
       type: String,
       default: null,
@@ -143,6 +152,45 @@ const torSchema = new Schema(
     },
     // submissionDeadline parsed to a date (midnight UTC); null when no exact day.
     submissionDeadlineAt: {
+      type: Date,
+      default: null,
+    },
+    scope: {
+      type: String,
+      default: null,
+    },
+    deliverables: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    timeline: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    evaluationCriteria: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    reviewStatus: {
+      type: String,
+      required: true,
+      enum: TOR_REVIEW_STATUSES,
+      default: 'unverified',
+    },
+    categoryOverridden: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+    lastEditedAt: {
+      type: Date,
+      default: null,
+    },
+    // Last time ingestion saw this project at the source
+    lastSeenAt: {
       type: Date,
       default: null,
     },

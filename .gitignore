@@ -40,3 +40,4 @@ ehthumbs.db
 
 # Claude Code local config
 .claude/
+app/backend/sandbox-output

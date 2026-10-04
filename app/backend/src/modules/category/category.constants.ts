@@ -1,66 +1,73 @@
-export interface CategoryDefinition {
+// Seed data only. Categories live in the `categories` collection and are managed by admins;
+// application code must read them from the database (category.repository.ts), never from here.
+// scripts/seed-categories.ts inserts these once (keywords come from the keyword rules in
+// tor.controller.ts). Descriptions are the texts of the profile page's interest cards.
+export const CATEGORY_SEED: {
   key: string
   name: string
   description: string
-  aiHint: string | null
-  order: number
-}
-
-export const DEFAULT_CATEGORIES: CategoryDefinition[] = [
+  aiHint: string
+}[] = [
   {
-    key: 'web',
-    name: 'Web Application',
+    key: 'web_application',
+    name: 'งานพัฒนาเว็บไซต์',
     description: 'ระบบเว็บแอปพลิเคชันและพอร์ทัลบริการประชาชน',
     aiHint: 'Websites, web portals, e-service and citizen-facing web systems.',
-    order: 1,
   },
   {
-    key: 'data',
-    name: 'Data / BI',
+    key: 'data_bi',
+    name: 'งานข้อมูลและวิเคราะห์',
     description: 'ระบบข้อมูล วิเคราะห์ และแดชบอร์ดผู้บริหาร',
     aiHint: 'Data warehouses, data platforms, reporting, BI and executive dashboards.',
-    order: 2,
   },
   {
-    key: 'mobile',
-    name: 'Mobile App',
+    key: 'mobile_app',
+    name: 'งานแอปพลิเคชันมือถือ',
     description: 'แอปพลิเคชันบนมือถือ iOS และ Android',
     aiHint: 'Native or cross-platform apps delivered on iOS or Android.',
-    order: 3,
   },
   {
-    key: 'enterprise',
-    name: 'Enterprise System',
+    key: 'enterprise_system',
+    name: 'งานระบบองค์กร',
     description: 'ระบบสารสนเทศองค์กรและงานหลังบ้าน',
     aiHint: 'ERP, finance, HR, procurement, document and other back-office systems.',
-    order: 4,
   },
   {
-    key: 'consulting',
-    name: 'Consulting / Architecture',
+    key: 'consulting_architecture',
+    name: 'งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ',
     description: 'งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ',
     aiHint: 'Studies, master plans, IT consulting, system design and architecture work.',
-    order: 5,
   },
   {
     key: 'cybersecurity',
-    name: 'Cybersecurity',
+    name: 'งานความมั่นคงปลอดภัยไซเบอร์',
     description: 'ความมั่นคงปลอดภัยไซเบอร์และการตรวจสอบระบบ',
     aiHint: 'Security systems, SOC, penetration testing, audits and security compliance.',
-    order: 6,
   },
   {
-    key: 'ai',
-    name: 'AI & Machine Learning',
+    key: 'ai_ml',
+    name: 'งานปัญญาประดิษฐ์และแมชชีนเลิร์นนิง',
     description: 'ปัญญาประดิษฐ์ การวิเคราะห์ขั้นสูงและระบบอัตโนมัติ',
     aiHint: 'AI, machine learning, computer vision, NLP, chatbots and automation.',
-    order: 7,
   },
   {
-    key: 'cloud',
-    name: 'Cloud & Infrastructure',
+    key: 'cloud_infrastructure',
+    name: 'งานคลาวด์และโครงสร้างพื้นฐาน',
     description: 'โครงสร้างพื้นฐาน คลาวด์ และระบบเครือข่าย',
     aiHint: 'Cloud services, servers, data centres, networks and IT infrastructure.',
-    order: 8,
   },
 ]
+
+// TODO(LEGACY-INTEREST-IDS): the profile page still sends its own ids instead of category keys.
+// PUT /user/interests converts them with this map, and scripts/migrate-categories.ts rewrites
+// stored values. Remove this map (and its uses) once the frontend sends category keys.
+export const LEGACY_INTEREST_IDS: Record<string, string> = {
+  web: 'web_application',
+  data: 'data_bi',
+  mobile: 'mobile_app',
+  enterprise: 'enterprise_system',
+  consulting: 'consulting_architecture',
+  cybersecurity: 'cybersecurity',
+  ai: 'ai_ml',
+  cloud: 'cloud_infrastructure',
+}

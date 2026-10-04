@@ -1,4 +1,4 @@
-import { TorModel } from '../tor/tor.model.js'
+import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 import { UNKNOWN_DEPARTMENT_LABEL } from './report.constants.js'
 
 const TTL_MS = 60 * 60 * 1000
@@ -7,8 +7,9 @@ let cache: { values: string[]; hasUnknown: boolean; expiresAt: number } | null =
 
 async function loadDepartments(): Promise<{ values: string[]; hasUnknown: boolean }> {
   const [distinctAgencyNames, hasUnknown] = await Promise.all([
-    TorModel.distinct('agencyName', { awardedPriceBaht: { $ne: null } }),
+    TorModel.distinct('agencyName', { ...PUBLIC_TOR_FILTER, awardedPriceBaht: { $ne: null } }),
     TorModel.exists({
+      ...PUBLIC_TOR_FILTER,
       awardedPriceBaht: { $ne: null },
       $or: [{ agencyName: null }, { agencyName: '' }],
     }).then((doc) => doc !== null),

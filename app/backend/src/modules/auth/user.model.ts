@@ -22,7 +22,7 @@ export interface UserRecord {
   agencyName?: string
   agencyType?: string
   role?: 'admin' | 'user'
-  status?: 'active' | 'pending' | 'suspended'
+  status?: 'active' | 'suspended'
   createdAt: Date
   updatedAt: Date
 }
@@ -34,7 +34,7 @@ const userSchema = new Schema<UserRecord>(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     image: { type: String, default: null },
     role: { type: String, enum: ['admin', 'user'], default: 'user' },
-    status: { type: String, enum: ['active', 'pending', 'suspended'], default: 'active' },
+    status: { type: String, enum: ['active', 'suspended'], default: 'active' },
     accountType: { type: String, enum: ['personal', 'company', 'agency'], default: 'personal' },
     displayName: { type: String, default: '' },
     firstName: { type: String, default: '' },
@@ -44,6 +44,7 @@ const userSchema = new Schema<UserRecord>(
     phone: { type: String, default: '' },
     address: { type: String, default: '' },
     about: { type: String, default: '' },
+    // Category keys; validated against the categories collection by PUT /user/interests
     interests: { type: [String], default: [] },
     website: { type: String, default: null },
     companyName: { type: String, default: '' },

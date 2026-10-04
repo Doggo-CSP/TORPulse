@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express'
 
+import { getActiveCategoryKeys } from '../category/category.repository.js'
 import {
   addBookmark,
   countBookmarksByUser,
@@ -104,6 +105,20 @@ export const updateInterestsHandler = async (req: Request, res: Response): Promi
   const parsed = updateInterestsSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.flatten() })
+    return
+  }
+
+  // New picks must be active categories; hidden ones the user already has may stay.
+  const [activeKeys, currentUser] = await Promise.all([
+    getActiveCategoryKeys(),
+    findUserById(req.user._id),
+  ])
+  const currentInterests = new Set<string>(currentUser?.interests ?? [])
+  const invalid = parsed.data.interests.filter(
+    (key) => !activeKeys.has(key) && !currentInterests.has(key),
+  )
+  if (invalid.length > 0) {
+    res.status(400).json({ error: `Invalid or hidden categories: ${invalid.join(', ')}` })
     return
   }
 

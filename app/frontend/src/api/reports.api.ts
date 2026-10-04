@@ -71,17 +71,17 @@ export interface PriceTimelinePoint {
   projectCount: number;
 }
 
-// Default TOR categories (keys match the backend tor_categories collection
-// and the profile interest ids). Used for fallback labels only.
+// Default TOR categories (keys match the backend categories collection seed).
+// Used for fallback labels only.
 export const CATEGORY_NAME_MAP: Record<string, string> = {
-  web: "Web Application",
-  data: "Data / BI",
-  mobile: "Mobile App",
-  enterprise: "Enterprise System",
-  consulting: "Consulting / Architecture",
-  cybersecurity: "Cybersecurity",
-  ai: "AI & Machine Learning",
-  cloud: "Cloud & Infrastructure",
+  web_application: "งานพัฒนาเว็บไซต์",
+  data_bi: "งานข้อมูลและวิเคราะห์",
+  mobile_app: "งานแอปพลิเคชันมือถือ",
+  enterprise_system: "งานระบบองค์กร",
+  consulting_architecture: "งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ",
+  cybersecurity: "งานความมั่นคงปลอดภัยไซเบอร์",
+  ai_ml: "งานปัญญาประดิษฐ์และแมชชีนเลิร์นนิง",
+  cloud_infrastructure: "งานคลาวด์และโครงสร้างพื้นฐาน",
 };
 
 /**
@@ -98,10 +98,10 @@ function getDeterministicDiscountPct(seedStr: string, category: string): number 
 
   // Category-specific variations based on Thai IT procurement statistics
   let baseDiscount = 9.5;
-  if (category === "web") baseDiscount = 11.2;
-  else if (category === "mobile") baseDiscount = 10.0;
-  else if (category === "data") baseDiscount = 12.5;
-  else if (category === "enterprise") baseDiscount = 11.4;
+  if (category === "web_application") baseDiscount = 11.2;
+  else if (category === "mobile_app") baseDiscount = 10.0;
+  else if (category === "data_bi") baseDiscount = 12.5;
+  else if (category === "enterprise_system") baseDiscount = 11.4;
 
   const variance = (normalized - 0.5) * 10; // -5% to +5%
   const finalDiscount = Math.max(3.5, Math.min(22.0, baseDiscount + variance));
@@ -120,7 +120,7 @@ export function enrichTorPriceAnalysis(item: TorListItem): TorPriceAnalysisItem 
     medianPrice = 1_500_000 + (idHash % 35) * 500_000;
   }
 
-  const category = item.category || "web";
+  const category = item.category || "web_application";
   const categoryLabel = CATEGORY_NAME_MAP[category] || "ระบบไอทีทั่วไป";
   const discountPct = getDeterministicDiscountPct(item.id + (item.externalId || ""), category);
   const winningPrice = Math.round(medianPrice * (1 - discountPct / 100));

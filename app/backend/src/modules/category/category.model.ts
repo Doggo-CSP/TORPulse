@@ -1,7 +1,8 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
-// TOR categories are data, not code: the classifier prompt, the TOR list,
-// the homepage and the reports all read them from this collection.
+// Categories used to classify TORs and as user interests. `key` is what TORs (`category`) and
+// users (`interests`) store, so it can never change after creation. The AI classifier prompt reads
+// the active ones from here too.
 const categorySchema = new Schema(
   {
     key: {
@@ -9,19 +10,18 @@ const categorySchema = new Schema(
       required: true,
       unique: true,
       trim: true,
-      lowercase: true,
-      match: /^[a-z0-9_-]+$/,
       immutable: true,
     },
     name: {
       type: String,
       required: true,
+      unique: true,
       trim: true,
     },
     description: {
       type: String,
-      required: true,
       trim: true,
+      default: '',
     },
     // Extra guidance for the AI classifier (examples, boundaries).
     aiHint: {
@@ -29,24 +29,29 @@ const categorySchema = new Schema(
       trim: true,
       default: null,
     },
-    order: {
-      type: Number,
+    keywords: {
+      type: [String],
       required: true,
-      default: 0,
+      default: [],
     },
-    active: {
+    isActive: {
       type: Boolean,
       required: true,
       default: true,
     },
+    sortOrder: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
   },
   {
     timestamps: true,
-    collection: 'tor_categories',
+    collection: 'categories',
   },
 )
 
-categorySchema.index({ active: 1, order: 1 })
+categorySchema.index({ sortOrder: 1, name: 1 })
 
 export type Category = InferSchemaType<typeof categorySchema>
 

@@ -10,6 +10,8 @@ import { Types } from 'mongoose'
 import { createApiApp } from '../../apps/api/app.js'
 import type { ApiAuthConfig } from './auth.config.js'
 import { createAuthRouter } from './auth.routes.js'
+import { createPassport } from './passport.js'
+import { User } from './user.model.js'
 
 const config: ApiAuthConfig = {
   googleClientId: 'test-client',
@@ -84,4 +86,96 @@ test('POST /auth/logout clears the named session cookie', async () => {
   assert.match(response.headers['set-cookie']?.[0] ?? '', /^torpulse\.sid=;/)
   assert.match(response.headers['set-cookie']?.[0] ?? '', /HttpOnly/)
   assert.match(response.headers['set-cookie']?.[0] ?? '', /SameSite=Lax/)
+})
+
+const deserialize = (authPassport: passport.Authenticator, id: string) =>
+  new Promise<unknown>((resolve, reject) => {
+    authPassport.deserializeUser(id, (error: unknown, user?: unknown) => {
+      if (error) {
+        reject(error)
+        return
+      }
+      resolve(user)
+    })
+  })
+
+test('deserializeUser treats a suspended account as logged out', async (t) => {
+  const authPassport = createPassport(config)
+  t.mock.method(User, 'findById', async () => ({
+    _id: new Types.ObjectId('64b000000000000000000002'),
+    status: 'suspended',
+  }))
+
+  const user = await deserialize(authPassport, '64b000000000000000000002')
+
+  assert.equal(user, false)
+})
+
+test('deserializeUser keeps an active account logged in', async (t) => {
+  const authPassport = createPassport(config)
+  const stored = { _id: new Types.ObjectId('64b000000000000000000003'), status: 'active' }
+  t.mock.method(User, 'findById', async () => stored)
+
+  const user = await deserialize(authPassport, '64b000000000000000000003')
+
+  assert.equal(user, stored)
+})
+
+type GoogleVerify = (
+  accessToken: string,
+  refreshToken: string,
+  profile: unknown,
+  done: (error: unknown, user?: unknown) => void,
+) => void
+
+const runGoogleVerify = (authPassport: passport.Authenticator, profile: unknown) =>
+  new Promise<unknown>((resolve, reject) => {
+    const strategy = (
+      authPassport as unknown as { _strategy(name: string): { _verify: GoogleVerify } }
+    )._strategy('google')
+    strategy._verify('access', 'refresh', profile, (error, user) =>
+      error ? reject(error) : resolve(user),
+    )
+  })
+
+test('Google login creates new accounts as active users', async (t) => {
+  const authPassport = createPassport(config)
+  const stored = { _id: new Types.ObjectId(), status: 'active' }
+  let capturedUpdate: Record<string, Record<string, unknown>> | undefined
+
+  t.mock.method(User, 'findOneAndUpdate', async (_filter: unknown, update: unknown) => {
+    capturedUpdate = update as Record<string, Record<string, unknown>>
+    return stored
+  })
+
+  const user = await runGoogleVerify(authPassport, {
+    id: 'google-1',
+    displayName: 'Officer',
+    emails: [{ value: 'Officer@DGA.go.th', verified: true }],
+  })
+
+  assert.equal(user, stored)
+  assert.deepEqual(capturedUpdate?.$setOnInsert, {
+    googleId: 'google-1',
+    role: 'user',
+    status: 'active',
+  })
+  assert.equal(capturedUpdate?.$set?.email, 'officer@dga.go.th')
+})
+
+test('Google login rejects a suspended account', async (t) => {
+  const authPassport = createPassport(config)
+
+  t.mock.method(User, 'findOneAndUpdate', async () => ({
+    _id: new Types.ObjectId(),
+    status: 'suspended',
+  }))
+
+  const user = await runGoogleVerify(authPassport, {
+    id: 'google-2',
+    displayName: 'Suspended',
+    emails: [{ value: 'suspended@example.com', verified: true }],
+  })
+
+  assert.equal(user, false)
 })
