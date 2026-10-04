@@ -81,6 +81,8 @@ export interface FetchTorsParams {
   page?: number;
   limit?: number;
   sort?: "newest" | "deadline";
+  /** Filter to TORs created within the last N days (using createdAt). */
+  days?: number;
 }
 
 export interface FetchTorsResponse {
@@ -149,6 +151,10 @@ export async function fetchTors(params: FetchTorsParams = {}): Promise<FetchTors
 
   if (params.sort) {
     searchParams.set("sort", params.sort);
+  }
+
+  if (params.days !== undefined && params.days > 0) {
+    searchParams.set("days", String(params.days));
   }
 
   const queryString = searchParams.toString();
