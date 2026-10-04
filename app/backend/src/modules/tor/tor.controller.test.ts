@@ -7,6 +7,7 @@ import request from 'supertest'
 
 import {
   calculateInterestScore,
+  compareByDeadline,
   deriveCategory,
   getRecommendationsHandler,
   getTorByIdHandler,
@@ -296,5 +297,25 @@ test('list items expose an ISO deadline and the raw deadline text', () => {
   assert.equal(
     toTorListItem({ ...base, submissionDeadline: 'null' }, new Map()).submissionDeadlineText,
     null,
+  )
+})
+
+// --- compareByDeadline (pure) ----------------------------------------------
+
+test('compareByDeadline: open soonest first, then closed most recent first, then no deadline', () => {
+  const tors = [
+    { id: 'none', submissionDeadline: null },
+    { id: 'closed-old', submissionDeadline: '2026-01-01' },
+    { id: 'open-late', submissionDeadline: '2026-12-01' },
+    { id: 'closed-recent', submissionDeadline: '2026-10-01' },
+    { id: 'today', submissionDeadline: '2026-10-04' },
+    { id: 'open-soon', submissionDeadline: '2026-10-10' },
+  ]
+
+  const sorted = [...tors].sort((a, b) => compareByDeadline(a, b, '2026-10-04'))
+
+  assert.deepEqual(
+    sorted.map((t) => t.id),
+    ['today', 'open-soon', 'open-late', 'closed-recent', 'closed-old', 'none'],
   )
 })
