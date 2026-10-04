@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import type { Request, Response } from 'express'
 import { isObjectIdOrHexString } from 'mongoose'
 
-import { getCategoryNameMap } from '../category/category.repository.js'
+import { getCategoryNameMap, listCategories } from '../category/category.repository.js'
 import { cleanDateText, parseThaiDate, toIsoDateString } from '../ingestion/thai-date.js'
 import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from './tor.model.js'
 
@@ -245,21 +245,37 @@ export function toTorListItem(tor: TorLeanFields, categoryNames: Map<string, str
 // GET /api/v1/tors/filter-options
 // ---------------------------------------------------------------------------
 
+const distinctStrings = (values: unknown[]): string[] => [
+  ...new Set(
+    values
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ),
+]
+
 export async function getFilterOptionsHandler(_req: Request, res: Response): Promise<void> {
-  const [yearRows, technologies] = await Promise.all([
-    TorModel.aggregate<{ _id: number }>([
-      { $match: PUBLIC_TOR_FILTER },
-      { $group: { _id: { $year: '$updatedAt' } } },
-      { $sort: { _id: -1 } },
-    ]),
-    TorModel.distinct('technologies', PUBLIC_TOR_FILTER),
-  ])
+  const [years, departments, statuses, categoryKeys, primaryCategoryKeys, categories] =
+    await Promise.all([
+      TorModel.distinct('fiscalYear', PUBLIC_TOR_FILTER),
+      TorModel.distinct('departmentName', PUBLIC_TOR_FILTER),
+      TorModel.distinct('projectStatus', PUBLIC_TOR_FILTER),
+      TorModel.distinct('categories', PUBLIC_TOR_FILTER),
+      TorModel.distinct('category', PUBLIC_TOR_FILTER),
+      listCategories({ activeOnly: true }),
+    ])
+  const usedCategoryKeys = new Set([...categoryKeys, ...primaryCategoryKeys])
 
   res.json({
-    years: yearRows.map((row) => row._id),
-    technologies: (technologies as string[])
-      .filter((technology) => technology.trim() !== '')
-      .sort((a, b) => a.localeCompare(b)),
+    years: (years as unknown[])
+      .filter((year): year is number => typeof year === 'number')
+      .sort((a, b) => b - a),
+    departments: distinctStrings(departments).sort((a, b) => a.localeCompare(b, 'th')),
+    statuses: distinctStrings(statuses).sort((a, b) => a.localeCompare(b, 'th')),
+    // Active categories in display order, limited to ones at least one TOR uses.
+    categories: categories
+      .filter((category) => usedCategoryKeys.has(category.key))
+      .map((category) => ({ key: category.key, name: category.name })),
   })
 }
 
@@ -319,19 +335,24 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
   const budgetMin = parseNumberParam(req.query.budget_min)
   const budgetMax = parseNumberParam(req.query.budget_max)
   const year = parseNumberParam(req.query.year)
-  const technology = parseStringParam(req.query.technologies)
+  const department = parseStringParam(req.query.department)
+  const status = parseStringParam(req.query.status)
+  const categoryParam = parseStringParam(req.query.categories)
   const page = Math.max(1, parseNumberParam(req.query.page) ?? 1)
   const limit = Math.min(MAX_LIMIT, Math.max(1, parseNumberParam(req.query.limit) ?? DEFAULT_LIMIT))
   const sort = parseStringParam(req.query.sort)
 
   const query: Record<string, unknown> = { ...PUBLIC_TOR_FILTER }
   if (q) query.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
-  if (technology && technology !== 'all') {
-    const techList = technology
+  if (categoryParam && categoryParam !== 'all') {
+    const categoryKeys = categoryParam
       .split(',')
-      .map((t) => t.trim())
+      .map((key) => key.trim())
       .filter(Boolean)
-    if (techList.length > 0) query.technologies = { $in: techList }
+    // TORs stored before `categories` existed only have the primary `category`.
+    if (categoryKeys.length > 0) {
+      query.$or = [{ categories: { $in: categoryKeys } }, { category: { $in: categoryKeys } }]
+    }
   }
   if (budgetMin !== undefined || budgetMax !== undefined) {
     const budgetBaht: Record<string, number> = {}
@@ -339,9 +360,10 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
     if (budgetMax !== undefined) budgetBaht.$lte = budgetMax
     query.budgetBaht = budgetBaht
   }
-  if (year !== undefined) {
-    query.$expr = { $eq: [{ $year: '$updatedAt' }, year] }
-  }
+  if (year !== undefined) query.fiscalYear = year
+  // Options come trimmed from filter-options; stored values may carry stray whitespace.
+  if (department) query.departmentName = { $regex: `^\\s*${escapeRegex(department.trim())}\\s*$` }
+  if (status) query.projectStatus = { $regex: `^\\s*${escapeRegex(status.trim())}\\s*$` }
 
   const [docs, categoryNames] = await Promise.all([
     TorModel.find(query).sort({ createdAt: -1 }).lean(),
