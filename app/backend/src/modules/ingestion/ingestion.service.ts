@@ -1,6 +1,7 @@
 import { Types } from 'mongoose'
 
 import { env } from '../../config/env.js'
+import { deriveCategory } from '../tor/tor.controller.js'
 import { upsertTor } from '../tor/tor.repository.js'
 import type { IngestionJob } from './ingestion-job.model.js'
 import type { ProcurementSourceAdapter } from './adapters/procurement-source.adapter.js'
@@ -101,6 +102,7 @@ export async function processIngestionJob(
     requirements: extractedTor.requirements,
     bidderQualifications: extractedTor.bidderQualifications,
     technologies: extractedTor.technologies,
+    category: deriveCategory(extractedTor.technologies),
     budgetBaht: extractedTor.budgetBaht,
     midPriceBaht: project.midPriceBaht ?? null,
     awardedPriceBaht: project.awardedPriceBaht ?? null,

@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express'
 
-import { CATEGORY_LABELS, deriveCategory, type TorCategory } from '../tor/tor.controller.js'
-import { TorModel } from '../tor/tor.model.js'
+import { listCategories } from '../category/category.repository.js'
+import { resolveTorCategory } from '../tor/tor.controller.js'
+import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000
 
@@ -37,6 +38,7 @@ export async function getSummaryHandler(_req: Request, res: Response): Promise<v
     new_this_week: Array<{ count: number }>
     last_updated: Array<{ updatedAt: Date }>
   }>([
+    { $match: PUBLIC_TOR_FILTER },
     {
       $facet: {
         total_tors: [{ $count: 'count' }],
@@ -67,8 +69,9 @@ export async function getSummaryHandler(_req: Request, res: Response): Promise<v
 }
 
 export async function getAnalyticsHandler(_req: Request, res: Response): Promise<void> {
-  const [topTechnologies, torDocs] = await Promise.all([
+  const [topTechnologies, torDocs, categories] = await Promise.all([
     TorModel.aggregate<{ _id: string; count: number; percentage: number }>([
+      { $match: PUBLIC_TOR_FILTER },
       { $unwind: '$technologies' },
       { $group: { _id: '$technologies', count: { $sum: 1 } } },
       { $setWindowFields: { output: { total: { $sum: '$count' } } } },
@@ -82,29 +85,26 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
       { $sort: { count: -1, _id: 1 } },
       { $limit: 10 },
     ]),
-    TorModel.find(
-      {},
-      { technologies: 1, midPriceBaht: 1, awardedPriceBaht: 1, _id: 0 },
-    ).lean(),
+    TorModel.find(PUBLIC_TOR_FILTER, {
+      technologies: 1,
+      category: 1,
+      midPriceBaht: 1,
+      awardedPriceBaht: 1,
+      _id: 0,
+    }).lean(),
+    listCategories(),
   ])
 
   const totalTors = torDocs.length
-  const counts: Record<TorCategory, number> = {
-    web_application: 0,
-    data_bi: 0,
-    mobile_app: 0,
-    enterprise_system: 0,
-    consulting_architecture: 0,
-  }
 
+  // Every active category is listed (0% when unused). Hidden or unknown category keys are listed
+  // only when some TOR still carries them, so existing TORs keep showing their category.
   type PriceAccumulator = { midSum: number; midCount: number; awardedSum: number; awardedCount: number }
-  const priceSums: Record<TorCategory, PriceAccumulator> = {
-    web_application: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-    data_bi: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-    mobile_app: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-    enterprise_system: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-    consulting_architecture: { midSum: 0, midCount: 0, awardedSum: 0, awardedCount: 0 },
-  }
+  const names = new Map(categories.map((category) => [category.key, category.name]))
+  const counts = new Map<string, number>(
+    categories.filter((category) => category.isActive).map((category) => [category.key, 0]),
+  )
+  const priceSums = new Map<string, PriceAccumulator>()
 
   // overall (cross-category) stats — only over TORs where both prices are known,
   // so the discount % is comparing like-for-like
@@ -113,16 +113,23 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
   let overallPairedCount = 0
 
   for (const doc of torDocs) {
-    const category = deriveCategory(doc.technologies ?? [])
-    counts[category] += 1
+    const category = resolveTorCategory(doc)
+    counts.set(category, (counts.get(category) ?? 0) + 1)
+    const sums = priceSums.get(category) ?? {
+      midSum: 0,
+      midCount: 0,
+      awardedSum: 0,
+      awardedCount: 0,
+    }
+    priceSums.set(category, sums)
 
     if (doc.midPriceBaht != null) {
-      priceSums[category].midSum += doc.midPriceBaht
-      priceSums[category].midCount += 1
+      sums.midSum += doc.midPriceBaht
+      sums.midCount += 1
     }
     if (doc.awardedPriceBaht != null) {
-      priceSums[category].awardedSum += doc.awardedPriceBaht
-      priceSums[category].awardedCount += 1
+      sums.awardedSum += doc.awardedPriceBaht
+      sums.awardedCount += 1
     }
     if (doc.midPriceBaht != null && doc.awardedPriceBaht != null) {
       overallMidSum += doc.midPriceBaht
@@ -131,29 +138,36 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
     }
   }
 
-  const categoryDistribution = (Object.keys(counts) as TorCategory[]).map((category) => {
-    const rawPercentage = totalTors === 0 ? 0 : (counts[category] / totalTors) * 100
+  // Display order: categories by sortOrder, then any key not in the categories collection
+  const orderedKeys = [
+    ...categories.map((category) => category.key).filter((key) => counts.has(key)),
+    ...[...counts.keys()].filter((key) => !names.has(key)),
+  ]
+
+  const categoryDistribution = orderedKeys.map((category) => {
+    const rawPercentage = totalTors === 0 ? 0 : ((counts.get(category) ?? 0) / totalTors) * 100
     return {
       category,
-      label: CATEGORY_LABELS[category],
+      label: names.get(category) ?? category,
       percentage: Math.round(rawPercentage * 100) / 100,
     }
   })
 
-  const priceComparison = (Object.keys(priceSums) as TorCategory[])
-    .filter((category) => priceSums[category].midCount > 0 || priceSums[category].awardedCount > 0)
-    .map((category) => ({
-      category,
-      label: CATEGORY_LABELS[category],
-      avgMidPriceBaht:
-        priceSums[category].midCount > 0
-          ? Math.round(priceSums[category].midSum / priceSums[category].midCount)
-          : null,
-      avgAwardedPriceBaht:
-        priceSums[category].awardedCount > 0
-          ? Math.round(priceSums[category].awardedSum / priceSums[category].awardedCount)
-          : null,
-    }))
+  const priceComparison = orderedKeys
+    .filter((category) => {
+      const sums = priceSums.get(category)
+      return sums !== undefined && (sums.midCount > 0 || sums.awardedCount > 0)
+    })
+    .map((category) => {
+      const sums = priceSums.get(category)!
+      return {
+        category,
+        label: names.get(category) ?? category,
+        avgMidPriceBaht: sums.midCount > 0 ? Math.round(sums.midSum / sums.midCount) : null,
+        avgAwardedPriceBaht:
+          sums.awardedCount > 0 ? Math.round(sums.awardedSum / sums.awardedCount) : null,
+      }
+    })
 
   const avgMidPriceBaht = overallPairedCount > 0 ? Math.round(overallMidSum / overallPairedCount) : null
   const avgAwardedPriceBaht = overallPairedCount > 0 ? Math.round(overallAwardedSum / overallPairedCount) : null

@@ -3,24 +3,48 @@ import { createHash } from 'node:crypto'
 import type { Request, Response } from 'express'
 import { isObjectIdOrHexString } from 'mongoose'
 
-import { TorModel } from './tor.model.js'
+import { getCategoryNameMap } from '../category/category.repository.js'
+import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from './tor.model.js'
 
 // ---------------------------------------------------------------------------
 // Category derivation (pure, no DB) — shared with homepage.controller.ts
 // ---------------------------------------------------------------------------
 
-export type TorCategory =
-  'mobile_app' | 'data_bi' | 'web_application' | 'enterprise_system' | 'consulting_architecture'
-
 const MOBILE_APP_KEYWORDS = ['flutter', 'react native', 'swift', 'kotlin', 'android', 'ios']
-const DATA_BI_KEYWORDS = [
-  'python',
-  'power bi',
-  'tableau',
+// Provisional keyword rules. Categorising TORs from real data (titles, summaries, AI) is
+// planned for next sprint.
+const AI_ML_KEYWORDS = [
+  'artificial intelligence',
   'machine learning',
-  'sql server',
-  'postgresql',
+  'deep learning',
+  'neural network',
+  'llm',
+  'large language model',
+  'generative ai',
+  'natural language processing',
+  'nlp',
+  'computer vision',
+  'ocr',
+  'chatbot',
+  'tensorflow',
+  'pytorch',
 ]
+// Short tokens would match inside unrelated words ("mail", "html", "social"), so they must be
+// the whole technology name.
+const AI_ML_EXACT_KEYWORDS = ['ai', 'ml']
+const CYBERSECURITY_KEYWORDS = [
+  'cybersecurity',
+  'cyber security',
+  'security operation',
+  'siem',
+  'pentest',
+  'penetration test',
+  'vulnerability assessment',
+  'firewall',
+  'iso 27001',
+]
+const CYBERSECURITY_EXACT_KEYWORDS = ['soc', 'security']
+const DATA_BI_KEYWORDS = ['python', 'power bi', 'tableau', 'sql server', 'postgresql']
 const WEB_APPLICATION_KEYWORDS = [
   'react',
   'next.js',
@@ -39,15 +63,68 @@ const CONSULTING_ARCHITECTURE_KEYWORDS = [
   'it governance',
   'togaf',
 ]
+const CLOUD_INFRASTRUCTURE_KEYWORDS = [
+  'cloud',
+  'aws',
+  'azure',
+  'gcp',
+  'kubernetes',
+  'docker',
+  'devops',
+  'terraform',
+  'vmware',
+  'data center',
+  'infrastructure',
+  'server',
+  'network',
+]
+
+// Keys the keyword rules below can return. Categories themselves live in the database; these
+// rules only decide which key a TOR gets until categorisation moves to real data (next sprint).
+type RuleCategoryKey =
+  | 'web_application'
+  | 'data_bi'
+  | 'mobile_app'
+  | 'enterprise_system'
+  | 'consulting_architecture'
+  | 'cybersecurity'
+  | 'ai_ml'
+  | 'cloud_infrastructure'
+
+// Used by scripts/seed-categories.ts as each seeded category's starting keywords.
+export const CATEGORY_RULE_KEYWORDS: Record<RuleCategoryKey, string[]> = {
+  web_application: WEB_APPLICATION_KEYWORDS,
+  data_bi: DATA_BI_KEYWORDS,
+  mobile_app: MOBILE_APP_KEYWORDS,
+  enterprise_system: [],
+  consulting_architecture: CONSULTING_ARCHITECTURE_KEYWORDS,
+  cybersecurity: [...CYBERSECURITY_KEYWORDS, ...CYBERSECURITY_EXACT_KEYWORDS],
+  ai_ml: [...AI_ML_KEYWORDS, ...AI_ML_EXACT_KEYWORDS],
+  cloud_infrastructure: CLOUD_INFRASTRUCTURE_KEYWORDS,
+}
 
 const matchesAny = (technologies: string[], keywords: string[]): boolean =>
   technologies.some((tech) => keywords.some((keyword) => tech.includes(keyword)))
 
-export function deriveCategory(technologies: string[]): TorCategory {
-  const normalized = technologies.map((tech) => tech.toLowerCase())
+const matchesExact = (technologies: string[], keywords: string[]): boolean =>
+  technologies.some((tech) => keywords.includes(tech))
+
+export function deriveCategory(technologies: string[]): RuleCategoryKey {
+  const normalized = technologies.map((tech) => tech.trim().toLowerCase())
 
   if (matchesAny(normalized, MOBILE_APP_KEYWORDS)) {
     return 'mobile_app'
+  }
+
+  if (matchesAny(normalized, AI_ML_KEYWORDS) || matchesExact(normalized, AI_ML_EXACT_KEYWORDS)) {
+    return 'ai_ml'
+  }
+
+  if (
+    matchesAny(normalized, CYBERSECURITY_KEYWORDS) ||
+    matchesExact(normalized, CYBERSECURITY_EXACT_KEYWORDS)
+  ) {
+    return 'cybersecurity'
   }
 
   const hasWebKeyword = matchesAny(normalized, WEB_APPLICATION_KEYWORDS)
@@ -59,6 +136,10 @@ export function deriveCategory(technologies: string[]): TorCategory {
     return 'web_application'
   }
 
+  if (matchesAny(normalized, CLOUD_INFRASTRUCTURE_KEYWORDS)) {
+    return 'cloud_infrastructure'
+  }
+
   if (matchesAny(normalized, CONSULTING_ARCHITECTURE_KEYWORDS)) {
     return 'consulting_architecture'
   }
@@ -66,12 +147,13 @@ export function deriveCategory(technologies: string[]): TorCategory {
   return 'enterprise_system'
 }
 
-export const CATEGORY_LABELS: Record<TorCategory, string> = {
-  web_application: 'งานพัฒนาเว็บไซต์',
-  data_bi: 'งานข้อมูลและวิเคราะห์',
-  mobile_app: 'งานแอปพลิเคชันมือถือ',
-  enterprise_system: 'งานระบบองค์กร',
-  consulting_architecture: 'Consulting / Architecture',
+// A stored category (set at ingestion, by an admin override, or by the category migration
+// script) wins; records stored before categories were persisted fall back to the rules above.
+export function resolveTorCategory(tor: {
+  category?: string | null
+  technologies?: string[]
+}): string {
+  return tor.category ?? deriveCategory(tor.technologies ?? [])
 }
 
 // ---------------------------------------------------------------------------
@@ -111,10 +193,13 @@ interface TorLeanFields {
   budgetBaht?: number | null
   submissionDeadline?: string | null
   technologies?: string[]
+  category?: string | null
   createdAt: Date
 }
 
-export function toTorListItem(tor: TorLeanFields) {
+// categoryNames maps category keys to their current names (getCategoryNameMap).
+export function toTorListItem(tor: TorLeanFields, categoryNames: Map<string, string>) {
+  const category = resolveTorCategory(tor)
   return {
     id: String(tor._id),
     externalId: tor.externalId,
@@ -125,7 +210,8 @@ export function toTorListItem(tor: TorLeanFields) {
     submissionDeadline: tor.submissionDeadline ?? null,
     technologies: tor.technologies ?? [],
     createdAt: tor.createdAt,
-    category: deriveCategory(tor.technologies ?? []),
+    category,
+    categoryName: categoryNames.get(category) ?? null,
   }
 }
 
@@ -136,10 +222,11 @@ export function toTorListItem(tor: TorLeanFields) {
 export async function getFilterOptionsHandler(_req: Request, res: Response): Promise<void> {
   const [yearRows, technologies] = await Promise.all([
     TorModel.aggregate<{ _id: number }>([
+      { $match: PUBLIC_TOR_FILTER },
       { $group: { _id: { $year: '$updatedAt' } } },
       { $sort: { _id: -1 } },
     ]),
-    TorModel.distinct('technologies'),
+    TorModel.distinct('technologies', PUBLIC_TOR_FILTER),
   ])
 
   res.json({
@@ -178,7 +265,7 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
   const page = Math.max(1, parseNumberParam(req.query.page) ?? 1)
   const limit = Math.min(MAX_LIMIT, Math.max(1, parseNumberParam(req.query.limit) ?? DEFAULT_LIMIT))
 
-  const query: Record<string, unknown> = {}
+  const query: Record<string, unknown> = { ...PUBLIC_TOR_FILTER }
   if (q) query.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
   if (technology && technology !== 'all') {
     const techList = technology
@@ -197,7 +284,11 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
     query.$expr = { $eq: [{ $year: '$updatedAt' }, year] }
   }
 
-  const items = (await TorModel.find(query).sort({ createdAt: -1 }).lean()).map(toTorListItem)
+  const [docs, categoryNames] = await Promise.all([
+    TorModel.find(query).sort({ createdAt: -1 }).lean(),
+    getCategoryNameMap(),
+  ])
+  const items = docs.map((tor) => toTorListItem(tor, categoryNames))
 
   const total = items.length
   const totalPages = total === 0 ? 0 : Math.ceil(total / limit)
@@ -219,7 +310,7 @@ export async function getTorByIdHandler(req: Request, res: Response): Promise<vo
   }
 
   const tor = await TorModel.findById(id).lean()
-  if (!tor) {
+  if (!tor || (tor.reviewStatus && HIDDEN_TOR_REVIEW_STATUSES.includes(tor.reviewStatus))) {
     res.status(404).json({ message: 'TOR not found' })
     return
   }
@@ -245,6 +336,10 @@ export async function getTorByIdHandler(req: Request, res: Response): Promise<vo
     awardedPriceBaht: tor.awardedPriceBaht ?? null,
     submissionDeadline: tor.submissionDeadline ?? null,
     contactInformation: tor.contactInformation,
+    scope: tor.scope ?? null,
+    deliverables: tor.deliverables ?? [],
+    timeline: tor.timeline ?? [],
+    evaluationCriteria: tor.evaluationCriteria ?? [],
     classificationReason: tor.classificationReason,
     confidence: tor.confidence,
     analyzedAt: tor.analyzedAt,
@@ -268,11 +363,14 @@ export async function getRecommendationsHandler(req: Request, res: Response): Pr
   }
 
   const profile: UserInterestProfile = { userId: req.user._id.toString() }
-  const candidates = await TorModel.find().sort({ createdAt: -1 }).limit(CANDIDATE_POOL_SIZE).lean()
+  const [candidates, categoryNames] = await Promise.all([
+    TorModel.find(PUBLIC_TOR_FILTER).sort({ createdAt: -1 }).limit(CANDIDATE_POOL_SIZE).lean(),
+    getCategoryNameMap(),
+  ])
 
   const items = candidates
     .map((tor) => ({
-      ...toTorListItem(tor),
+      ...toTorListItem(tor, categoryNames),
       score: calculateInterestScore(tor, profile),
     }))
     .sort((a, b) => b.score - a.score)

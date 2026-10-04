@@ -4,6 +4,7 @@ import test from 'node:test'
 import { Types } from 'mongoose'
 
 import { User } from '../auth/user.model.js'
+import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 import { UserBookmarkModel } from './user-bookmark.model.js'
 import {
   addBookmark,
@@ -86,17 +87,24 @@ test('removeBookmark deletes the matching (userId, torId) document', async (cont
   assert.deepEqual(capturedFilter, { userId, torId })
 })
 
-test('countBookmarksByUser counts documents scoped to the user', async (context) => {
+test('countBookmarksByUser counts only the user bookmarks whose TOR is still public', async (context) => {
   const userId = new Types.ObjectId()
-  let capturedFilter: unknown
+  const torIds = [new Types.ObjectId(), new Types.ObjectId()]
+  let capturedBookmarkFilter: unknown
+  let capturedTorFilter: unknown
 
-  context.mock.method(UserBookmarkModel, 'countDocuments', async (filter: unknown) => {
-    capturedFilter = filter
-    return 3
+  context.mock.method(UserBookmarkModel, 'distinct', async (_field: string, filter: unknown) => {
+    capturedBookmarkFilter = filter
+    return torIds
+  })
+  context.mock.method(TorModel, 'countDocuments', async (filter: unknown) => {
+    capturedTorFilter = filter
+    return 1
   })
 
   const count = await countBookmarksByUser(userId)
 
-  assert.equal(count, 3)
-  assert.deepEqual(capturedFilter, { userId })
+  assert.equal(count, 1)
+  assert.deepEqual(capturedBookmarkFilter, { userId })
+  assert.deepEqual(capturedTorFilter, { _id: { $in: torIds }, ...PUBLIC_TOR_FILTER })
 })

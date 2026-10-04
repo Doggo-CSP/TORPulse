@@ -23,6 +23,7 @@ export interface UpsertTorInput {
   requirements: string[]
   bidderQualifications: string[]
   technologies: string[]
+  category: string
   budgetBaht: number | null
   midPriceBaht?: number | null
   awardedPriceBaht?: number | null

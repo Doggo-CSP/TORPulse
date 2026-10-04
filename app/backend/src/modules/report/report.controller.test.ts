@@ -13,11 +13,14 @@ import {
   SEED_PREFIX,
   seedProcurementReports,
 } from '../../scripts/seed-procurement-reports.js'
+import { seedCategories } from '../../scripts/seed-categories.js'
+import { CATEGORY_SEED } from '../category/category.constants.js'
 import { TorModel } from '../tor/tor.model.js'
 import router from './report.routes.js'
 
 test('procurement report endpoints, against a deterministic seeded dataset', async (t) => {
   await database.connect()
+  await seedCategories()
   await seedProcurementReports()
 
   t.after(async () => {
@@ -156,15 +159,19 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
   )
 
   await t.test(
-    'GET /reports/category-comparison for Seed Agency Alpha returns all 5 categories, 2 empty',
+    'GET /reports/category-comparison for Seed Agency Alpha returns every active category, empty ones included',
     async () => {
       const response = await request(app)
         .get('/reports/category-comparison')
         .query({ agencyName: SEED_AGENCY_ALPHA })
 
       assert.equal(response.status, 200)
-      const categories: Record<string, unknown>[] = response.body.data.categories
-      assert.equal(categories.length, 5)
+      // Categories an admin added may also be listed; the seeded 8 must all be there, in order.
+      const seedKeys = new Set<unknown>(CATEGORY_SEED.map((category) => category.key))
+      const categories = (response.body.data.categories as Record<string, unknown>[]).filter((c) =>
+        seedKeys.has(c.category),
+      )
+      assert.equal(categories.length, 8)
       const byCategory = Object.fromEntries(categories.map((c) => [c.category, c]))
 
       assert.deepEqual(byCategory.mobile_app, {
@@ -201,12 +208,28 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
       })
       assert.deepEqual(byCategory.consulting_architecture, {
         category: 'consulting_architecture',
-        category_label: 'Consulting / Architecture',
+        category_label: 'งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ',
         total_mid_price: 0,
         total_awarded_price: 0,
         avg_savings_pct: null,
         project_count: 0,
       })
+      for (const key of ['cybersecurity', 'ai_ml', 'cloud_infrastructure']) {
+        assert.equal(byCategory[key]!.project_count, 0)
+      }
+      assert.deepEqual(
+        categories.map((c) => c.category),
+        [
+          'web_application',
+          'data_bi',
+          'mobile_app',
+          'enterprise_system',
+          'consulting_architecture',
+          'cybersecurity',
+          'ai_ml',
+          'cloud_infrastructure',
+        ],
+      )
     },
   )
 
@@ -233,7 +256,7 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
       })
       assert.deepEqual(byCategory.consulting_architecture, {
         category: 'consulting_architecture',
-        category_label: 'Consulting / Architecture',
+        category_label: 'งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ',
         total_mid_price: 20.0,
         total_awarded_price: 16.6,
         avg_savings_pct: 17.0,
@@ -319,6 +342,17 @@ test('procurement report endpoints, against a deterministic seeded dataset', asy
 
     assert.equal(response.status, 400)
   })
+
+  await t.test(
+    'GET /reports/procurement-list rejects a category name that does not exist',
+    async () => {
+      const response = await request(app)
+        .get('/reports/procurement-list')
+        .query({ category: 'ไม่มีหมวดนี้' })
+
+      assert.equal(response.status, 400)
+    },
+  )
 
   await t.test(
     'GET /reports/filters/departments includes both seeded agencies, sorted',

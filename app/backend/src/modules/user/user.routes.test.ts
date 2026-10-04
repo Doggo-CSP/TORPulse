@@ -6,7 +6,9 @@ import request from 'supertest'
 import { Types } from 'mongoose'
 
 import { database } from '../../config/mongoose.js'
+import { seedCategories } from '../../scripts/seed-categories.js'
 import { User } from '../auth/user.model.js'
+import { CategoryModel } from '../category/category.model.js'
 import { TorModel } from '../tor/tor.model.js'
 import { UserBookmarkModel } from './user-bookmark.model.js'
 import router from './user.routes.js'
@@ -15,6 +17,13 @@ const SEED_PREFIX = 'seed-user-routes-test-'
 
 test('user routes: profile, interests, and bookmark flow', async (t) => {
   await database.connect()
+  await seedCategories()
+  await CategoryModel.deleteMany({ key: 'seed_user_routes_test_hidden' })
+  const hiddenCategory = await CategoryModel.create({
+    key: 'seed_user_routes_test_hidden',
+    name: `${SEED_PREFIX}hidden category`,
+    isActive: false,
+  })
 
   const testUser = await User.create({
     googleId: `${SEED_PREFIX}google-id`,
@@ -42,6 +51,7 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
     await UserBookmarkModel.deleteMany({ userId: testUser._id })
     await User.deleteOne({ _id: testUser._id })
     await TorModel.deleteOne({ _id: testTor._id })
+    await CategoryModel.deleteOne({ _id: hiddenCategory._id })
     await database.disconnect()
   })
 
@@ -84,11 +94,50 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
     assert.equal(response.status, 400)
   })
 
-  await t.test('PUT /user/interests saves a valid interests array', async () => {
-    const response = await request(app).put('/user/interests').send({ interests: ['web', 'data'] })
+  await t.test('PUT /user/interests rejects values that are neither keys nor legacy ids', async () => {
+    const response = await request(app)
+      .put('/user/interests')
+      .send({ interests: ['web_application', 'blockchain'] })
+
+    assert.equal(response.status, 400)
+  })
+
+  // TODO(LEGACY-INTEREST-IDS): remove with the legacy id support
+  await t.test('PUT /user/interests converts the profile page legacy ids to keys', async () => {
+    const response = await request(app)
+      .put('/user/interests')
+      .send({ interests: ['web', 'ai', 'web_application'] })
 
     assert.equal(response.status, 200)
-    assert.deepEqual(response.body.interests, ['web', 'data'])
+    assert.deepEqual(response.body.interests, ['web_application', 'ai_ml'])
+  })
+
+  await t.test('PUT /user/interests saves a valid interests array', async () => {
+    const response = await request(app)
+      .put('/user/interests')
+      .send({ interests: ['web_application', 'ai_ml'] })
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(response.body.interests, ['web_application', 'ai_ml'])
+  })
+
+  await t.test('PUT /user/interests rejects a hidden category as a new pick', async () => {
+    const response = await request(app)
+      .put('/user/interests')
+      .send({ interests: ['web_application', hiddenCategory.key] })
+
+    assert.equal(response.status, 400)
+  })
+
+  await t.test('PUT /user/interests keeps a hidden category the user already had', async () => {
+    await User.updateOne({ _id: testUser._id }, { $set: { interests: [hiddenCategory.key] } })
+
+    const response = await request(app)
+      .put('/user/interests')
+      .send({ interests: [hiddenCategory.key, 'ai_ml'] })
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(response.body.interests, [hiddenCategory.key, 'ai_ml'])
   })
 
   await t.test('POST /user/bookmarks/:torId toggles a bookmark on, then off', async () => {

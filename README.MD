@@ -105,7 +105,7 @@ MONGODB_DATABASE=torpulse
 SESSION_SECRET=your-32-character-minimum-secret-key-here
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_CALLBACK_URL=http://localhost:8000/api/auth/google/callback
+GOOGLE_CALLBACK_URL=http://localhost:8000/auth/google/callback
 FRONTEND_URL=http://localhost:3000
 
 # GovSpending API Config (Optional)
