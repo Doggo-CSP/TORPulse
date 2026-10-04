@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { database } from '../config/mongoose.js'
 import { DataSourceModel } from '../modules/ingestion/data-source.model.js'
 import { IngestionJobModel } from '../modules/ingestion/ingestion-job.model.js'
+import { deriveCategory } from '../modules/tor/tor.controller.js'
 import { TorModel } from '../modules/tor/tor.model.js'
 import { upsertTor } from '../modules/tor/tor.repository.js'
 import type { UpsertTorInput } from '../modules/tor/tor.types.js'
@@ -188,6 +189,7 @@ function baseInput(
     requirements: [],
     bidderQualifications: [],
     technologies,
+    category: deriveCategory(technologies),
     budgetBaht: null,
     submissionDeadline: null,
     contactInformation: [],

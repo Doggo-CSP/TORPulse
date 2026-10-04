@@ -4,6 +4,7 @@ import { database } from '../config/mongoose.js'
 import { getBangkokWeekRange } from '../modules/homepage/homepage.controller.js'
 import { DataSourceModel } from '../modules/ingestion/data-source.model.js'
 import { IngestionJobModel } from '../modules/ingestion/ingestion-job.model.js'
+import { deriveCategory } from '../modules/tor/tor.controller.js'
 import { TorModel } from '../modules/tor/tor.model.js'
 import { upsertTor } from '../modules/tor/tor.repository.js'
 import type { UpsertTorInput } from '../modules/tor/tor.types.js'
@@ -201,6 +202,7 @@ export async function seedHomepageTors(): Promise<void> {
       requirements: [],
       bidderQualifications: [],
       technologies: fixture.technologies,
+      category: deriveCategory(fixture.technologies),
       budgetBaht: fixture.budgetBaht,
       midPriceBaht: fixture.midPriceBaht,
       awardedPriceBaht: fixture.awardedPriceBaht,

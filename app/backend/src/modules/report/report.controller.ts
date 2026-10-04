@@ -1,8 +1,8 @@
 import type { Request, Response } from 'express'
 
-import { getCategoryCatalog, type CategoryItem } from '../category/category.repository.js'
-import { resolveTorCategory, type TorCategory } from '../tor/tor.controller.js'
-import { TorModel } from '../tor/tor.model.js'
+import { getCategoryNameMap, listCategories } from '../category/category.repository.js'
+import { resolveTorCategory } from '../tor/tor.controller.js'
+import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 import {
   SAVINGS_BUCKETS,
   periodToCutoff,
@@ -49,7 +49,7 @@ function savingsPct(referencePriceBaht: number, winningPriceBaht: number): numbe
 }
 
 function baseMatch(cutoff: Date | null, agencyName?: string): Record<string, unknown> {
-  const match: Record<string, unknown> = { awardedPriceBaht: { $ne: null } }
+  const match: Record<string, unknown> = { ...PUBLIC_TOR_FILTER, awardedPriceBaht: { $ne: null } }
   if (cutoff) match.analyzedAt = { $gte: cutoff }
   if (agencyName) Object.assign(match, agencyNameMatchForDepartment(agencyName))
   return match
@@ -62,33 +62,24 @@ async function validateAgencyName(agencyName: string | undefined, res: Response)
   return false
 }
 
-type CategorizedLean = { technologies?: string[] | null; category?: string | null }
-
-/**
- * Resolve the `category` query param (key or name, case-insensitive) to a
- * category key. Sends 400 and returns false when it is unknown.
- */
-async function resolveCategoryParam(
+// The category filter is a key or a display name (case-insensitive); returns its key, or null
+// after answering 400 when no category matches. Hidden categories still match so old reports keep
+// working.
+async function resolveCategoryFilter(
   category: string | undefined,
   res: Response,
-): Promise<{ key: string | undefined; catalog: CategoryItem[] } | false> {
-  const catalog = await getCategoryCatalog()
-  if (!category) return { key: undefined, catalog }
-
+): Promise<string | undefined | null> {
+  if (!category) return undefined
   const wanted = category.toLowerCase()
-  const match = catalog.find(({ key, name }) => key === wanted || name.toLowerCase() === wanted)
-  if (!match) {
-    res.status(400).json({ message: 'Invalid category' })
-    return false
+  const names = await getCategoryNameMap()
+  for (const [key, name] of names) {
+    if (key === wanted || name.toLowerCase() === wanted) return key
   }
-  return { key: match.key, catalog }
+  res.status(400).json({ message: 'Invalid query parameters' })
+  return null
 }
 
-function categoryLabels(catalog: CategoryItem[]): Map<string, string> {
-  return new Map(catalog.map(({ key, name }) => [key, name]))
-}
-
-function filterByCategory<T extends CategorizedLean>(
+function filterByCategory<T extends { technologies: string[]; category: string | null }>(
   projects: T[],
   category: string | undefined,
 ): T[] {
@@ -96,8 +87,10 @@ function filterByCategory<T extends CategorizedLean>(
   return projects.filter((p) => resolveTorCategory(p) === category)
 }
 
-function groupByCategory<T extends CategorizedLean>(projects: T[]): Map<TorCategory, T[]> {
-  const byCategory = new Map<TorCategory, T[]>()
+function groupByCategory<T extends { technologies: string[]; category: string | null }>(
+  projects: T[],
+): Map<string, T[]> {
+  const byCategory = new Map<string, T[]>()
   for (const project of projects) {
     const category = resolveTorCategory(project)
     const bucket = byCategory.get(category)
@@ -120,11 +113,10 @@ export async function priceOverviewHandler(req: Request, res: Response): Promise
     res.status(400).json({ message: 'Invalid query parameters' })
     return
   }
-  const { period, category: categoryParam, agencyName } = parsed.data
+  const { period, category, agencyName } = parsed.data
   if (!(await validateAgencyName(agencyName, res))) return
-  const resolved = await resolveCategoryParam(categoryParam, res)
-  if (!resolved) return
-  const category = resolved.key
+  const categoryKey = await resolveCategoryFilter(category, res)
+  if (categoryKey === null) return
 
   const cutoff = periodToCutoff(period as ReportPeriod)
   const match = baseMatch(cutoff, agencyName)
@@ -143,7 +135,7 @@ export async function priceOverviewHandler(req: Request, res: Response): Promise
       technologies: p.technologies ?? [],
       category: p.category ?? null,
     })),
-    category,
+    categoryKey,
   )
 
   const projectCount = projects.length
@@ -189,11 +181,10 @@ export async function savingsDistributionHandler(req: Request, res: Response): P
     res.status(400).json({ message: 'Invalid query parameters' })
     return
   }
-  const { period, category: categoryParam, agencyName } = parsed.data
+  const { period, category, agencyName } = parsed.data
   if (!(await validateAgencyName(agencyName, res))) return
-  const resolved = await resolveCategoryParam(categoryParam, res)
-  if (!resolved) return
-  const category = resolved.key
+  const categoryKey = await resolveCategoryFilter(category, res)
+  if (categoryKey === null) return
 
   const cutoff = periodToCutoff(period as ReportPeriod)
   const match = baseMatch(cutoff, agencyName)
@@ -212,7 +203,7 @@ export async function savingsDistributionHandler(req: Request, res: Response): P
       technologies: p.technologies ?? [],
       category: p.category ?? null,
     })),
-    category,
+    categoryKey,
   )
 
   const totalProjects = projects.length
@@ -257,12 +248,15 @@ export async function categoryComparisonHandler(req: Request, res: Response): Pr
   const cutoff = periodToCutoff(period as ReportPeriod)
   const match = baseMatch(cutoff, agencyName)
 
-  const rawProjects = await TorModel.find(match, {
-    midPriceBaht: 1,
-    awardedPriceBaht: 1,
-    technologies: 1,
-    category: 1,
-  }).lean()
+  const [rawProjects, allCategories] = await Promise.all([
+    TorModel.find(match, {
+      midPriceBaht: 1,
+      awardedPriceBaht: 1,
+      technologies: 1,
+      category: 1,
+    }).lean(),
+    listCategories(),
+  ])
 
   const projects: PricedProjectLean[] = rawProjects.map((p) => ({
     referencePriceBaht: p.midPriceBaht!,
@@ -272,14 +266,23 @@ export async function categoryComparisonHandler(req: Request, res: Response): Pr
   }))
 
   const byCategory = groupByCategory(projects)
-  const catalog = await getCategoryCatalog()
+  const names = new Map(allCategories.map((category) => [category.key, category.name]))
 
-  const categories = catalog.map(({ key: cat, name }) => {
+  // Every active category in display order (empty ones too), plus hidden or unknown categories
+  // that still have projects.
+  const orderedKeys = allCategories
+    .filter((category) => category.isActive || byCategory.has(category.key))
+    .map((category) => category.key)
+  for (const key of byCategory.keys()) {
+    if (!names.has(key)) orderedKeys.push(key)
+  }
+
+  const categories = orderedKeys.map((cat) => {
     const group = byCategory.get(cat) ?? []
     if (group.length === 0) {
       return {
         category: cat,
-        category_label: name,
+        category_label: names.get(cat) ?? cat,
         total_mid_price: 0,
         total_awarded_price: 0,
         avg_savings_pct: null,
@@ -295,7 +298,7 @@ export async function categoryComparisonHandler(req: Request, res: Response): Pr
 
     return {
       category: cat,
-      category_label: name,
+      category_label: names.get(cat) ?? cat,
       total_mid_price: toMillionRound2(totalMid),
       total_awarded_price: toMillionRound2(totalAwarded),
       avg_savings_pct: round1(avgSavingsPct),
@@ -313,7 +316,7 @@ export async function categoryComparisonHandler(req: Request, res: Response): Pr
 interface ProcurementListRow {
   id: string
   external_id: string
-  category: TorCategory
+  category: string
   category_label: string
   project_title: string
   agency_name: string | null
@@ -361,9 +364,8 @@ export async function procurementListHandler(req: Request, res: Response): Promi
     sort_order: sortOrder,
   } = parsed.data
   if (!(await validateAgencyName(agencyName, res))) return
-  const resolved = await resolveCategoryParam(category, res)
-  if (!resolved) return
-  const labels = categoryLabels(resolved.catalog)
+  const categoryKey = await resolveCategoryFilter(category, res)
+  if (categoryKey === null) return
 
   const cutoff = periodToCutoff(period as ReportPeriod)
   const match = baseMatch(cutoff, agencyName)
@@ -374,18 +376,23 @@ export async function procurementListHandler(req: Request, res: Response): Promi
     match.midPriceBaht = { ...(match.midPriceBaht as object | undefined), ...range }
   }
 
-  const rawProjects = await TorModel.find(match, {
-    externalId: 1,
-    projectTitle: 1,
-    agencyName: 1,
-    midPriceBaht: 1,
-    awardedPriceBaht: 1,
-    technologies: 1,
-    category: 1,
-    detailUrl: 1,
-  }).lean()
+  const [rawProjects, names] = await Promise.all([
+    TorModel.find(match, {
+      externalId: 1,
+      projectTitle: 1,
+      agencyName: 1,
+      midPriceBaht: 1,
+      awardedPriceBaht: 1,
+      technologies: 1,
+      category: 1,
+      detailUrl: 1,
+    }).lean(),
+    getCategoryNameMap(),
+  ])
 
-  const filtered = filterByCategory(rawProjects, resolved.key)
+  const filtered = categoryKey
+    ? rawProjects.filter((p) => resolveTorCategory(p) === categoryKey)
+    : rawProjects
 
   const rows: ProcurementListRow[] = filtered.map((p) => {
     const midPriceBaht = round2(p.midPriceBaht!)
@@ -395,7 +402,7 @@ export async function procurementListHandler(req: Request, res: Response): Promi
       id: String(p._id),
       external_id: p.externalId,
       category: cat,
-      category_label: labels.get(cat) ?? cat,
+      category_label: names.get(cat) ?? cat,
       project_title: p.projectTitle,
       agency_name: p.agencyName ?? null,
       mid_price_baht: midPriceBaht,

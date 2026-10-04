@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { PROCUREMENT_LIST_SORT_FIELDS, REPORT_PERIODS } from './report.constants.js'
 
-// Category key or name; checked against the tor_categories collection in the handler.
+// Category key or name; checked against the categories collection in the handler.
 const categoryParam = z.string().trim().min(1).optional()
 
 export const priceOverviewQuerySchema = z.object({

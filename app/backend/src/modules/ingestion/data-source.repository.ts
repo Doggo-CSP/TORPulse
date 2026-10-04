@@ -2,9 +2,9 @@ import { Types } from 'mongoose'
 
 import { DataSourceModel } from './data-source.model.js'
 
-const GOVSPENDING_SOURCE_KEY = 'govspending-egp'
-const BMA_SOURCE_KEY = 'bma-egp'
-const PRODUCER_LEASE_MS = 15 * 60_000
+export const GOVSPENDING_SOURCE_KEY = 'govspending-egp'
+export const BMA_SOURCE_KEY = 'bma-egp'
+export const PRODUCER_LEASE_MS = 15 * 60_000
 
 export function ensureGovSpendingDataSource() {
   return ensureDataSource(GOVSPENDING_SOURCE_KEY, 'GovSpending e-GP discovery')

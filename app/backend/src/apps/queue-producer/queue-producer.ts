@@ -1,13 +1,22 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 
+import type { Types } from 'mongoose'
+
 import { env } from '../../config/env.js'
+import { createAuditLog } from '../../modules/admin/audit-log.repository.js'
+import { getSettings } from '../../modules/admin/settings.repository.js'
 import { BmaDiscoveryAdapter } from '../../modules/ingestion/adapters/bma-discovery.adapter.js'
 import {
   getThaiFiscalYear,
   GovSpendingDiscoveryAdapter,
   GovSpendingRequestError,
 } from '../../modules/ingestion/adapters/govspending-discovery.adapter.js'
+import {
+  expireStaleCollectionRuns,
+  finishCollectionRun,
+  startCollectionRun,
+} from '../../modules/ingestion/collection-run.repository.js'
 import { DataSourceModel } from '../../modules/ingestion/data-source.model.js'
 import {
   claimProducerLease,
@@ -34,7 +43,7 @@ interface SyncTotals {
   failedKeywords: string[]
 }
 
-interface DiscoverySource {
+export interface DiscoverySource {
   label: string
   ensureDataSource: () => ReturnType<typeof ensureGovSpendingDataSource>
   sync: (dataSourceId: DataSourceId, producerId: string, signal: AbortSignal) => Promise<SyncTotals>
@@ -80,24 +89,29 @@ export async function startQueueProducer(signal: AbortSignal): Promise<void> {
   console.log('Queue producer stopped')
 }
 
+function govSpendingSource(adapter: GovSpendingDiscoveryAdapter): DiscoverySource {
+  return {
+    label: 'GovSpending',
+    ensureDataSource: ensureGovSpendingDataSource,
+    sync: (dataSourceId, producerId, signal) =>
+      syncGovSpendingProjects(
+        dataSourceId,
+        producerId,
+        adapter,
+        govSpendingFiscalYears(),
+        env.GOVSPENDING_KEYWORDS,
+        signal,
+      ),
+  }
+}
+
 function configuredSources(): DiscoverySource[] {
   const sources: DiscoverySource[] = []
 
   if (env.GOVSPENDING_API_KEY) {
-    const adapter = new GovSpendingDiscoveryAdapter({ apiKey: env.GOVSPENDING_API_KEY })
-    sources.push({
-      label: 'GovSpending',
-      ensureDataSource: ensureGovSpendingDataSource,
-      sync: (dataSourceId, producerId, signal) =>
-        syncGovSpendingProjects(
-          dataSourceId,
-          producerId,
-          adapter,
-          govSpendingFiscalYears(),
-          env.GOVSPENDING_KEYWORDS,
-          signal,
-        ),
-    })
+    sources.push(
+      govSpendingSource(new GovSpendingDiscoveryAdapter({ apiKey: env.GOVSPENDING_API_KEY })),
+    )
   }
 
   if (env.BMA_SYNC_ENABLED) {
@@ -120,26 +134,77 @@ function configuredSources(): DiscoverySource[] {
   return sources
 }
 
-async function runScheduledSync(
+export async function runScheduledSync(
   source: DiscoverySource,
   producerId: string,
   signal: AbortSignal,
 ): Promise<void> {
+  // Only scheduled runs honour the admin switch; a manual "sync now" always runs.
+  const { ingestionEnabled } = await getSettings()
+  if (!ingestionEnabled) {
+    console.log(`${source.label} sync skipped because automatic ingestion is turned off`)
+    return
+  }
+
+  const claim = await beginSync(source, producerId, { trigger: 'scheduled' })
+  if (!claim) {
+    console.log(`${source.label} sync skipped because another producer owns the lease`)
+    return
+  }
+
+  await completeSync(claim, source, producerId, signal, { trigger: 'scheduled' })
+}
+
+export interface SyncTrigger {
+  trigger: 'scheduled' | 'manual'
+  triggeredBy?: Types.ObjectId | null
+  triggeredByName?: string | null
+}
+
+export interface SyncClaim {
+  dataSourceId: Types.ObjectId
+  runId: Types.ObjectId
+}
+
+// Claims the source's shared lease and records a running CollectionRun. Returns null when
+// another run (scheduled or manual, in any process) already holds the lease.
+async function beginSync(
+  source: Pick<DiscoverySource, 'label' | 'ensureDataSource'>,
+  producerId: string,
+  trigger: SyncTrigger,
+): Promise<SyncClaim | null> {
   const dataSource = await source.ensureDataSource()
   if (!dataSource) {
     throw new Error(`Could not initialize the ${source.label} data source`)
   }
 
   if (!(await claimProducerLease(dataSource._id, producerId))) {
-    console.log(`${source.label} sync skipped because another producer owns the lease`)
-    return
+    return null
   }
 
+  // We hold the lease now, so any run still marked running belongs to a process that died
+  await expireStaleCollectionRuns()
+
+  const run = await startCollectionRun({
+    trigger: trigger.trigger,
+    triggeredBy: trigger.triggeredBy ?? null,
+  })
+  return { dataSourceId: dataSource._id, runId: run._id }
+}
+
+async function completeSync(
+  claim: SyncClaim,
+  source: DiscoverySource,
+  producerId: string,
+  signal: AbortSignal,
+  trigger: SyncTrigger,
+): Promise<void> {
   const startedAt = Date.now()
   let syncError: unknown
+  let totals = emptyTotals()
 
   try {
-    const totals = await source.sync(dataSource._id, producerId, signal)
+    totals = await source.sync(claim.dataSourceId, producerId, signal)
 
     if (totals.failedKeywords.length > 0) {
       throw new Error(`${source.label} keywords failed: ${totals.failedKeywords.join(', ')}`)
@@ -153,7 +218,71 @@ async function runScheduledSync(
     syncError = error
     throw error
   } finally {
-    await releaseProducerLease(dataSource._id, producerId, syncError)
+    await releaseProducerLease(claim.dataSourceId, producerId, syncError)
+    await recordRunResult(claim, source, trigger, totals, syncError)
+  }
+}
+
+// Manual "sync now" from the admin panel (GovSpending only). Shares the scheduled lease.
+export function beginGovSpendingSync(
+  producerId: string,
+  trigger: SyncTrigger,
+): Promise<SyncClaim | null> {
+  return beginSync(
+    { label: 'GovSpending', ensureDataSource: ensureGovSpendingDataSource },
+    producerId,
+    trigger,
+  )
+}
+
+export function completeGovSpendingSync(
+  claim: SyncClaim,
+  producerId: string,
+  adapter: GovSpendingDiscoveryAdapter,
+  signal: AbortSignal,
+  trigger: SyncTrigger,
+): Promise<void> {
+  return completeSync(claim, govSpendingSource(adapter), producerId, signal, trigger)
+}
+
+// Closes the CollectionRun and writes ingestion.completed / ingestion.failed so the run shows
+// up in the admin activity feed. Failures here are logged, never thrown over the sync result.
+async function recordRunResult(
+  claim: SyncClaim,
+  source: DiscoverySource,
+  trigger: SyncTrigger,
+  totals: SyncTotals,
+  syncError: unknown,
+): Promise<void> {
+  const errorMessage = syncError
+    ? syncError instanceof Error
+      ? syncError.message
+      : 'Unknown producer error'
+    : null
+  const counts = {
+    fetchedCount: totals.discovered,
+    createdCount: totals.queued,
+    existingCount: totals.existing,
+  }
+
+  try {
+    await finishCollectionRun(claim.runId, {
+      status: syncError ? 'failed' : 'success',
+      ...counts,
+      errorMessage,
+    })
+    await createAuditLog({
+      actorType: trigger.trigger === 'manual' ? 'user' : 'system',
+      actorId: trigger.triggeredBy ?? null,
+      actorName: trigger.triggeredByName ?? null,
+      action: syncError ? 'ingestion.failed' : 'ingestion.completed',
+      targetType: 'ingestion',
+      targetId: claim.runId,
+      targetLabel: 'e-GP',
+      metadata: { trigger: trigger.trigger, source: source.label, ...counts, errorMessage },
+    })
+  } catch (error) {
+    console.error(`Could not record the ${source.label} sync result`, error)
   }
 }
 
