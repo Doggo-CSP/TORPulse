@@ -3,7 +3,10 @@ import {
   OcrRequiredError,
 } from './extraction/opendataloader-text-extractor.js'
 import { extractBiddingMethod } from './bidding-method.js'
+import { DRAFT_ANNOUNCEMENT_STATUS, INVITATION_STATUS } from '../tor/tor.model.js'
 import { parseThaiDate } from './thai-date.js'
+
+export { DRAFT_ANNOUNCEMENT_STATUS, INVITATION_STATUS }
 
 const EGP_ORIGIN = 'https://process5.gprocurement.go.th'
 
@@ -44,6 +47,10 @@ export interface SubmitDeadline {
 export interface AnnouncementInfo {
   deadline: SubmitDeadline | null
   biddingMethod: string | null
+  /** Announcement stage, from the draft/published marking of the PDF. */
+  projectStatus: string | null
+  midPriceBaht: number | null
+  announceDate: Date | null
 }
 
 export async function fetchAnnouncementTemplateId(
@@ -101,7 +108,13 @@ export async function extractAnnouncementInfoFromPdf(
     const text = await extractDocumentsToMarkdown([
       { fileName: 'announcement.pdf', mimeType: 'application/pdf', content: pdf, sourceUrl: '' },
     ])
-    return { deadline: extractSubmitDeadline(text), biddingMethod: extractBiddingMethod(text) }
+    return {
+      deadline: extractSubmitDeadline(text),
+      biddingMethod: extractBiddingMethod(text),
+      projectStatus: extractAnnouncementStatus(text),
+      midPriceBaht: extractMidPrice(text),
+      announceDate: extractAnnounceDate(text),
+    }
   } catch (error) {
     if (error instanceof OcrRequiredError) return null
     throw error
@@ -140,6 +153,47 @@ export function extractSubmitDeadline(text: string): SubmitDeadline | null {
     Number(toArabicDigits(endMinute)),
   )
   return { text: matchedText!, date }
+}
+
+const THAI_MONTH =
+  '(?:มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)'
+
+// A draft (ร่าง) announcement is headed "ร่าง" and leaves the signing day blank
+// ("ประกาศ ณ วันที่ ตุลาคม พ.ศ. ๒๕๖๙"); the published one is a "(สำเนา)" with the day filled in.
+const DRAFT_HEADING = /^#*\s*ร่าง\s*$/mu
+const SIGNED_ON_DAY = new RegExp(`ประกาศ ณ วันที่\\s*${DIGIT}{1,2}\\s*${THAI_MONTH}`, 'u')
+const SIGNED_ON_BLANK_DAY = new RegExp(`ประกาศ ณ วันที่\\s*${THAI_MONTH}`, 'u')
+
+export function extractAnnouncementStatus(text: string): string | null {
+  if (DRAFT_HEADING.test(text)) return DRAFT_ANNOUNCEMENT_STATUS
+  const flat = text.replace(/\s+/gu, ' ')
+  if (SIGNED_ON_DAY.test(flat)) return INVITATION_STATUS
+  if (SIGNED_ON_BLANK_DAY.test(flat)) return DRAFT_ANNOUNCEMENT_STATUS
+  return null
+}
+
+// "ราคากลางของงานจ้าง ในการประกวดราคาครั้งนี้ เป็นเงินทั้งสิ้น ๑๕,๕๙๗,๐๗๒.๘๖ บาท"
+const MID_PRICE = new RegExp(
+  `ราคากลาง.{0,80}?เป็น\\s*เงินทั้งสิ้น\\s*(${DIGIT}[0-9๐-๙,]*(?:\\.${DIGIT}{1,2})?)\\s*บาท`,
+  'u',
+)
+
+export function extractMidPrice(text: string): number | null {
+  const match = text.replace(/\s+/gu, ' ').match(MID_PRICE)
+  if (!match?.[1]) return null
+  const value = Number(toArabicDigits(match[1]).replaceAll(',', ''))
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
+// "ประกาศขึ้นเว็บวันที่ ๒ ตุลาคม ๒๕๖๙", the day the announcement went online.
+const POSTED_ON = new RegExp(
+  `ประกาศขึ้นเว็บวันที่\\s*(${DIGIT}{1,2}\\s*${THAI_MONTH}\\s*(?:พ\\.ศ\\.\\s*)?${DIGIT}{4})`,
+  'u',
+)
+
+export function extractAnnounceDate(text: string): Date | null {
+  const match = text.replace(/\s+/gu, ' ').match(POSTED_ON)
+  return match?.[1] ? parseThaiDate(match[1]) : null
 }
 
 /** "2026-10-09T12:00+07:00" */

@@ -439,11 +439,11 @@ async function syncBmaProjects(
             throw error
           }
 
-          totals.failedKeywords.push(`${keyword} (${budgetYear}, ${announceType.status})`)
+          totals.failedKeywords.push(`${keyword} (${budgetYear}, ${announceType.label})`)
           console.error('BMA keyword sync failed', {
             keyword,
             budgetYear,
-            status: announceType.status,
+            announceType: announceType.label,
             error,
           })
         }

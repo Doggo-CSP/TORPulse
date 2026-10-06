@@ -1,7 +1,11 @@
 import { Types } from 'mongoose'
 
 import { env } from '../../config/env.js'
-import { torFieldsFromSourceMetadata, upsertTor } from '../tor/tor.repository.js'
+import {
+  torFieldsFromAnnouncement,
+  torFieldsFromSourceMetadata,
+  upsertTor,
+} from '../tor/tor.repository.js'
 import { getCategoryCatalog, normalizeCategories } from '../category/category.repository.js'
 import { cleanDateText, parseThaiDate } from './thai-date.js'
 import { extractBiddingMethod } from './bidding-method.js'
@@ -156,6 +160,8 @@ export async function processIngestionJob(
     // GovSpending owns department, status, year, announce date and prices,
     // and its project budget wins over the LLM-extracted one.
     ...torFieldsFromSourceMetadata(sourceMetadata),
+    // The eGP announcement PDF is the source of truth for the stage and its dates/prices.
+    ...torFieldsFromAnnouncement(announcement),
     // The announcement PDF names the method; the title usually repeats it.
     biddingMethod:
       announcement?.biddingMethod ??

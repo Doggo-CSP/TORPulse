@@ -30,6 +30,7 @@
     "seed:categories": "tsx src/scripts/seed-categories.ts",
     "backfill:deadlines": "tsx src/scripts/backfill-deadlines.ts",
     "backfill:bidding-method": "tsx src/scripts/backfill-bidding-method.ts",
+    "refresh:announcements": "tsx src/scripts/refresh-announcements.ts",
     "requeue:jobs": "tsx src/scripts/requeue-jobs.ts",
     "report:job-failures": "tsx src/scripts/report-job-failures.ts",
     "repair:missing-tors": "tsx src/scripts/repair-missing-tors.ts",

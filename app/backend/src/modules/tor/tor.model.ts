@@ -6,7 +6,34 @@ export type TorReviewStatus = (typeof TOR_REVIEW_STATUSES)[number]
 // Archived and soft-deleted TORs stay in the database but are hidden from public endpoints.
 // Records created before reviewStatus existed have no value and stay visible.
 export const HIDDEN_TOR_REVIEW_STATUSES: TorReviewStatus[] = ['archived', 'deleted']
-export const PUBLIC_TOR_FILTER = { reviewStatus: { $nin: HIDDEN_TOR_REVIEW_STATUSES } }
+
+// Announcement stages read from the eGP announcement PDF; same labels as the eGP search.
+export const DRAFT_ANNOUNCEMENT_STATUS = 'ร่างประกาศ'
+export const INVITATION_STATUS = 'ประกาศเชิญชวน'
+
+// A draft announcement (ร่างประกาศ) that is not published within this many days was most
+// likely cancelled; eGP's cancelled status is not readable without its announcement token.
+export const STALE_DRAFT_DAYS = 60
+
+/**
+ * Filter for public TOR queries: hides archived/deleted TORs and stale drafts. An admin
+ * can keep a stale draft visible by verifying it. Day-granular, like announceDate.
+ */
+export function publicTorFilter(now: Date = new Date()) {
+  const staleBefore = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - STALE_DRAFT_DAYS),
+  )
+  return {
+    reviewStatus: { $nin: HIDDEN_TOR_REVIEW_STATUSES },
+    $nor: [
+      {
+        projectStatus: DRAFT_ANNOUNCEMENT_STATUS,
+        announceDate: { $lt: staleBefore },
+        reviewStatus: { $ne: 'verified' as TorReviewStatus },
+      },
+    ],
+  }
+}
 
 const sourceDocumentSchema = new Schema(
   {

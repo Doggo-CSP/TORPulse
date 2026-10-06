@@ -13,7 +13,7 @@ function adapterReturning(body: unknown, onRequest?: (url: URL) => void) {
   })
 }
 
-const invitationType = BMA_ANNOUNCE_TYPES.find((t) => t.status === 'ประกาศเชิญชวน')!
+const invitationType = BMA_ANNOUNCE_TYPES.find((t) => t.label === 'ประกาศเชิญชวน')!
 
 const listInput = {
   budgetYear: 2570,
@@ -74,7 +74,7 @@ test('maps a BMA project to a Central eGP project id with metadata', async () =>
           title: 'ประกวดราคาจ้างบำรุงรักษาระบบเครือข่ายและโปรแกรมประยุกต์',
           departmentName: 'สำนักดิจิทัลกรุงเทพมหานคร',
           departmentSubName: 'สำนักงานพัฒนาระบบสารสนเทศดิจิทัล',
-          projectStatus: 'ประกาศเชิญชวน',
+          projectStatus: null,
           fiscalYear: 2570,
           announceDate: null,
           budgetBaht: 7087000,

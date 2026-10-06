@@ -7,20 +7,18 @@ import type { DiscoveredProcurementProject } from './govspending-discovery.adapt
 const BMA_PROJECT_SEARCH_URL = 'https://egp2.bangkok.go.th/appapi/api/Projects/GetProjectFromFilter'
 
 // BMA announce-type master ids from the project-search page filter
-// (GET /appapi/api/MasterAnnounceTypes). The project rows carry no stage field,
-// so the stage is only known from the query filter: each entry queries one stage
-// and tags every matched project with its status. Ordered by lifecycle stage;
-// a project that appears in several stages is queried last at its most advanced
-// stage, so that status wins (later syncs overwrite via updateTorSourceMetadata).
+// (GET /appapi/api/MasterAnnounceTypes). They only widen discovery to open projects:
+// BMA's filing does not match the eGP stage (an eGP draft is often filed under
+// ราคากลาง), so the stage is read from the eGP announcement PDF by the worker instead.
 export interface BmaAnnounceType {
   announceTypeId: string
-  status: string
+  label: string
 }
 
 export const BMA_ANNOUNCE_TYPES: BmaAnnounceType[] = [
-  { announceTypeId: '24995aa2-d875-4d3d-9dec-d5e22d222aa4', status: 'ร่างขอบเขตของงาน (TOR)' },
-  { announceTypeId: '9863983d-44e1-4eee-b38a-bb0b495762c5', status: 'ประกาศราคากลาง' },
-  { announceTypeId: '705f1ffb-82e2-4beb-bdd2-2746f0783bf0', status: 'ประกาศเชิญชวน' },
+  { announceTypeId: '24995aa2-d875-4d3d-9dec-d5e22d222aa4', label: 'ร่างขอบเขตของงาน (TOR)' },
+  { announceTypeId: '9863983d-44e1-4eee-b38a-bb0b495762c5', label: 'ประกาศราคากลาง' },
+  { announceTypeId: '705f1ffb-82e2-4beb-bdd2-2746f0783bf0', label: 'ประกาศเชิญชวน' },
 ]
 
 // BMA's projectNumber is the Central eGP project id, so the eGP adapter can ingest it.
@@ -66,7 +64,7 @@ export interface BmaPage {
 export interface ListBmaProjectsInput {
   budgetYear: number
   keyword: string
-  /** The announce-type stage to query; its status is stamped on each project. */
+  /** The BMA announce-type filter to query. */
   announceType: BmaAnnounceType
   pageNo: number
   pageSize: number
@@ -138,9 +136,7 @@ export class BmaDiscoveryAdapter {
     for (const row of parsed.data.data) {
       const project = projectSchema.safeParse(row)
       if (project.success) {
-        projects.push(
-          toDiscoveredProject(project.data, input.budgetYear, input.announceType.status),
-        )
+        projects.push(toDiscoveredProject(project.data, input.budgetYear))
       }
     }
 
@@ -156,7 +152,6 @@ export class BmaDiscoveryAdapter {
 function toDiscoveredProject(
   project: z.infer<typeof projectSchema>,
   budgetYear: number,
-  status: string,
 ): DiscoveredProcurementProject {
   return {
     externalId: project.projectNumber,
@@ -166,14 +161,13 @@ function toDiscoveredProject(
       title: project.projectName,
       departmentName: project.masterOrgGroupName,
       departmentSubName: project.masterOrgDepartmentName,
-      projectStatus: status,
+      // Stage, announce date, mid price and method come from the eGP announcement.
+      projectStatus: null,
       fiscalYear: budgetYear,
       announceDate: null,
       budgetBaht: project.projectBudget,
       midPriceBaht: null,
       awardedPriceBaht: null,
-      // No method filter now, so the method is unknown here; the ingestion
-      // worker reads it from the title/announcement instead.
       biddingMethod: null,
     },
   }

@@ -5,7 +5,7 @@ import { isObjectIdOrHexString } from 'mongoose'
 
 import { getCategoryNameMap, listCategories } from '../category/category.repository.js'
 import { cleanDateText, parseThaiDate, toIsoDateString } from '../ingestion/thai-date.js'
-import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from './tor.model.js'
+import { HIDDEN_TOR_REVIEW_STATUSES, publicTorFilter, TorModel } from './tor.model.js'
 
 // ---------------------------------------------------------------------------
 // Category resolution (pure, no DB) — shared with homepage and report
@@ -257,11 +257,11 @@ const distinctStrings = (values: unknown[]): string[] => [
 export async function getFilterOptionsHandler(_req: Request, res: Response): Promise<void> {
   const [years, departments, statuses, categoryKeys, primaryCategoryKeys, categories] =
     await Promise.all([
-      TorModel.distinct('fiscalYear', PUBLIC_TOR_FILTER),
-      TorModel.distinct('departmentName', PUBLIC_TOR_FILTER),
-      TorModel.distinct('projectStatus', PUBLIC_TOR_FILTER),
-      TorModel.distinct('categories', PUBLIC_TOR_FILTER),
-      TorModel.distinct('category', PUBLIC_TOR_FILTER),
+      TorModel.distinct('fiscalYear', publicTorFilter()),
+      TorModel.distinct('departmentName', publicTorFilter()),
+      TorModel.distinct('projectStatus', publicTorFilter()),
+      TorModel.distinct('categories', publicTorFilter()),
+      TorModel.distinct('category', publicTorFilter()),
       listCategories({ activeOnly: true }),
     ])
   const usedCategoryKeys = new Set([...categoryKeys, ...primaryCategoryKeys])
@@ -342,7 +342,7 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
   const limit = Math.min(MAX_LIMIT, Math.max(1, parseNumberParam(req.query.limit) ?? DEFAULT_LIMIT))
   const sort = parseStringParam(req.query.sort)
 
-  const query: Record<string, unknown> = { ...PUBLIC_TOR_FILTER }
+  const query: Record<string, unknown> = { ...publicTorFilter() }
   if (q) query.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
   if (categoryParam && categoryParam !== 'all') {
     const categoryKeys = categoryParam
@@ -451,7 +451,7 @@ export async function getRecommendationsHandler(req: Request, res: Response): Pr
 
   const profile: UserInterestProfile = { userId: req.user._id.toString() }
   const [candidates, categoryNames] = await Promise.all([
-    TorModel.find(PUBLIC_TOR_FILTER).sort({ createdAt: -1 }).limit(CANDIDATE_POOL_SIZE).lean(),
+    TorModel.find(publicTorFilter()).sort({ createdAt: -1 }).limit(CANDIDATE_POOL_SIZE).lean(),
     getCategoryNameMap(),
   ])
 

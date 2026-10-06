@@ -1,6 +1,7 @@
 import { Types } from 'mongoose'
 
 import type { GovSpendingProjectMetadata } from '../ingestion/adapters/govspending-discovery.adapter.js'
+import type { AnnouncementInfo } from '../ingestion/egp-submit-deadline.js'
 import { TorModel } from './tor.model.js'
 import type { UpsertTorInput } from './tor.types.js'
 
@@ -104,6 +105,45 @@ export function torFieldsFromSourceMetadata(
   return Object.fromEntries(
     Object.entries(fields).filter(([, value]) => value !== null && value !== undefined),
   ) as Partial<TorSourceFields>
+}
+
+export type TorAnnouncementFields = Pick<
+  UpsertTorInput,
+  | 'projectStatus'
+  | 'announceDate'
+  | 'midPriceBaht'
+  | 'biddingMethod'
+  | 'submissionDeadline'
+  | 'submissionDeadlineAt'
+>
+
+/**
+ * TOR fields read from the eGP announcement PDF. Like the source metadata, unparsed
+ * (null) values are left out so they never erase a stored value.
+ */
+export function torFieldsFromAnnouncement(
+  announcement: AnnouncementInfo | null | undefined,
+): Partial<TorAnnouncementFields> {
+  if (!announcement) {
+    return {}
+  }
+
+  const fields: Partial<TorAnnouncementFields> = {
+    projectStatus: announcement.projectStatus,
+    announceDate: announcement.announceDate,
+    midPriceBaht: announcement.midPriceBaht,
+    biddingMethod: announcement.biddingMethod,
+    ...(announcement.deadline?.date
+      ? {
+          submissionDeadline: announcement.deadline.text,
+          submissionDeadlineAt: announcement.deadline.date,
+        }
+      : {}),
+  }
+
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== null && value !== undefined),
+  ) as Partial<TorAnnouncementFields>
 }
 
 /**
