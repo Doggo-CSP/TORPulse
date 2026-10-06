@@ -4,6 +4,7 @@ import { env } from '../../config/env.js'
 import { torFieldsFromSourceMetadata, upsertTor } from '../tor/tor.repository.js'
 import { getCategoryCatalog, normalizeCategories } from '../category/category.repository.js'
 import { cleanDateText, parseThaiDate } from './thai-date.js'
+import { extractBiddingMethod } from './bidding-method.js'
 import type { IngestionJob } from './ingestion-job.model.js'
 import type {
   DownloadDocument,
@@ -112,8 +113,9 @@ export async function processIngestionJob(
   )
 
   // The announcement PDF states the exact bidding window; prefer it over the LLM's reading.
-  const announcementDeadline =
-    adapter instanceof CentralEgpAdapter ? await adapter.getSubmitDeadline(job.externalId) : null
+  const announcement =
+    adapter instanceof CentralEgpAdapter ? await adapter.getAnnouncementInfo(job.externalId) : null
+  const announcementDeadline = announcement?.deadline
   const deadline = announcementDeadline?.date
     ? { text: announcementDeadline.text, date: announcementDeadline.date }
     : {
@@ -123,6 +125,10 @@ export async function processIngestionJob(
 
   await updateStage('storing')
   const sourceMetadata = job.sourceMetadata ?? null
+  const projectTitle = nonBlankOrFallback(
+    extractedTor.projectTitle,
+    sourceMetadata?.title ?? project.title,
+  )
   const tor = await upsertTor({
     dataSourceId: job.dataSourceId,
     ingestionJobId: job._id,
@@ -130,10 +136,7 @@ export async function processIngestionJob(
     sourceVersion: job.sourceVersion,
     sourceAdapter: job.sourceAdapter,
     detailUrl: project.detailUrl,
-    projectTitle: nonBlankOrFallback(
-      extractedTor.projectTitle,
-      sourceMetadata?.title ?? project.title,
-    ),
+    projectTitle,
     agencyName: nonBlankOrFallback(extractedTor.agencyName, project.agencyName ?? null),
     departmentName: null,
     departmentSubName: null,
@@ -153,6 +156,12 @@ export async function processIngestionJob(
     // GovSpending owns department, status, year, announce date and prices,
     // and its project budget wins over the LLM-extracted one.
     ...torFieldsFromSourceMetadata(sourceMetadata),
+    // The announcement PDF names the method; the title usually repeats it.
+    biddingMethod:
+      announcement?.biddingMethod ??
+      extractBiddingMethod(projectTitle) ??
+      sourceMetadata?.biddingMethod ??
+      null,
     submissionDeadline: deadline.text,
     submissionDeadlineAt: deadline.date,
     contactInformation: extractedTor.contactInformation,

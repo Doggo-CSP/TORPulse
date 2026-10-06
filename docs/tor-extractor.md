@@ -10,9 +10,9 @@ Two processes share MongoDB:
   - enqueues an ingestion job, which is idempotent per `{dataSourceId, externalId, sourceVersion}`;
   - saves the project metadata on the job as `sourceMetadata`, refreshed on every sync;
   - refreshes those fields on TORs that already exist, with no LLM call.
-- **BMA discovery** runs in the same producer when `BMA_SYNC_ENABLED` is on, which is the default. It searches `egp2.bangkok.go.th` (`GetProjectFromFilter`) for each keyword in `BMA_KEYWORDS`, sent as `projectSearchText`. The keywords fall back to `GOVSPENDING_KEYWORDS`. The search is limited to ประกาศเชิญชวน e-bidding projects in each budget year of `BMA_BUDGET_YEAR` (comma-separated, defaulting to the current and previous Thai fiscal years).
+- **BMA discovery** runs in the same producer when `BMA_SYNC_ENABLED` is on, which is the default. It searches `egp2.bangkok.go.th` (`GetProjectFromFilter`) for each keyword in `BMA_KEYWORDS`, sent as `projectSearchText`. The keywords fall back to `GOVSPENDING_KEYWORDS`. For each budget year of `BMA_BUDGET_YEAR` (comma-separated, defaulting to the current and previous Thai fiscal years) it queries three announce-type stages — ร่างขอบเขตของงาน (TOR), ประกาศราคากลาง and ประกาศเชิญชวน (`BMA_ANNOUNCE_TYPES`) — across all procurement methods. The rows carry no stage field, so each project's `projectStatus` is taken from the stage it was found in; a project found in several stages keeps its most advanced stage.
   - BMA's `projectNumber` is the Central eGP project id. Jobs are queued under the `bma-egp` data source with `sourceAdapter: 'bma_egp'`, and the worker processes them with the Central eGP adapter.
-  - Metadata mapping: department is `masterOrgGroupName`, sub-department is `masterOrgDepartmentName`, budget is `projectBudget`, and status is `ประกาศเชิญชวน`.
+  - Metadata mapping: department is `masterOrgGroupName`, sub-department is `masterOrgDepartmentName`, budget is `projectBudget`, and status is the queried announce-type stage. The method is not known from the search, so `biddingMethod` is read later from the title/announcement.
   - BMA needs no API key. The producer starts if either source is configured.
 - **Ingestion worker** polls for jobs, claims one at a time with a lease, and runs `processIngestionJob`:
   1. **Fetch archive metadata** from Central eGP (`process5.gprocurement.go.th`). If there is no announcement archive (`data: null`, code `E0001`), the job becomes `skipped`.
@@ -41,6 +41,7 @@ Two processes share MongoDB:
 | `departmentName`, `departmentSubName` | GovSpending `dept_name`, `dept_sub_name` |
 | `projectStatus` | GovSpending `project_status` |
 | `fiscalYear` | GovSpending `year` (Buddhist era, for example 2568) |
+| `biddingMethod` | Regex (`modules/ingestion/bidding-method.ts`) on the eGP announcement PDF (`ด้วยวิธี…`), then the project title, then source metadata. Known methods are normalized, e.g. `ประกวดราคาอิเล็กทรอนิกส์ (e-bidding)`. |
 | `announceDate` | GovSpending `announce_date` ("19 มิ.ย. 68" is parsed to a Date; `"-"` gives null) |
 | `budgetBaht` | GovSpending `project_money`, falling back to the LLM value when null |
 | `midPriceBaht` (reference price) | GovSpending `price_build` |
@@ -213,6 +214,7 @@ Run all commands from `app/backend`.
 | `npm run report:job-failures` | Read-only: job counts by status and stage, plus the most common error messages. |
 | `npm run requeue:jobs -- [--dry-run] [--status=failed,rejected]` | Resets finished jobs to `queued` so the worker reprocesses them. Jobs held by a live lease are skipped. Each reprocessed job costs one eGP download and one LLM call. |
 | `npm run backfill:deadlines -- [--dry-run]` | Parses the stored deadline text into `submissionDeadlineAt` on existing TORs. No LLM calls. |
+| `npm run backfill:bidding-method -- [--dry-run] [--fetch-announcement]` | Fills `biddingMethod` on existing TORs from the project title; `--fetch-announcement` reads the eGP announcement PDF for the rest. No LLM calls. |
 | `npm run backfill:egp-details` | Legacy: fills department and prices on TORs from the eGP detail endpoints. |
 
 HTTP endpoints (API server):

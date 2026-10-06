@@ -27,7 +27,7 @@ flowchart LR
   api -- sign-in --> google
   api <--> db
   producer -- "contracted projects (by keyword)" --> gov
-  producer -- "ประกาศเชิญชวน projects (by keyword)" --> bma
+  producer -- "3 announce-type stages (by keyword)" --> bma
   producer -- enqueue jobs --> db
   worker -- "claim jobs, store TORs" --> db
   worker -- "TOR ZIP, announcement PDF" --> egp
@@ -107,7 +107,7 @@ sequenceDiagram
     P->>DB: release lease
     P->>DB: claim lease on data source (bma-egp)
     loop each BMA_KEYWORDS
-      P->>B: GetProjectFromFilter?projectSearchText&ประกาศเชิญชวน&e-bidding&budgetYear
+      P->>B: GetProjectFromFilter?projectSearchText&masterAnnounceTypeId&budgetYear
       P->>DB: upsert ingestion_jobs (bma_egp), projectNumber = eGP id
     end
     P->>DB: release lease
@@ -131,7 +131,7 @@ sequenceDiagram
   end
 ```
 
-The deadline read from the announcement PDF takes priority over the LLM's reading; the LLM value is used only when the PDF gives no date. All Central e-GP requests in a process go through a single limiter, spaced 1.2 s apart. HTTP 429 and 5xx responses are retried with backoff.
+The deadline read from the announcement PDF takes priority over the LLM's reading; the LLM value is used only when the PDF gives no date. The bidding method (`biddingMethod`) is read from the same PDF text, falling back to the project title and then source metadata. All Central e-GP requests in a process go through a single limiter, spaced 1.2 s apart. HTTP 429 and 5xx responses are retried with backoff.
 
 ## 4. Ingestion job lifecycle
 
@@ -220,7 +220,7 @@ erDiagram
 | Source | Data source key | Job `sourceAdapter` | What it finds | Auth |
 |---|---|---|---|---|
 | GovSpending | `govspending-egp` | `central_egp` | Projects that already have a contract, matched by keyword and fiscal year | `GOVSPENDING_API_KEY` |
-| BMA e-GP | `bma-egp` | `bma_egp` | Bangkok ประกาศเชิญชวน e-bidding projects (still open for bids), matched by keyword and budget year | none |
+| BMA e-GP | `bma-egp` | `bma_egp` | Bangkok projects in the ร่าง TOR, ราคากลาง and ประกาศเชิญชวน stages (all methods), matched by keyword and budget year | none |
 | eGP announcement search (manual `discover:egp`) | `govspending-egp` | `central_egp` | ร่างประกาศ / ประกาศเชิญชวน on Central e-GP | Turnstile token copied from a browser |
 
 Every source ends up as an 11-digit Central e-GP project id. That's why one worker, using `CentralEgpAdapter`, processes jobs from all of them.

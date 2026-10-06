@@ -10,7 +10,7 @@ Before running backend commands, copy `app/backend/.env.example` to `.env` and f
 |---|---|
 | `npm run dev` | Starts the REST API (`src/apps/api/server.ts`) on `PORT` (default 8000) with hot reload. Serves `/auth/*` (Google OAuth) and `/api/v1/*`. |
 | `npm run dev:producer` | Starts the queue producer with hot reload. It loops through each configured discovery source, enqueues ingestion jobs, then sleeps for `GOVSPENDING_SYNC_INTERVAL_MS`. The sources are: GovSpending when `GOVSPENDING_API_KEY` is set and `GOVSPENDING_SYNC_ENABLED` is not `false`, and BMA unless `BMA_SYNC_ENABLED=false`. |
-| `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with the AI provider (`AI_PROVIDER`), reads the submission deadline from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
+| `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with the AI provider (`AI_PROVIDER`), reads the submission deadline and bidding method from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
 | `npm run build` | Compiles TypeScript to `dist/`. |
 | `npm start` | Runs the compiled API (`dist/apps/api/server.js`). |
 | `npm run start:producer` | Runs the compiled queue producer. |
@@ -25,7 +25,7 @@ A full local pipeline needs three terminals: `dev`, `dev:producer` and `dev:inge
 | `npm test` | Runs every test group below in order and stops at the first failing group. Some route tests need a reachable MongoDB, so use a throwaway local database. CI does this, using a `mongo:7` service container. |
 | `npm run test:central-egp` | Central eGP adapter: archive metadata, ZIP download and TOR file selection, throttling and retries. |
 | `npm run test:producer` | Discovery adapters (GovSpending, eGP announcement search, BMA) and the Thai fiscal year helper. |
-| `npm run test:tor` | TOR model and repository, job queue repository, ingestion report, Thai date parsing, submit deadline extraction, repair and backfill helpers, and the DeepSeek and Gemini extractors. |
+| `npm run test:tor` | TOR model and repository, job queue repository, ingestion report, Thai date parsing, submit deadline and bidding method extraction, repair and backfill helpers, and the DeepSeek and Gemini extractors. |
 | `npm run test:auth` | Auth routes and auth config. |
 | `npm run test:user` | Profile, interests and bookmarks: model, repository and routes. |
 | `npm run test:homepage` | TOR controller, homepage routes and TOR routes. |
@@ -47,6 +47,7 @@ These scripts write to the configured database unless they are marked read-only.
 | `npm run report:job-failures` | **Read-only.** Shows job counts by status and stage, then error messages grouped by both. |
 | `npm run repair:missing-tors` | Finds jobs marked `completed` whose TOR record is missing and queues them again. |
 | `npm run backfill:deadlines -- [--dry-run]` | Parses the stored `submissionDeadline` text into `submissionDeadlineAt` on existing TORs. No LLM calls. |
+| `npm run backfill:bidding-method -- [--dry-run] [--fetch-announcement]` | Fills `biddingMethod` on existing TORs from the project title. `--fetch-announcement` reads the eGP announcement PDF for the rest (needs Java). No LLM calls. |
 | `npm run backfill:egp-details` | Fills department, status and prices on TORs with `sourceAdapter: central_egp` (not `bma_egp`) from the eGP project-detail endpoints. Exits with code 1 if any project fails. |
 | `npm run discover:egp -- [--announce-type 1,2,3] [--budget-year 2570] [--max-pages 50] [--dry-run]` | One-off discovery of projects still open for bidding, from the Central eGP announcement search. Needs `EGP_ANNOUNCEMENT_TOKEN`: copy the `X-Announcement-Token` header from a browser search on process5.gprocurement.go.th. The token expires after about 20 minutes. |
 | `npm run sandbox:egp -- [--project <id>] [--download] ...` | **Experiment.** Lists eGP announcements, or reads one project, and resolves each submit deadline from its announcement PDF. Writes to `sandbox-output/`, not to the database. |

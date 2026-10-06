@@ -52,6 +52,7 @@ export interface GovSpendingProjectMetadata {
   budgetBaht: number | null
   midPriceBaht: number | null
   awardedPriceBaht: number | null
+  biddingMethod?: string | null
 }
 
 export interface DiscoveredProcurementProject {

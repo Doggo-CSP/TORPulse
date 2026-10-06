@@ -6,10 +6,22 @@ import type { DiscoveredProcurementProject } from './govspending-discovery.adapt
 
 const BMA_PROJECT_SEARCH_URL = 'https://egp2.bangkok.go.th/appapi/api/Projects/GetProjectFromFilter'
 
-// Master ids from the BMA project search page filters.
-const INVITATION_ANNOUNCE_TYPE_ID = '705f1ffb-82e2-4beb-bdd2-2746f0783bf0' // ประกาศเชิญชวน
-const E_BIDDING_METHOD_ID = 'f3c58464-edc9-11e9-9a2c-00155d00442e' // e-bidding
-const INVITATION_STATUS = 'ประกาศเชิญชวน'
+// BMA announce-type master ids from the project-search page filter
+// (GET /appapi/api/MasterAnnounceTypes). The project rows carry no stage field,
+// so the stage is only known from the query filter: each entry queries one stage
+// and tags every matched project with its status. Ordered by lifecycle stage;
+// a project that appears in several stages is queried last at its most advanced
+// stage, so that status wins (later syncs overwrite via updateTorSourceMetadata).
+export interface BmaAnnounceType {
+  announceTypeId: string
+  status: string
+}
+
+export const BMA_ANNOUNCE_TYPES: BmaAnnounceType[] = [
+  { announceTypeId: '24995aa2-d875-4d3d-9dec-d5e22d222aa4', status: 'ร่างขอบเขตของงาน (TOR)' },
+  { announceTypeId: '9863983d-44e1-4eee-b38a-bb0b495762c5', status: 'ประกาศราคากลาง' },
+  { announceTypeId: '705f1ffb-82e2-4beb-bdd2-2746f0783bf0', status: 'ประกาศเชิญชวน' },
+]
 
 // BMA's projectNumber is the Central eGP project id, so the eGP adapter can ingest it.
 const PROJECT_ID_PATTERN = /^\d{11}$/
@@ -54,6 +66,8 @@ export interface BmaPage {
 export interface ListBmaProjectsInput {
   budgetYear: number
   keyword: string
+  /** The announce-type stage to query; its status is stamped on each project. */
+  announceType: BmaAnnounceType
   pageNo: number
   pageSize: number
   signal?: AbortSignal
@@ -64,7 +78,7 @@ export interface BmaDiscoveryAdapterOptions {
   requestTimeoutMs?: number
 }
 
-/** Lists BMA (กรุงเทพมหานคร) e-bidding projects in the ประกาศเชิญชวน stage. */
+/** Lists BMA (กรุงเทพมหานคร) projects for a given announce-type stage (all methods). */
 export class BmaDiscoveryAdapter {
   private readonly fetchImpl: typeof fetch
   private readonly requestTimeoutMs: number
@@ -98,8 +112,7 @@ export class BmaDiscoveryAdapter {
   private async requestPage(input: ListBmaProjectsInput): Promise<BmaPage> {
     const url = new URL(BMA_PROJECT_SEARCH_URL)
     url.searchParams.set('projectSearchText', input.keyword)
-    url.searchParams.set('masterAnnounceTypeId', INVITATION_ANNOUNCE_TYPE_ID)
-    url.searchParams.set('masterMethodIdId', E_BIDDING_METHOD_ID)
+    url.searchParams.set('masterAnnounceTypeId', input.announceType.announceTypeId)
     url.searchParams.set('masterBudgetYearId', String(input.budgetYear))
     url.searchParams.set('pageNo', String(input.pageNo))
     url.searchParams.set('pageSize', String(input.pageSize))
@@ -125,7 +138,9 @@ export class BmaDiscoveryAdapter {
     for (const row of parsed.data.data) {
       const project = projectSchema.safeParse(row)
       if (project.success) {
-        projects.push(toDiscoveredProject(project.data, input.budgetYear))
+        projects.push(
+          toDiscoveredProject(project.data, input.budgetYear, input.announceType.status),
+        )
       }
     }
 
@@ -141,6 +156,7 @@ export class BmaDiscoveryAdapter {
 function toDiscoveredProject(
   project: z.infer<typeof projectSchema>,
   budgetYear: number,
+  status: string,
 ): DiscoveredProcurementProject {
   return {
     externalId: project.projectNumber,
@@ -150,12 +166,15 @@ function toDiscoveredProject(
       title: project.projectName,
       departmentName: project.masterOrgGroupName,
       departmentSubName: project.masterOrgDepartmentName,
-      projectStatus: INVITATION_STATUS,
+      projectStatus: status,
       fiscalYear: budgetYear,
       announceDate: null,
       budgetBaht: project.projectBudget,
       midPriceBaht: null,
       awardedPriceBaht: null,
+      // No method filter now, so the method is unknown here; the ingestion
+      // worker reads it from the title/announcement instead.
+      biddingMethod: null,
     },
   }
 }

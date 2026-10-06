@@ -183,7 +183,7 @@ test('reports no TOR when the archive only has the announcement', async () => {
   )
 })
 
-test('getSubmitDeadline returns null without an announcement template', async () => {
+test('getAnnouncementInfo returns null without an announcement template', async () => {
   const requestedUrls: string[] = []
   const adapter = new CentralEgpAdapter({
     fetchImpl: (async (input: Parameters<typeof fetch>[0]) => {
@@ -192,17 +192,17 @@ test('getSubmitDeadline returns null without an announcement template', async ()
     }) as typeof fetch,
   })
 
-  assert.equal(await adapter.getSubmitDeadline(PROJECT_ID), null)
+  assert.equal(await adapter.getAnnouncementInfo(PROJECT_ID), null)
   assert.equal(requestedUrls.length, 1)
   assert.match(requestedUrls[0]!, /infoProcureDocAnnounZip\?projectId=/)
 })
 
-test('getSubmitDeadline returns null instead of throwing on eGP errors', async () => {
+test('getAnnouncementInfo returns null instead of throwing on eGP errors', async () => {
   const adapter = new CentralEgpAdapter({
     fetchImpl: (async () => new Response('not found', { status: 404 })) as typeof fetch,
   })
 
-  assert.equal(await adapter.getSubmitDeadline(PROJECT_ID), null)
+  assert.equal(await adapter.getAnnouncementInfo(PROJECT_ID), null)
 })
 
 test('rejects invalid Central eGP project IDs before making a request', async () => {

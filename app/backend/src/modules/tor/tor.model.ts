@@ -87,6 +87,10 @@ const torSchema = new Schema(
       type: Number,
       default: null,
     },
+    biddingMethod: {
+      type: String,
+      default: null,
+    },
     announceDate: {
       type: Date,
       default: null,

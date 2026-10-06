@@ -152,6 +152,8 @@ test('GET /tors/:id returns authoritative e-GP details', async (context) => {
       departmentName: 'กรมชลประทาน',
       departmentSubName: 'สำนักบริหารจัดการน้ำและอุทกวิทยา',
       projectStatus: 'จัดทำสัญญา/บริหารสัญญา',
+      fiscalYear: 2569,
+      biddingMethod: 'ประกวดราคาอิเล็กทรอนิกส์ (e-bidding)',
       summary: null,
       objectives: [],
       requirements: [],
@@ -179,6 +181,8 @@ test('GET /tors/:id returns authoritative e-GP details', async (context) => {
   assert.equal(response.body.departmentName, 'กรมชลประทาน')
   assert.equal(response.body.departmentSubName, 'สำนักบริหารจัดการน้ำและอุทกวิทยา')
   assert.equal(response.body.projectStatus, 'จัดทำสัญญา/บริหารสัญญา')
+  assert.equal(response.body.fiscalYear, 2569)
+  assert.equal(response.body.biddingMethod, 'ประกวดราคาอิเล็กทรอนิกส์ (e-bidding)')
   assert.equal(response.body.midPriceBaht, 9_014_000)
   assert.equal(response.body.awardedPriceBaht, 9_000_000)
   // A TOR stored before scope/deliverables/timeline/evaluationCriteria existed gets safe defaults

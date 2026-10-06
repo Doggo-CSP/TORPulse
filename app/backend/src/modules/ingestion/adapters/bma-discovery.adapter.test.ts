@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { BmaDiscoveryAdapter } from './bma-discovery.adapter.js'
+import { BMA_ANNOUNCE_TYPES, BmaDiscoveryAdapter } from './bma-discovery.adapter.js'
 
 function adapterReturning(body: unknown, onRequest?: (url: URL) => void) {
   return new BmaDiscoveryAdapter({
@@ -13,9 +13,17 @@ function adapterReturning(body: unknown, onRequest?: (url: URL) => void) {
   })
 }
 
-const listInput = { budgetYear: 2570, keyword: 'ระบบ', pageNo: 1, pageSize: 100 }
+const invitationType = BMA_ANNOUNCE_TYPES.find((t) => t.status === 'ประกาศเชิญชวน')!
 
-test('filters the BMA search by keyword, invitation stage and budget year', async () => {
+const listInput = {
+  budgetYear: 2570,
+  keyword: 'ระบบ',
+  announceType: invitationType,
+  pageNo: 1,
+  pageSize: 100,
+}
+
+test('filters the BMA search by keyword, announce-type stage and budget year', async () => {
   let requestedUrl: URL | undefined
   const adapter = adapterReturning(
     { totalCount: 0, hasNextPage: false, data: [] },
@@ -30,6 +38,8 @@ test('filters the BMA search by keyword, invitation stage and budget year', asyn
     requestedUrl?.searchParams.get('masterAnnounceTypeId'),
     '705f1ffb-82e2-4beb-bdd2-2746f0783bf0',
   )
+  // No method filter now: all procurement methods are returned.
+  assert.equal(requestedUrl?.searchParams.get('masterMethodIdId'), null)
   assert.equal(requestedUrl?.searchParams.get('pageNo'), '1')
   assert.equal(requestedUrl?.searchParams.get('pageSize'), '100')
 })
@@ -70,6 +80,7 @@ test('maps a BMA project to a Central eGP project id with metadata', async () =>
           budgetBaht: 7087000,
           midPriceBaht: null,
           awardedPriceBaht: null,
+          biddingMethod: null,
         },
       },
     ],

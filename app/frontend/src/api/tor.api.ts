@@ -17,6 +17,8 @@ export interface TorDetail {
   departmentName: string | null;
   departmentSubName: string | null;
   projectStatus: string | null;
+  fiscalYear: number | null; // พ.ศ.
+  biddingMethod: string | null;
   summary: string | null;
   objectives: string[];
   requirements: string[];
