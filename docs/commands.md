@@ -9,7 +9,7 @@ Before running backend commands, copy `app/backend/.env.example` to `.env` and f
 | Command | What it does |
 |---|---|
 | `npm run dev` | Starts the REST API (`src/apps/api/server.ts`) on `PORT` (default 8000) with hot reload. Serves `/auth/*` (Google OAuth) and `/api/v1/*`. |
-| `npm run dev:producer` | Starts the queue producer with hot reload. It loops through each configured discovery source, enqueues ingestion jobs, then sleeps for `GOVSPENDING_SYNC_INTERVAL_MS`. The sources are: GovSpending when `GOVSPENDING_API_KEY` is set, and BMA unless `BMA_SYNC_ENABLED=false`. |
+| `npm run dev:producer` | Starts the queue producer with hot reload. It loops through each configured discovery source, enqueues ingestion jobs, then sleeps for `GOVSPENDING_SYNC_INTERVAL_MS`. The sources are: GovSpending when `GOVSPENDING_API_KEY` is set and `GOVSPENDING_SYNC_ENABLED` is not `false`, and BMA unless `BMA_SYNC_ENABLED=false`. |
 | `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with the AI provider (`AI_PROVIDER`), reads the submission deadline from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
 | `npm run build` | Compiles TypeScript to `dist/`. |
 | `npm start` | Runs the compiled API (`dist/apps/api/server.js`). |
@@ -67,9 +67,10 @@ These scripts write to the configured database unless they are marked read-only.
 | Variable | Default | Meaning |
 |---|---|---|
 | `GOVSPENDING_API_KEY` | none | Turns on GovSpending discovery when set. |
+| `GOVSPENDING_SYNC_ENABLED` | `true` | Set to `false` to stop scheduled GovSpending discovery. The admin "sync now" button still works with the API key. |
 | `GOVSPENDING_KEYWORDS` | software-related Thai and English terms | Keywords for the GovSpending search. |
 | `GOVSPENDING_FISCAL_YEAR` | current Thai fiscal year | Fiscal year for GovSpending, for example `2569`. |
 | `GOVSPENDING_SYNC_INTERVAL_MS` | `600000` | Pause between producer rounds, for every source. |
 | `BMA_SYNC_ENABLED` | `true` | Set to `false` to turn off BMA discovery. |
 | `BMA_KEYWORDS` | `GOVSPENDING_KEYWORDS` | Keywords sent to the BMA search as `projectSearchText`. BMA titles are Thai. |
-| `BMA_BUDGET_YEAR` | current Thai fiscal year | BMA `masterBudgetYearId`, for example `2570`. |
+| `BMA_BUDGET_YEAR` | current and previous Thai fiscal years | Comma-separated BMA `masterBudgetYearId` values, for example `2570,2569`. |

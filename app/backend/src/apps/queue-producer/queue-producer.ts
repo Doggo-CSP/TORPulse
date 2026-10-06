@@ -108,7 +108,7 @@ function govSpendingSource(adapter: GovSpendingDiscoveryAdapter): DiscoverySourc
 function configuredSources(): DiscoverySource[] {
   const sources: DiscoverySource[] = []
 
-  if (env.GOVSPENDING_API_KEY) {
+  if (env.GOVSPENDING_API_KEY && env.GOVSPENDING_SYNC_ENABLED) {
     sources.push(
       govSpendingSource(new GovSpendingDiscoveryAdapter({ apiKey: env.GOVSPENDING_API_KEY })),
     )
@@ -124,7 +124,7 @@ function configuredSources(): DiscoverySource[] {
           dataSourceId,
           producerId,
           adapter,
-          env.BMA_BUDGET_YEAR ?? getThaiFiscalYear(),
+          bmaBudgetYears(),
           env.BMA_KEYWORDS,
           signal,
         ),
@@ -297,6 +297,17 @@ function govSpendingFiscalYears(): number[] {
   return [current, current - 1]
 }
 
+// The new fiscal year starts on 1 October with few announcements, so the previous year is
+// searched too. Closed projects are filtered later by their submission deadline.
+function bmaBudgetYears(): number[] {
+  if (env.BMA_BUDGET_YEARS) {
+    return env.BMA_BUDGET_YEARS
+  }
+
+  const current = getThaiFiscalYear()
+  return [current, current - 1]
+}
+
 function emptyTotals(): SyncTotals {
   return {
     pages: 0,
@@ -381,45 +392,51 @@ async function syncBmaProjects(
   dataSourceId: DataSourceId,
   producerId: string,
   adapter: BmaDiscoveryAdapter,
-  budgetYear: number,
+  budgetYears: number[],
   keywords: string[],
   signal: AbortSignal,
 ): Promise<SyncTotals> {
   const totals = emptyTotals()
 
   for (const keyword of keywords) {
-    try {
-      for (let pageNo = 1; !signal.aborted; pageNo += 1) {
-        const page = await adapter.listProjects({
-          budgetYear,
-          keyword,
-          pageNo,
-          pageSize: BMA_PAGE_SIZE,
-          signal,
-        })
-        const queueResult = await enqueueDiscoveredProjects(dataSourceId, page.projects, 'bma_egp')
-        totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
+    for (const budgetYear of budgetYears) {
+      try {
+        for (let pageNo = 1; !signal.aborted; pageNo += 1) {
+          const page = await adapter.listProjects({
+            budgetYear,
+            keyword,
+            pageNo,
+            pageSize: BMA_PAGE_SIZE,
+            signal,
+          })
+          const queueResult = await enqueueDiscoveredProjects(
+            dataSourceId,
+            page.projects,
+            'bma_egp',
+          )
+          totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
 
-        totals.pages += 1
-        totals.discovered += page.projects.length
-        totals.queued += queueResult.queued
-        totals.existing += queueResult.existing
+          totals.pages += 1
+          totals.discovered += page.projects.length
+          totals.queued += queueResult.queued
+          totals.existing += queueResult.existing
 
-        if (!(await renewProducerLease(dataSourceId, producerId))) {
-          throw new ProducerLeaseLostError('Queue producer lost the BMA lease')
+          if (!(await renewProducerLease(dataSourceId, producerId))) {
+            throw new ProducerLeaseLostError('Queue producer lost the BMA lease')
+          }
+
+          if (!page.hasNextPage || page.projects.length + page.skipped === 0) {
+            break
+          }
+        }
+      } catch (error) {
+        if (error instanceof ProducerLeaseLostError || signal.aborted) {
+          throw error
         }
 
-        if (!page.hasNextPage || page.projects.length + page.skipped === 0) {
-          break
-        }
+        totals.failedKeywords.push(`${keyword} (${budgetYear})`)
+        console.error('BMA keyword sync failed', { keyword, budgetYear, error })
       }
-    } catch (error) {
-      if (error instanceof ProducerLeaseLostError || signal.aborted) {
-        throw error
-      }
-
-      totals.failedKeywords.push(keyword)
-      console.error('BMA keyword sync failed', { keyword, budgetYear, error })
     }
   }
 
