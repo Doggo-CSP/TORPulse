@@ -4,7 +4,7 @@ import test from 'node:test'
 import { Types } from 'mongoose'
 
 import { User } from '../auth/user.model.js'
-import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
+import { publicTorFilter, TorModel } from '../tor/tor.model.js'
 import { UserBookmarkModel } from './user-bookmark.model.js'
 import {
   addBookmark,
@@ -110,5 +110,5 @@ test('countBookmarksByUser counts only the user bookmarks whose TOR is still pub
 
   assert.equal(count, 1)
   assert.deepEqual(capturedBookmarkFilter, { userId })
-  assert.deepEqual(capturedTorFilter, { _id: { $in: torIds }, ...PUBLIC_TOR_FILTER })
+  assert.deepEqual(capturedTorFilter, { _id: { $in: torIds }, ...publicTorFilter() })
 })

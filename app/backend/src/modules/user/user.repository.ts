@@ -1,7 +1,7 @@
 import type { Types } from 'mongoose'
 
 import { User } from '../auth/user.model.js'
-import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
+import { publicTorFilter, TorModel } from '../tor/tor.model.js'
 import { UserBookmarkModel } from './user-bookmark.model.js'
 import type { UpdateProfileInput } from './user.types.js'
 
@@ -39,12 +39,12 @@ export async function removeBookmark(userId: Types.ObjectId | string, torId: str
 
 export async function listBookmarksByUser(userId: Types.ObjectId | string) {
   return UserBookmarkModel.find({ userId })
-    .populate({ path: 'torId', match: PUBLIC_TOR_FILTER })
+    .populate({ path: 'torId', match: publicTorFilter() })
     .sort({ createdAt: -1 })
 }
 
 // Counts only bookmarks whose TOR is still public, matching listBookmarksByUser.
 export async function countBookmarksByUser(userId: Types.ObjectId | string) {
   const torIds = await UserBookmarkModel.distinct('torId', { userId })
-  return TorModel.countDocuments({ _id: { $in: torIds }, ...PUBLIC_TOR_FILTER })
+  return TorModel.countDocuments({ _id: { $in: torIds }, ...publicTorFilter() })
 }

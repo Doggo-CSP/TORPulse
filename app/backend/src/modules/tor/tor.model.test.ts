@@ -3,8 +3,21 @@ import test from 'node:test'
 
 import { Types } from 'mongoose'
 
-import { TorModel } from './tor.model.js'
+import { DRAFT_ANNOUNCEMENT_STATUS, publicTorFilter, TorModel } from './tor.model.js'
 import type { UpsertTorInput } from './tor.types.js'
+
+test('publicTorFilter hides archived/deleted TORs and drafts unpublished for 60 days', () => {
+  assert.deepEqual(publicTorFilter(new Date('2026-10-06T15:30:00.000Z')), {
+    reviewStatus: { $nin: ['archived', 'deleted'] },
+    $nor: [
+      {
+        projectStatus: DRAFT_ANNOUNCEMENT_STATUS,
+        announceDate: { $lt: new Date('2026-08-07T00:00:00.000Z') },
+        reviewStatus: { $ne: 'verified' },
+      },
+    ],
+  })
+})
 
 test('validates a structured TOR and exposes its unique source identity index', async () => {
   const input = createTorInput()

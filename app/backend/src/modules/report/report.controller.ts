@@ -2,7 +2,7 @@ import type { Request, Response } from 'express'
 
 import { getCategoryNameMap, listCategories } from '../category/category.repository.js'
 import { resolveTorCategory } from '../tor/tor.controller.js'
-import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
+import { publicTorFilter, TorModel } from '../tor/tor.model.js'
 import {
   SAVINGS_BUCKETS,
   periodToCutoff,
@@ -49,7 +49,7 @@ function savingsPct(referencePriceBaht: number, winningPriceBaht: number): numbe
 }
 
 function baseMatch(cutoff: Date | null, agencyName?: string): Record<string, unknown> {
-  const match: Record<string, unknown> = { ...PUBLIC_TOR_FILTER, awardedPriceBaht: { $ne: null } }
+  const match: Record<string, unknown> = { ...publicTorFilter(), awardedPriceBaht: { $ne: null } }
   if (cutoff) match.analyzedAt = { $gte: cutoff }
   if (agencyName) Object.assign(match, agencyNameMatchForDepartment(agencyName))
   return match

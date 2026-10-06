@@ -2,7 +2,7 @@ import type { Request, Response } from 'express'
 
 import { listCategories } from '../category/category.repository.js'
 import { resolveTorCategory } from '../tor/tor.controller.js'
-import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
+import { publicTorFilter, TorModel } from '../tor/tor.model.js'
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000
 
@@ -38,7 +38,7 @@ export async function getSummaryHandler(_req: Request, res: Response): Promise<v
     new_this_week: Array<{ count: number }>
     last_updated: Array<{ updatedAt: Date }>
   }>([
-    { $match: PUBLIC_TOR_FILTER },
+    { $match: publicTorFilter() },
     {
       $facet: {
         total_tors: [{ $count: 'count' }],
@@ -71,7 +71,7 @@ export async function getSummaryHandler(_req: Request, res: Response): Promise<v
 export async function getAnalyticsHandler(_req: Request, res: Response): Promise<void> {
   const [topTechnologies, torDocs, categories] = await Promise.all([
     TorModel.aggregate<{ _id: string; count: number; percentage: number }>([
-      { $match: PUBLIC_TOR_FILTER },
+      { $match: publicTorFilter() },
       { $unwind: '$technologies' },
       { $group: { _id: '$technologies', count: { $sum: 1 } } },
       { $setWindowFields: { output: { total: { $sum: '$count' } } } },
@@ -85,7 +85,7 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
       { $sort: { count: -1, _id: 1 } },
       { $limit: 10 },
     ]),
-    TorModel.find(PUBLIC_TOR_FILTER, {
+    TorModel.find(publicTorFilter(), {
       technologies: 1,
       category: 1,
       midPriceBaht: 1,

@@ -5,6 +5,7 @@ import { Types } from 'mongoose'
 
 import { TorModel } from './tor.model.js'
 import {
+  torFieldsFromAnnouncement,
   torFieldsFromSourceMetadata,
   updateTorSourceMetadata,
   upsertTor,
@@ -156,6 +157,43 @@ test('maps GovSpending metadata to TOR fields and drops nulls', () => {
     },
   )
   assert.deepEqual(torFieldsFromSourceMetadata(null), {})
+})
+
+test('maps the eGP announcement to TOR fields and drops unparsed values', () => {
+  const announceDate = new Date('2026-10-02T00:00:00.000Z')
+
+  assert.deepEqual(
+    torFieldsFromAnnouncement({
+      deadline: null,
+      biddingMethod: 'ประกวดราคาอิเล็กทรอนิกส์ (e-bidding)',
+      projectStatus: 'ร่างประกาศ',
+      midPriceBaht: 15_597_072.86,
+      announceDate,
+    }),
+    {
+      projectStatus: 'ร่างประกาศ',
+      announceDate,
+      midPriceBaht: 15_597_072.86,
+      biddingMethod: 'ประกวดราคาอิเล็กทรอนิกส์ (e-bidding)',
+    },
+  )
+
+  const deadlineAt = new Date('2026-10-20T05:00:00.000Z')
+  assert.deepEqual(
+    torFieldsFromAnnouncement({
+      deadline: { text: 'ในวันที่ ๒๐ ตุลาคม ๒๕๖๙', date: deadlineAt },
+      biddingMethod: null,
+      projectStatus: 'ประกาศเชิญชวน',
+      midPriceBaht: null,
+      announceDate: null,
+    }),
+    {
+      projectStatus: 'ประกาศเชิญชวน',
+      submissionDeadline: 'ในวันที่ ๒๐ ตุลาคม ๒๕๖๙',
+      submissionDeadlineAt: deadlineAt,
+    },
+  )
+  assert.deepEqual(torFieldsFromAnnouncement(null), {})
 })
 
 test('refreshes existing TORs without creating new ones', async (context) => {
