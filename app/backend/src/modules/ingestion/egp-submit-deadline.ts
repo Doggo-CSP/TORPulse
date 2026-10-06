@@ -2,6 +2,7 @@ import {
   extractDocumentsToMarkdown,
   OcrRequiredError,
 } from './extraction/opendataloader-text-extractor.js'
+import { extractBiddingMethod } from './bidding-method.js'
 import { parseThaiDate } from './thai-date.js'
 
 const EGP_ORIGIN = 'https://process5.gprocurement.go.th'
@@ -38,6 +39,11 @@ export interface SubmitDeadline {
   text: string
   /** End of the bidding window in UTC; midnight UTC of the day when no time is given. */
   date: Date | null
+}
+
+export interface AnnouncementInfo {
+  deadline: SubmitDeadline | null
+  biddingMethod: string | null
 }
 
 export async function fetchAnnouncementTemplateId(
@@ -87,17 +93,24 @@ export async function fetchAnnouncementPdf(
   return pdf
 }
 
-/** Extracts the PDF text and parses the submit deadline; null when the PDF needs OCR. */
-export async function extractSubmitDeadlineFromPdf(pdf: Buffer): Promise<SubmitDeadline | null> {
+/** Extracts the PDF text and parses the submit deadline and bidding method; null when the PDF needs OCR. */
+export async function extractAnnouncementInfoFromPdf(
+  pdf: Buffer,
+): Promise<AnnouncementInfo | null> {
   try {
     const text = await extractDocumentsToMarkdown([
       { fileName: 'announcement.pdf', mimeType: 'application/pdf', content: pdf, sourceUrl: '' },
     ])
-    return extractSubmitDeadline(text)
+    return { deadline: extractSubmitDeadline(text), biddingMethod: extractBiddingMethod(text) }
   } catch (error) {
     if (error instanceof OcrRequiredError) return null
     throw error
   }
+}
+
+/** Extracts the PDF text and parses the submit deadline; null when the PDF needs OCR. */
+export async function extractSubmitDeadlineFromPdf(pdf: Buffer): Promise<SubmitDeadline | null> {
+  return (await extractAnnouncementInfoFromPdf(pdf))?.deadline ?? null
 }
 
 const DIGIT = '[0-9๐-๙]'

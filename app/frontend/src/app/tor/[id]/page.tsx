@@ -126,6 +126,8 @@ export default function TorDetailPage({
         { label: "หน่วยงาน", value: tor.departmentName ?? "-" },
         { label: "หน่วยงานย่อย", value: tor.departmentSubName ?? "-" },
         { label: "สถานะโครงการ", value: tor.projectStatus ?? "-" },
+        { label: "ปีงบประมาณ", value: tor.fiscalYear ? String(tor.fiscalYear) : "-" },
+        { label: "วิธีการจัดหา", value: tor.biddingMethod ?? "-" },
         { label: "วงเงิน", value: formatBaht(tor.budgetBaht) },
         { label: "ราคากลาง", value: formatBaht(tor.midPriceBaht) },
         { label: "ราคาที่ชนะการเสนอราคา", value: formatBaht(tor.awardedPriceBaht) },

@@ -12,6 +12,7 @@ const sourceMetadataSchema = new Schema(
     budgetBaht: { type: Number, min: 0, default: null },
     midPriceBaht: { type: Number, min: 0, default: null },
     awardedPriceBaht: { type: Number, min: 0, default: null },
+    biddingMethod: { type: String, default: null },
   },
   { _id: false },
 )

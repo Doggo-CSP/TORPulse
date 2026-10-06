@@ -6,7 +6,10 @@ import type { Types } from 'mongoose'
 import { env } from '../../config/env.js'
 import { createAuditLog } from '../../modules/admin/audit-log.repository.js'
 import { getSettings } from '../../modules/admin/settings.repository.js'
-import { BmaDiscoveryAdapter } from '../../modules/ingestion/adapters/bma-discovery.adapter.js'
+import {
+  BMA_ANNOUNCE_TYPES,
+  BmaDiscoveryAdapter,
+} from '../../modules/ingestion/adapters/bma-discovery.adapter.js'
 import {
   getThaiFiscalYear,
   GovSpendingDiscoveryAdapter,
@@ -400,42 +403,50 @@ async function syncBmaProjects(
 
   for (const keyword of keywords) {
     for (const budgetYear of budgetYears) {
-      try {
-        for (let pageNo = 1; !signal.aborted; pageNo += 1) {
-          const page = await adapter.listProjects({
-            budgetYear,
+      for (const announceType of BMA_ANNOUNCE_TYPES) {
+        try {
+          for (let pageNo = 1; !signal.aborted; pageNo += 1) {
+            const page = await adapter.listProjects({
+              budgetYear,
+              keyword,
+              announceType,
+              pageNo,
+              pageSize: BMA_PAGE_SIZE,
+              signal,
+            })
+            const queueResult = await enqueueDiscoveredProjects(
+              dataSourceId,
+              page.projects,
+              'bma_egp',
+            )
+            totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
+
+            totals.pages += 1
+            totals.discovered += page.projects.length
+            totals.queued += queueResult.queued
+            totals.existing += queueResult.existing
+
+            if (!(await renewProducerLease(dataSourceId, producerId))) {
+              throw new ProducerLeaseLostError('Queue producer lost the BMA lease')
+            }
+
+            if (!page.hasNextPage || page.projects.length + page.skipped === 0) {
+              break
+            }
+          }
+        } catch (error) {
+          if (error instanceof ProducerLeaseLostError || signal.aborted) {
+            throw error
+          }
+
+          totals.failedKeywords.push(`${keyword} (${budgetYear}, ${announceType.status})`)
+          console.error('BMA keyword sync failed', {
             keyword,
-            pageNo,
-            pageSize: BMA_PAGE_SIZE,
-            signal,
+            budgetYear,
+            status: announceType.status,
+            error,
           })
-          const queueResult = await enqueueDiscoveredProjects(
-            dataSourceId,
-            page.projects,
-            'bma_egp',
-          )
-          totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
-
-          totals.pages += 1
-          totals.discovered += page.projects.length
-          totals.queued += queueResult.queued
-          totals.existing += queueResult.existing
-
-          if (!(await renewProducerLease(dataSourceId, producerId))) {
-            throw new ProducerLeaseLostError('Queue producer lost the BMA lease')
-          }
-
-          if (!page.hasNextPage || page.projects.length + page.skipped === 0) {
-            break
-          }
         }
-      } catch (error) {
-        if (error instanceof ProducerLeaseLostError || signal.aborted) {
-          throw error
-        }
-
-        totals.failedKeywords.push(`${keyword} (${budgetYear})`)
-        console.error('BMA keyword sync failed', { keyword, budgetYear, error })
       }
     }
   }

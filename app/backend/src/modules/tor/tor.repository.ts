@@ -72,6 +72,7 @@ export type TorSourceFields = Pick<
   | 'budgetBaht'
   | 'midPriceBaht'
   | 'awardedPriceBaht'
+  | 'biddingMethod'
 >
 
 /**
@@ -97,6 +98,7 @@ export function torFieldsFromSourceMetadata(
     budgetBaht: metadata.budgetBaht,
     midPriceBaht: metadata.midPriceBaht,
     awardedPriceBaht: metadata.awardedPriceBaht,
+    biddingMethod: metadata.biddingMethod,
   }
 
   return Object.fromEntries(

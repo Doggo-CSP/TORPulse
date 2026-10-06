@@ -4,10 +4,10 @@ import path from 'node:path'
 import { unzipSync, type UnzipFileInfo } from 'fflate'
 
 import {
-  extractSubmitDeadlineFromPdf,
+  extractAnnouncementInfoFromPdf,
   fetchAnnouncementPdf,
   fetchAnnouncementTemplateId,
-  type SubmitDeadline,
+  type AnnouncementInfo,
 } from '../egp-submit-deadline.js'
 import type {
   DownloadDocument,
@@ -290,7 +290,7 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
    * bidding window. Best effort: returns null when the project has no
    * announcement template or the deadline cannot be parsed.
    */
-  public async getSubmitDeadline(externalId: string): Promise<SubmitDeadline | null> {
+  public async getAnnouncementInfo(externalId: string): Promise<AnnouncementInfo | null> {
     const projectId = externalId.trim()
 
     assertProjectId(projectId)
@@ -303,10 +303,10 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
       if (!templateId) return null
 
       const pdf = await fetchAnnouncementPdf(templateId, { fetchImpl })
-      return await extractSubmitDeadlineFromPdf(pdf)
+      return await extractAnnouncementInfoFromPdf(pdf)
     } catch (error) {
       console.warn(
-        `[Central eGP] Could not read the submit deadline for ${projectId}: ` +
+        `[Central eGP] Could not read the announcement for ${projectId}: ` +
           (error instanceof Error ? error.message : String(error)),
       )
       return null
