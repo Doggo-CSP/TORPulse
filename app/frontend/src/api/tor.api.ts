@@ -188,6 +188,49 @@ export async function fetchTorRecommendations(): Promise<RecommendedTorItem[]> {
   return data.items || [];
 }
 
+// UC-05: finished projects (contract signed, from the newest tors_bk_* snapshot) similar to a
+// TOR by shared categories and technologies. Money is in baht.
+export interface SimilarProject {
+  external_id: string;
+  project_title: string;
+  department_name: string | null;
+  category: string;
+  category_label: string;
+  matched_categories: { key: string; label: string }[];
+  matched_technologies: string[];
+  score: number;
+  announce_date: string | null;
+  budget_baht: number | null;
+  mid_price_baht: number;
+  awarded_price_baht: number;
+  savings_amount_baht: number;
+  savings_pct: number;
+  requirements: string[];
+  detail_url: string | null;
+}
+
+export interface SimilarProjectsResult {
+  summary: {
+    project_count: number;
+    median_mid_price_baht: number | null;
+    median_awarded_price_baht: number | null;
+    avg_savings_pct: number | null;
+    // Positive: this TOR's budget is above the median awarded price of the similar projects
+    budget_vs_median_awarded_pct: number | null;
+  };
+  items: SimilarProject[];
+  source: { collection: string; snapshot_date: string; project_count: number } | null;
+}
+
+export async function fetchSimilarProjects(id: string): Promise<SimilarProjectsResult> {
+  const res = await fetch(`${apiUrl}/api/v1/tors/${encodeURIComponent(id)}/similar`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch similar projects (${res.status})`);
+  }
+  const body = await res.json();
+  return { ...body.data, source: body.source };
+}
+
 /**
  * Helper to format Buddhist era year (e.g. 2026 -> 2569)
  */

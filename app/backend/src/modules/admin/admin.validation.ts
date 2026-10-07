@@ -77,6 +77,13 @@ const categoryFields = {
   name: z.string().trim().min(1).max(100),
   description: z.string().trim().max(500),
   keywords: z.array(z.string()),
+  // Extra guidance for the AI classifier; an empty string clears it.
+  aiHint: z
+    .string()
+    .trim()
+    .max(500)
+    .nullable()
+    .transform((value) => value || null),
 }
 
 export const createCategorySchema = z
@@ -90,6 +97,7 @@ export const createCategorySchema = z
     name: categoryFields.name,
     description: categoryFields.description.optional(),
     keywords: categoryFields.keywords.optional(),
+    aiHint: categoryFields.aiHint.optional(),
   })
   .strict()
 
@@ -98,6 +106,7 @@ export const updateCategorySchema = z
     name: categoryFields.name.optional(),
     description: categoryFields.description.optional(),
     keywords: categoryFields.keywords.optional(),
+    aiHint: categoryFields.aiHint.optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0)

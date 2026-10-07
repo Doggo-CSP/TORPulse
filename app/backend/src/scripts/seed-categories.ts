@@ -7,7 +7,8 @@ import { normalizeKeywords } from '../modules/category/category.repository.js'
 import { CATEGORY_RULE_KEYWORDS } from '../modules/tor/tor.controller.js'
 
 // Inserts the 8 original categories when they are missing. Safe to re-run: existing categories
-// (matched by key) are never changed, so admin edits survive. Run once before deploying.
+// (matched by key) are never changed, so admin edits survive. Also restores a default category
+// that was deleted, so run it on purpose only.
 //   npm run seed:categories
 
 export async function seedCategories(): Promise<{ created: number; existing: number }> {
@@ -34,6 +35,17 @@ export async function seedCategories(): Promise<{ created: number; existing: num
   }
 
   return { created, existing: CATEGORY_SEED.length - created }
+}
+
+// Used when the API and the ingestion worker start. It seeds only a database with no categories
+// at all, so a default category an admin deleted on purpose does not come back on the next
+// restart. `npm run seed:categories` still restores any missing default.
+export async function seedCategoriesIfEmpty(): Promise<{ created: number; existing: number }> {
+  const existing = await CategoryModel.countDocuments()
+  if (existing > 0) {
+    return { created: 0, existing }
+  }
+  return seedCategories()
 }
 
 const isMainModule =

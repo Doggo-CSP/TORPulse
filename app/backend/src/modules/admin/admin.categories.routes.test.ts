@@ -8,6 +8,7 @@ import { Types } from 'mongoose'
 import { database } from '../../config/mongoose.js'
 import { seedCategories } from '../../scripts/seed-categories.js'
 import { User } from '../auth/user.model.js'
+import { DEFAULT_CATEGORY_KEY } from '../category/category.constants.js'
 import { CategoryModel } from '../category/category.model.js'
 import categoryRouter from '../category/category.routes.js'
 import { TorModel } from '../tor/tor.model.js'
@@ -320,6 +321,53 @@ test('admin routes: category management (UC-16)', async (t) => {
       assert.ok(await CategoryModel.exists({ _id: byTor.body.category.id }))
     },
   )
+
+  await t.test('the default category can be renamed but never hidden or deleted', async () => {
+    const before = await CategoryModel.findOne({ key: DEFAULT_CATEGORY_KEY }).lean()
+    assert.ok(before, 'seedCategories() creates the default category')
+    const id = before._id.toString()
+
+    const list = await request(app).get('/admin/categories')
+    const listed = list.body.categories.find((c: { key: string }) => c.key === DEFAULT_CATEGORY_KEY)
+    assert.equal(listed.isDefault, true)
+    assert.ok(
+      list.body.categories
+        .filter((c: { key: string }) => c.key !== DEFAULT_CATEGORY_KEY)
+        .every((c: { isDefault: boolean }) => c.isDefault === false),
+    )
+
+    const hide = await request(app)
+      .patch(`${categoryUrl(id)}/status`)
+      .send({ isActive: false })
+    assert.equal(hide.status, 409)
+
+    const remove = await request(app).delete(categoryUrl(id))
+    assert.equal(remove.status, 409)
+
+    const after = await CategoryModel.findById(id).lean()
+    assert.ok(after, 'the default category still exists')
+    assert.equal(after.isActive, true)
+  })
+
+  await t.test('POST and PATCH set and clear the AI hint', async () => {
+    const created = await createCategory({
+      name: `${SEED_PREFIX}Hinted`,
+      aiHint: '  GIS, map services  ',
+    })
+    assert.equal(created.status, 201)
+    assert.equal(created.body.category.aiHint, 'GIS, map services')
+    const { id } = created.body.category
+
+    const cleared = await request(app).patch(categoryUrl(id)).send({ aiHint: '' })
+    assert.equal(cleared.status, 200)
+    assert.equal(cleared.body.category.aiHint, null)
+    assert.equal((await CategoryModel.findById(id).lean())?.aiHint, null)
+
+    const tooLong = await request(app)
+      .patch(categoryUrl(id))
+      .send({ aiHint: 'x'.repeat(501) })
+    assert.equal(tooLong.status, 400)
+  })
 
   await t.test('DELETE removes an unused category with an audit log', async () => {
     const created = await createCategory({ name: `${SEED_PREFIX}Unused` })
