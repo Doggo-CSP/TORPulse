@@ -10,7 +10,7 @@ Two processes share MongoDB:
   - enqueues an ingestion job, which is idempotent per `{dataSourceId, externalId, sourceVersion}`;
   - saves the project metadata on the job as `sourceMetadata`, refreshed on every sync;
   - refreshes those fields on TORs that already exist, with no LLM call.
-- **BMA discovery** runs in the same producer when `BMA_SYNC_ENABLED` is on, which is the default. It searches `egp2.bangkok.go.th` (`GetProjectFromFilter`) for each keyword in `BMA_KEYWORDS`, sent as `projectSearchText`. The keywords fall back to `GOVSPENDING_KEYWORDS`. The search is limited to ประกาศเชิญชวน e-bidding projects in the budget year (`BMA_BUDGET_YEAR`, defaulting to the current Thai fiscal year).
+- **BMA discovery** runs in the same producer when `BMA_SYNC_ENABLED` is on, which is the default. It searches `egp2.bangkok.go.th` (`GetProjectFromFilter`) for each keyword in `BMA_KEYWORDS`, sent as `projectSearchText`. The keywords fall back to `GOVSPENDING_KEYWORDS`. The search is limited to ประกาศเชิญชวน e-bidding projects in each budget year listed in `BMA_BUDGET_YEAR` (comma-separated, defaulting to the current Thai fiscal year).
   - BMA's `projectNumber` is the Central eGP project id. Jobs are queued under the `bma-egp` data source with `sourceAdapter: 'bma_egp'`, and the worker processes them with the Central eGP adapter.
   - Metadata mapping: department is `masterOrgGroupName`, sub-department is `masterOrgDepartmentName`, budget is `projectBudget`, and status is `ประกาศเชิญชวน`.
   - BMA needs no API key. The producer starts if either source is configured.
