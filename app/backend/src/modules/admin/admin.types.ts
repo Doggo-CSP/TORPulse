@@ -29,4 +29,10 @@ export type UserChangeOutcome = 'updated' | 'not_found' | 'self' | 'last_admin' 
 export type TorChangeOutcome = 'updated' | 'not_found' | 'deleted' | 'invalid_transition'
 
 export type CategoryChangeOutcome =
-  'updated' | 'not_found' | 'unchanged' | 'duplicate_name' | 'duplicate_key' | 'in_use'
+  | 'updated'
+  | 'not_found'
+  | 'unchanged'
+  | 'duplicate_name'
+  | 'duplicate_key'
+  | 'in_use'
+  | 'default_category'

@@ -17,6 +17,7 @@ import {
 import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
 import { User, type UserDocument } from '../auth/user.model.js'
+import { DEFAULT_CATEGORY_KEY } from '../category/category.constants.js'
 import { CategoryModel } from '../category/category.model.js'
 import {
   countUsersByCategory,
@@ -77,11 +78,10 @@ const touchActor = async (actorId: Types.ObjectId, session: ClientSession): Prom
 
 export const getAdminStats = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const [totalUsers, activeUsers, pendingUsers, adminCount, userCount, totalTors, awardedCount] =
+    const [totalUsers, activeUsers, adminCount, userCount, totalTors, awardedCount] =
       await Promise.all([
         User.countDocuments(),
         User.countDocuments({ $or: [{ status: 'active' }, { status: { $exists: false } }] }),
-        User.countDocuments({ status: 'pending' }),
         User.countDocuments({ role: 'admin' }),
         User.countDocuments({ $or: [{ role: 'user' }, { role: { $exists: false } }] }),
         TorModel.countDocuments(),
@@ -202,7 +202,6 @@ export const getAdminUsers = async (req: Request, res: Response): Promise<void> 
       jobTitle: u.jobTitle,
       image: u.image ?? null,
       createdAt: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString(),
-      lastActive: 'ออนไลน์ขณะนี้',
     }))
 
     res.json({ users, total: users.length })
@@ -1105,8 +1104,11 @@ const toAdminCategory = (category: CategoryLean, userCount: number) => ({
   key: category.key,
   name: category.name,
   description: category.description ?? '',
+  aiHint: category.aiHint ?? null,
   keywords: category.keywords ?? [],
   isActive: category.isActive,
+  // The keyword fallback's category; it cannot be hidden or deleted.
+  isDefault: category.key === DEFAULT_CATEGORY_KEY,
   sortOrder: category.sortOrder,
   userCount,
   createdAt: category.createdAt,
@@ -1116,6 +1118,7 @@ const toAdminCategory = (category: CategoryLean, userCount: number) => ({
 const categoryAuditFields = (category: CategoryLean) => ({
   name: category.name,
   description: category.description ?? '',
+  aiHint: category.aiHint ?? null,
   keywords: category.keywords ?? [],
   isActive: category.isActive,
 })
@@ -1204,6 +1207,7 @@ export const createAdminCategory = async (req: Request, res: Response): Promise<
               key: input.key ?? (await generateCategoryKey(input.name, session)),
               name: input.name,
               description: input.description ?? '',
+              aiHint: input.aiHint ?? null,
               keywords: normalizeKeywords(input.keywords ?? []),
               isActive: true,
               sortOrder: await nextCategorySortOrder(session),
@@ -1268,7 +1272,8 @@ export const updateAdminCategory = async (req: Request, res: Response): Promise<
     if (!parsed.success) {
       res.status(400).json({
         success: false,
-        message: 'ข้อมูลหมวดหมู่ไม่ถูกต้อง (แก้ไขได้เฉพาะชื่อ คำอธิบาย และคีย์เวิร์ด)',
+        message:
+          'ข้อมูลหมวดหมู่ไม่ถูกต้อง (แก้ไขได้เฉพาะชื่อ คำอธิบาย คำแนะนำสำหรับ AI และคีย์เวิร์ด)',
       })
       return
     }
@@ -1376,6 +1381,11 @@ export const setAdminCategoryStatus = async (req: Request, res: Response): Promi
           return
         }
 
+        if (!isActive && category.key === DEFAULT_CATEGORY_KEY) {
+          outcome = 'default_category'
+          return
+        }
+
         updated = await CategoryModel.findByIdAndUpdate(
           categoryId,
           { $set: { isActive } },
@@ -1404,6 +1414,13 @@ export const setAdminCategoryStatus = async (req: Request, res: Response): Promi
 
     if (outcome === 'not_found') {
       res.status(404).json({ success: false, message: 'ไม่พบหมวดหมู่' })
+      return
+    }
+    if (outcome === 'default_category') {
+      res.status(409).json({
+        success: false,
+        message: 'หมวดหมู่นี้เป็นหมวดเริ่มต้นของระบบ ใช้กับ TOR ที่จัดหมวดอื่นไม่ได้ จึงซ่อนไม่ได้',
+      })
       return
     }
     if (outcome === 'unchanged' || !updated) {
@@ -1446,6 +1463,11 @@ export const deleteAdminCategory = async (req: Request, res: Response): Promise<
         const category = await CategoryModel.findById(categoryId).session(session).lean()
         if (!category) return
 
+        if (category.key === DEFAULT_CATEGORY_KEY) {
+          outcome = 'default_category'
+          return
+        }
+
         const [userCount, torCount] = await Promise.all([
           User.countDocuments({ interests: category.key }, { session }),
           countTorsUsingCategory(category.key, session),
@@ -1477,6 +1499,13 @@ export const deleteAdminCategory = async (req: Request, res: Response): Promise<
 
     if (outcome === 'not_found') {
       res.status(404).json({ success: false, message: 'ไม่พบหมวดหมู่' })
+      return
+    }
+    if (outcome === 'default_category') {
+      res.status(409).json({
+        success: false,
+        message: 'หมวดหมู่นี้เป็นหมวดเริ่มต้นของระบบ ใช้กับ TOR ที่จัดหมวดอื่นไม่ได้ จึงลบไม่ได้',
+      })
       return
     }
     if (outcome === 'in_use') {
