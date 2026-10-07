@@ -1,106 +1,89 @@
 import type { Request, Response } from 'express'
+import { isObjectIdOrHexString } from 'mongoose'
 
 import { getCategoryNameMap, listCategories } from '../category/category.repository.js'
 import { resolveTorCategory } from '../tor/tor.controller.js'
-import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
+import { HIDDEN_TOR_REVIEW_STATUSES, TorModel } from '../tor/tor.model.js'
+import { getFinishedTorSnapshot, snapshotSource, type FinishedTor } from './finished-tors.js'
 import {
-  SAVINGS_BUCKETS,
-  periodToCutoff,
-  type ProcurementListSortField,
-  type ReportPeriod,
-} from './report.constants.js'
+  categoryComparison,
+  filterFinishedTors,
+  findSimilarProjects,
+  monthlyTimeline,
+  priceOverview,
+  procurementList,
+  reportDateOf,
+  round1,
+  savingsBaht,
+  savingsDistribution,
+  savingsPct,
+  summarizeSimilar,
+  type FinishedTorFilters,
+} from './report.calculations.js'
+import { periodToCutoff } from './report.constants.js'
 import {
-  agencyNameMatchForDepartment,
-  getKnownDepartments,
-  isKnownDepartment,
-} from './report.department-cache.js'
-import {
-  categoryComparisonQuerySchema,
-  priceOverviewQuerySchema,
   procurementListQuerySchema,
-  savingsDistributionQuerySchema,
+  reportFilterQuerySchema,
+  similarQuerySchema,
 } from './report.validation.js'
 
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
+// Every report reads finished projects from the newest `tors_bk_*` snapshot (see
+// finished-tors.ts), not from `tors`, which only holds TORs still open for bidding. Money is
+// in baht. Each response carries `source` so the page can say which snapshot it shows.
 
-interface PricedProjectLean {
-  referencePriceBaht: number
-  winningPriceBaht: number
-  technologies: string[]
-  category: string | null
-}
+type FilterQuery = ReturnType<typeof reportFilterQuerySchema.parse>
 
-function toMillionRound2(baht: number): number {
-  return Math.round((baht / 1_000_000) * 100) / 100
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100
-}
-
-function savingsPct(referencePriceBaht: number, winningPriceBaht: number): number {
-  return ((referencePriceBaht - winningPriceBaht) / referencePriceBaht) * 100
-}
-
-function baseMatch(cutoff: Date | null, agencyName?: string): Record<string, unknown> {
-  const match: Record<string, unknown> = { ...PUBLIC_TOR_FILTER, awardedPriceBaht: { $ne: null } }
-  if (cutoff) match.analyzedAt = { $gte: cutoff }
-  if (agencyName) Object.assign(match, agencyNameMatchForDepartment(agencyName))
-  return match
-}
-
-async function validateAgencyName(agencyName: string | undefined, res: Response): Promise<boolean> {
-  if (!agencyName) return true
-  if (await isKnownDepartment(agencyName)) return true
-  res.status(400).json({ message: 'Invalid agencyName' })
-  return false
-}
-
-// The category filter is a key or a display name (case-insensitive); returns its key, or null
-// after answering 400 when no category matches. Hidden categories still match so old reports keep
-// working.
+// The category filter is a key or a display name (case-insensitive). Returns its key, or null
+// after answering 400. Hidden categories still match so old links keep working.
 async function resolveCategoryFilter(
   category: string | undefined,
   res: Response,
 ): Promise<string | undefined | null> {
   if (!category) return undefined
   const wanted = category.toLowerCase()
-  const names = await getCategoryNameMap()
-  for (const [key, name] of names) {
+  for (const [key, name] of await getCategoryNameMap()) {
     if (key === wanted || name.toLowerCase() === wanted) return key
   }
-  res.status(400).json({ message: 'Invalid query parameters' })
+  res.status(400).json({ success: false, message: 'ไม่พบหมวดหมู่ที่ระบุ' })
   return null
 }
 
-function filterByCategory<T extends { technologies: string[]; category: string | null }>(
-  projects: T[],
-  category: string | undefined,
-): T[] {
-  if (!category) return projects
-  return projects.filter((p) => resolveTorCategory(p) === category)
-}
-
-function groupByCategory<T extends { technologies: string[]; category: string | null }>(
-  projects: T[],
-): Map<string, T[]> {
-  const byCategory = new Map<string, T[]>()
-  for (const project of projects) {
-    const category = resolveTorCategory(project)
-    const bucket = byCategory.get(category)
-    if (bucket) {
-      bucket.push(project)
-    } else {
-      byCategory.set(category, [project])
-    }
+// Parses the shared filters and loads the snapshot. Returns null after answering an error.
+async function loadFiltered(
+  req: Request,
+  res: Response,
+  options: { ignore?: (keyof FilterQuery)[] } = {},
+): Promise<{
+  items: FinishedTor[]
+  source: ReturnType<typeof snapshotSource>
+  query: FilterQuery
+} | null> {
+  const parsed = reportFilterQuerySchema.safeParse(req.query)
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: 'พารามิเตอร์ไม่ถูกต้อง' })
+    return null
   }
-  return byCategory
+  const query = parsed.data
+  const ignore = new Set(options.ignore ?? [])
+
+  const category = ignore.has('category')
+    ? undefined
+    : await resolveCategoryFilter(query.category, res)
+  if (category === null) return null
+
+  const snapshot = await getFinishedTorSnapshot()
+  const filters: FinishedTorFilters = {
+    cutoff: periodToCutoff(query.period),
+    category,
+    departmentName: query.department,
+    q: query.q,
+    savingsBucket: ignore.has('savings_bucket') ? undefined : query.savings_bucket,
+  }
+  return {
+    items: filterFinishedTors(snapshot?.items ?? [], filters),
+    source: snapshotSource(snapshot),
+    query,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -108,329 +91,166 @@ function groupByCategory<T extends { technologies: string[]; category: string | 
 // ---------------------------------------------------------------------------
 
 export async function priceOverviewHandler(req: Request, res: Response): Promise<void> {
-  const parsed = priceOverviewQuerySchema.safeParse(req.query)
-  if (!parsed.success) {
-    res.status(400).json({ message: 'Invalid query parameters' })
-    return
-  }
-  const { period, category, agencyName } = parsed.data
-  if (!(await validateAgencyName(agencyName, res))) return
-  const categoryKey = await resolveCategoryFilter(category, res)
-  if (categoryKey === null) return
-
-  const cutoff = periodToCutoff(period as ReportPeriod)
-  const match = baseMatch(cutoff, agencyName)
-
-  const rawProjects = await TorModel.find(match, {
-    midPriceBaht: 1,
-    awardedPriceBaht: 1,
-    technologies: 1,
-    category: 1,
-  }).lean()
-
-  const projects: PricedProjectLean[] = filterByCategory(
-    rawProjects.map((p) => ({
-      referencePriceBaht: p.midPriceBaht!,
-      winningPriceBaht: p.awardedPriceBaht!,
-      technologies: p.technologies ?? [],
-      category: p.category ?? null,
-    })),
-    categoryKey,
-  )
-
-  const projectCount = projects.length
-  const totalMid = projects.reduce((sum, p) => sum + p.referencePriceBaht, 0)
-  const totalAwarded = projects.reduce((sum, p) => sum + p.winningPriceBaht, 0)
-  const totalSavingsRaw = totalMid - totalAwarded
-
-  const belowReference = projects.filter((p) => p.winningPriceBaht < p.referencePriceBaht)
-
-  res.json({
-    success: true,
-    data: {
-      total_mid_price: toMillionRound2(totalMid),
-      total_awarded_price: toMillionRound2(totalAwarded),
-      avg_mid_price: projectCount === 0 ? null : toMillionRound2(totalMid / projectCount),
-      project_count: projectCount,
-
-      total_savings: toMillionRound2(totalSavingsRaw),
-      overall_savings_pct: totalMid === 0 ? null : round1((totalSavingsRaw / totalMid) * 100),
-      avg_savings_baht: projectCount === 0 ? null : toMillionRound2(totalSavingsRaw / projectCount),
-
-      pct_projects_below_reference:
-        projectCount === 0 ? null : round1((belowReference.length / projectCount) * 100),
-      max_savings_pct:
-        belowReference.length === 0
-          ? null
-          : round1(
-              Math.max(
-                ...belowReference.map((p) => savingsPct(p.referencePriceBaht, p.winningPriceBaht)),
-              ),
-            ),
-    },
-  })
+  const loaded = await loadFiltered(req, res)
+  if (!loaded) return
+  res.json({ success: true, data: priceOverview(loaded.items), source: loaded.source })
 }
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/reports/savings-distribution
 // ---------------------------------------------------------------------------
 
+// The bucket filter is ignored here; this endpoint is what shows the buckets.
 export async function savingsDistributionHandler(req: Request, res: Response): Promise<void> {
-  const parsed = savingsDistributionQuerySchema.safeParse(req.query)
-  if (!parsed.success) {
-    res.status(400).json({ message: 'Invalid query parameters' })
-    return
-  }
-  const { period, category, agencyName } = parsed.data
-  if (!(await validateAgencyName(agencyName, res))) return
-  const categoryKey = await resolveCategoryFilter(category, res)
-  if (categoryKey === null) return
-
-  const cutoff = periodToCutoff(period as ReportPeriod)
-  const match = baseMatch(cutoff, agencyName)
-
-  const rawProjects = await TorModel.find(match, {
-    midPriceBaht: 1,
-    awardedPriceBaht: 1,
-    technologies: 1,
-    category: 1,
-  }).lean()
-
-  const projects: PricedProjectLean[] = filterByCategory(
-    rawProjects.map((p) => ({
-      referencePriceBaht: p.midPriceBaht!,
-      winningPriceBaht: p.awardedPriceBaht!,
-      technologies: p.technologies ?? [],
-      category: p.category ?? null,
-    })),
-    categoryKey,
-  )
-
-  const totalProjects = projects.length
-  const counts = SAVINGS_BUCKETS.map(() => 0)
-
-  for (const project of projects) {
-    const pct = savingsPct(project.referencePriceBaht, project.winningPriceBaht)
-    const index = SAVINGS_BUCKETS.findIndex((bucket) => {
-      if (bucket.min !== undefined && pct < bucket.min) return false
-      if (bucket.max !== undefined && pct >= bucket.max) return false
-      return true
-    })
-    if (index !== -1) counts[index]!++
-  }
-
-  res.json({
-    success: true,
-    data: {
-      total_projects: totalProjects,
-      buckets: SAVINGS_BUCKETS.map((bucket, index) => ({
-        label: bucket.label,
-        count: counts[index]!,
-        pct: totalProjects === 0 ? 0 : round1((counts[index]! / totalProjects) * 100),
-      })),
-    },
-  })
+  const loaded = await loadFiltered(req, res, { ignore: ['savings_bucket'] })
+  if (!loaded) return
+  res.json({ success: true, data: savingsDistribution(loaded.items), source: loaded.source })
 }
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/reports/category-comparison
 // ---------------------------------------------------------------------------
 
+// The category filter is ignored here; every category is compared.
 export async function categoryComparisonHandler(req: Request, res: Response): Promise<void> {
-  const parsed = categoryComparisonQuerySchema.safeParse(req.query)
-  if (!parsed.success) {
-    res.status(400).json({ message: 'Invalid query parameters' })
-    return
-  }
-  const { period, agencyName } = parsed.data
-  if (!(await validateAgencyName(agencyName, res))) return
-
-  const cutoff = periodToCutoff(period as ReportPeriod)
-  const match = baseMatch(cutoff, agencyName)
-
-  const [rawProjects, allCategories] = await Promise.all([
-    TorModel.find(match, {
-      midPriceBaht: 1,
-      awardedPriceBaht: 1,
-      technologies: 1,
-      category: 1,
-    }).lean(),
-    listCategories(),
-  ])
-
-  const projects: PricedProjectLean[] = rawProjects.map((p) => ({
-    referencePriceBaht: p.midPriceBaht!,
-    winningPriceBaht: p.awardedPriceBaht!,
-    technologies: p.technologies ?? [],
-    category: p.category ?? null,
-  }))
-
-  const byCategory = groupByCategory(projects)
-  const names = new Map(allCategories.map((category) => [category.key, category.name]))
-
-  // Every active category in display order (empty ones too), plus hidden or unknown categories
-  // that still have projects.
-  const orderedKeys = allCategories
-    .filter((category) => category.isActive || byCategory.has(category.key))
-    .map((category) => category.key)
-  for (const key of byCategory.keys()) {
-    if (!names.has(key)) orderedKeys.push(key)
-  }
-
-  const categories = orderedKeys.map((cat) => {
-    const group = byCategory.get(cat) ?? []
-    if (group.length === 0) {
-      return {
-        category: cat,
-        category_label: names.get(cat) ?? cat,
-        total_mid_price: 0,
-        total_awarded_price: 0,
-        avg_savings_pct: null,
-        project_count: 0,
-      }
-    }
-
-    const totalMid = group.reduce((sum, p) => sum + p.referencePriceBaht, 0)
-    const totalAwarded = group.reduce((sum, p) => sum + p.winningPriceBaht, 0)
-    const avgSavingsPct =
-      group.reduce((sum, p) => sum + savingsPct(p.referencePriceBaht, p.winningPriceBaht), 0) /
-      group.length
-
-    return {
-      category: cat,
-      category_label: names.get(cat) ?? cat,
-      total_mid_price: toMillionRound2(totalMid),
-      total_awarded_price: toMillionRound2(totalAwarded),
-      avg_savings_pct: round1(avgSavingsPct),
-      project_count: group.length,
-    }
+  const loaded = await loadFiltered(req, res, { ignore: ['category'] })
+  if (!loaded) return
+  const categories = await listCategories()
+  res.json({
+    success: true,
+    data: { categories: categoryComparison(loaded.items, categories) },
+    source: loaded.source,
   })
+}
 
-  res.json({ success: true, data: { categories } })
+// ---------------------------------------------------------------------------
+// GET /api/v1/reports/timeline
+// ---------------------------------------------------------------------------
+
+export async function timelineHandler(req: Request, res: Response): Promise<void> {
+  const loaded = await loadFiltered(req, res)
+  if (!loaded) return
+  res.json({
+    success: true,
+    data: { months: monthlyTimeline(loaded.items) },
+    source: loaded.source,
+  })
 }
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/reports/procurement-list
 // ---------------------------------------------------------------------------
 
-interface ProcurementListRow {
-  id: string
-  external_id: string
-  category: string
-  category_label: string
-  project_title: string
-  agency_name: string | null
-  mid_price_baht: number
-  awarded_price_baht: number
-  savings_amount: number
-  savings_pct: number
-  detail_url: string
-}
-
-function compareRows(
-  a: ProcurementListRow,
-  b: ProcurementListRow,
-  sortBy: ProcurementListSortField,
-): number {
-  switch (sortBy) {
-    case 'projectTitle':
-      return a.project_title.localeCompare(b.project_title)
-    case 'midPriceBaht':
-      return a.mid_price_baht - b.mid_price_baht
-    case 'awardedPriceBaht':
-      return a.awarded_price_baht - b.awarded_price_baht
-    case 'savings_amount':
-      return a.savings_amount - b.savings_amount
-    case 'savings_pct':
-      return a.savings_pct - b.savings_pct
-  }
-}
-
 export async function procurementListHandler(req: Request, res: Response): Promise<void> {
   const parsed = procurementListQuerySchema.safeParse(req.query)
   if (!parsed.success) {
-    res.status(400).json({ message: 'Invalid query parameters' })
+    res.status(400).json({ success: false, message: 'พารามิเตอร์ไม่ถูกต้อง' })
     return
   }
-  const {
-    period,
-    category,
-    agencyName,
-    budget_min: budgetMin,
-    budget_max: budgetMax,
-    page,
-    page_size: pageSize,
-    sort_by: sortBy,
-    sort_order: sortOrder,
-  } = parsed.data
-  if (!(await validateAgencyName(agencyName, res))) return
-  const categoryKey = await resolveCategoryFilter(category, res)
-  if (categoryKey === null) return
+  const loaded = await loadFiltered(req, res)
+  if (!loaded) return
 
-  const cutoff = periodToCutoff(period as ReportPeriod)
-  const match = baseMatch(cutoff, agencyName)
-  if (budgetMin !== undefined || budgetMax !== undefined) {
-    const range: Record<string, number> = {}
-    if (budgetMin !== undefined) range.$gte = budgetMin * 1_000_000
-    if (budgetMax !== undefined) range.$lte = budgetMax * 1_000_000
-    match.midPriceBaht = { ...(match.midPriceBaht as object | undefined), ...range }
-  }
-
-  const [rawProjects, names] = await Promise.all([
-    TorModel.find(match, {
-      externalId: 1,
-      projectTitle: 1,
-      agencyName: 1,
-      midPriceBaht: 1,
-      awardedPriceBaht: 1,
-      technologies: 1,
-      category: 1,
-      detailUrl: 1,
-    }).lean(),
-    getCategoryNameMap(),
-  ])
-
-  const filtered = categoryKey
-    ? rawProjects.filter((p) => resolveTorCategory(p) === categoryKey)
-    : rawProjects
-
-  const rows: ProcurementListRow[] = filtered.map((p) => {
-    const midPriceBaht = round2(p.midPriceBaht!)
-    const awardedPriceBaht = round2(p.awardedPriceBaht!)
-    const cat = resolveTorCategory(p)
-    return {
-      id: String(p._id),
-      external_id: p.externalId,
-      category: cat,
-      category_label: names.get(cat) ?? cat,
-      project_title: p.projectTitle,
-      agency_name: p.agencyName ?? null,
-      mid_price_baht: midPriceBaht,
-      awarded_price_baht: awardedPriceBaht,
-      savings_amount: round2(midPriceBaht - awardedPriceBaht),
-      savings_pct: round1(savingsPct(midPriceBaht, awardedPriceBaht)),
-      detail_url: p.detailUrl,
-    }
-  })
-
-  const direction = sortOrder === 'asc' ? 1 : -1
-  rows.sort((a, b) => direction * compareRows(a, b, sortBy))
-
-  const totalCount = rows.length
-  const totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / pageSize)
-  const items = rows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
-
-  res.json({
-    success: true,
-    data: { total_count: totalCount, page, page_size: pageSize, total_pages: totalPages, items },
-  })
+  const { page, page_size: pageSize, sort_by: sortBy, sort_order: sortOrder } = parsed.data
+  const data = procurementList(
+    loaded.items,
+    { page, pageSize, sortBy, sortOrder },
+    await getCategoryNameMap(),
+  )
+  res.json({ success: true, data, source: loaded.source })
 }
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/reports/filters/departments
 // ---------------------------------------------------------------------------
 
+// Departments that have at least one finished project, for the report's department filter.
 export async function departmentsFilterHandler(_req: Request, res: Response): Promise<void> {
-  const departments = await getKnownDepartments()
-  res.json({ success: true, data: { departments } })
+  const snapshot = await getFinishedTorSnapshot()
+  const departments = [
+    ...new Set(
+      (snapshot?.items ?? [])
+        .map((tor) => tor.departmentName)
+        .filter((name): name is string => name !== null),
+    ),
+  ].sort((a, b) => a.localeCompare(b, 'th'))
+  res.json({ success: true, data: { departments }, source: snapshotSource(snapshot) })
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/tors/:id/similar (UC-05)
+// ---------------------------------------------------------------------------
+
+// Finished projects similar to an open TOR (shared categories and technologies), with their
+// prices, so the user can judge whether the TOR's budget is reasonable.
+export async function similarFinishedTorsHandler(req: Request, res: Response): Promise<void> {
+  const { id } = req.params
+  if (!isObjectIdOrHexString(id)) {
+    res.status(400).json({ success: false, message: 'รหัส TOR ไม่ถูกต้อง' })
+    return
+  }
+  const parsed = similarQuerySchema.safeParse(req.query)
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: 'พารามิเตอร์ไม่ถูกต้อง' })
+    return
+  }
+
+  const tor = await TorModel.findById(id, {
+    externalId: 1,
+    category: 1,
+    categories: 1,
+    technologies: 1,
+    budgetBaht: 1,
+    reviewStatus: 1,
+  }).lean()
+  if (!tor || (tor.reviewStatus && HIDDEN_TOR_REVIEW_STATUSES.includes(tor.reviewStatus))) {
+    res.status(404).json({ success: false, message: 'ไม่พบ TOR' })
+    return
+  }
+
+  const category = resolveTorCategory(tor)
+  const target = {
+    externalId: tor.externalId,
+    category,
+    categories: tor.categories?.length ? tor.categories : [category],
+    technologies: tor.technologies ?? [],
+    budgetBaht: tor.budgetBaht ?? null,
+  }
+
+  const [snapshot, categoryNames] = await Promise.all([
+    getFinishedTorSnapshot(),
+    getCategoryNameMap(),
+  ])
+  const matches = findSimilarProjects(target, snapshot?.items ?? [], parsed.data.limit)
+
+  res.json({
+    success: true,
+    data: {
+      summary: summarizeSimilar(
+        matches.map((match) => match.tor),
+        tor.budgetBaht ?? null,
+      ),
+      items: matches.map(({ tor: project, match }) => ({
+        external_id: project.externalId,
+        project_title: project.projectTitle,
+        department_name: project.departmentName,
+        category: project.category,
+        category_label: categoryNames.get(project.category) ?? project.category,
+        matched_categories: match.matchedCategories.map((key) => ({
+          key,
+          label: categoryNames.get(key) ?? key,
+        })),
+        matched_technologies: match.matchedTechnologies,
+        score: match.score,
+        announce_date: reportDateOf(project)?.toISOString() ?? null,
+        budget_baht: project.budgetBaht,
+        mid_price_baht: project.midPriceBaht,
+        awarded_price_baht: project.awardedPriceBaht,
+        savings_amount_baht: Math.round(savingsBaht(project)),
+        savings_pct: round1(savingsPct(project)),
+        requirements: project.requirements.slice(0, 5),
+        detail_url: project.detailUrl,
+      })),
+    },
+    source: snapshotSource(snapshot),
+  })
 }

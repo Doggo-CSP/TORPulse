@@ -19,7 +19,7 @@
     "test:auth": "tsx --test src/modules/auth/auth.routes.test.ts src/modules/auth/auth.config.test.ts src/scripts/dev-session-token.test.ts",
     "test:user": "tsx --test src/modules/user/user-bookmark.model.test.ts src/modules/user/user.repository.test.ts src/modules/user/user.routes.test.ts",
     "test:homepage": "tsx --test src/modules/tor/tor.controller.test.ts && tsx --test src/modules/homepage/homepage.routes.test.ts && tsx --test src/modules/tor/tor.routes.test.ts",
-    "test:report": "tsx --test src/modules/report/report.controller.test.ts",
+    "test:report": "tsx --test src/modules/report/report.calculations.test.ts",
     "test:admin": "tsx --test src/modules/admin/audit-log.repository.test.ts src/modules/admin/admin.routes.test.ts src/modules/admin/admin.categories.routes.test.ts src/scripts/migrate-legacy-data.test.ts",
     "test:category": "tsx --test src/modules/category/category.repository.test.ts src/modules/category/category.routes.test.ts src/scripts/migrate-categories.test.ts",
     "migrate:categories": "tsx src/scripts/migrate-categories.ts",

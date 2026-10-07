@@ -23,7 +23,7 @@ Two processes share MongoDB:
 
      `annoudoc_*.pdf` (the announcement) is ignored. If no TOR PDF is found, the job becomes `skipped`.
   3. **Extract text**: OpenDataLoader converts the PDFs to Markdown, in the order above, capped at 300k characters. If fewer than 200 meaningful characters come out, the PDF is probably scanned, so the job becomes `review_required` (`OcrRequiredError`).
-  4. **Classify and extract**: the active categories are loaded from the `tor_categories` collection and inserted into the prompt. One LLM call returns JSON, which is validated with zod (`parseTorAnalysis`). The provider is Gemini on Vertex AI or DeepSeek, chosen by `AI_PROVIDER`. The prompt treats the document as untrusted.
+  4. **Classify and extract**: the active categories are loaded from the `categories` collection and inserted into the prompt. One LLM call returns JSON, which is validated with zod (`parseTorAnalysis`). The provider is Gemini on Vertex AI or DeepSeek, chosen by `AI_PROVIDER`. The prompt treats the document as untrusted.
   5. **Gate**: if `isSoftwareRelated` is false, the job becomes `rejected`.
   6. **Store**: the TOR is upserted and the job becomes `completed`. The fields come from these sources:
      - LLM fields: summary, requirements, qualifications, technologies and categories.
@@ -48,33 +48,36 @@ Two processes share MongoDB:
 | `projectTitle`, `agencyName` | LLM, falling back to the GovSpending `project_name` |
 | `summary`, `objectives`, `requirements`, `bidderQualifications`, `technologies`, `contactInformation` | LLM |
 | `submissionDeadline` (raw text), `submissionDeadlineAt` (Date) | LLM text, parsed by `parseThaiDate` (`modules/ingestion/thai-date.ts`). The date is null when no exact day is stated, for example "มกราคม 2569". The API returns `submissionDeadline` as `YYYY-MM-DD` or null, and the raw text as `submissionDeadlineText`. |
-| `category`, `categories[]` | LLM, limited to active keys in `tor_categories` |
+| `category`, `categories[]` | LLM, limited to active keys in `categories` |
 | `documents[]` | Names and URLs of the PDFs that were extracted |
 
 GovSpending values that are null never overwrite a value already stored on a TOR. Central eGP's token and project-detail endpoints are not called during ingestion. `getProjectDetails` is kept only for `npm run backfill:egp-details`.
 
 ## TOR categories
 
-Categories live in MongoDB (`tor_categories`) so that a future admin menu can manage them. Each row has these fields:
-- `key`: stable and immutable. It is stored on TORs.
+Categories live in MongoDB (`categories`) and admins manage them at `/api/v1/admin/categories`. Each row has these fields:
+- `key`: stable and immutable. It is stored on TORs (`category`, `categories[]`) and on users (`interests`).
 - `name`, `description`
-- `aiHint`: extra guidance for the classifier.
-- `order`, `active`
+- `aiHint`: extra guidance for the classifier. Admins can edit it.
+- `keywords`: shown and searched on the admin page.
+- `sortOrder`, `isActive`: hidden categories are left out of the classifier prompt and of new choices, but TORs and users keep them.
 
-The 8 defaults are inserted on API and worker start, or with `npm run seed:categories`. Rows that already exist are never overwritten.
+The API and the worker insert the 8 defaults only when the collection is empty, so a default an admin deleted stays deleted after a restart. `npm run seed:categories` inserts any missing default on purpose. Rows that already exist are never overwritten.
+
+Some databases still hold an older `tor_categories` collection (keys `web`, `data`, ...) from before the admin menu existed. No code reads it.
 
 | key | name | description |
 |---|---|---|
-| web | Web Application | ระบบเว็บแอปพลิเคชันและพอร์ทัลบริการประชาชน |
-| data | Data / BI | ระบบข้อมูล วิเคราะห์ และแดชบอร์ดผู้บริหาร |
-| mobile | Mobile App | แอปพลิเคชันบนมือถือ iOS และ Android |
-| enterprise | Enterprise System | ระบบสารสนเทศองค์กรและงานหลังบ้าน |
-| consulting | Consulting / Architecture | งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ |
-| cybersecurity | Cybersecurity | ความมั่นคงปลอดภัยไซเบอร์และการตรวจสอบระบบ |
-| ai | AI & Machine Learning | ปัญญาประดิษฐ์ การวิเคราะห์ขั้นสูงและระบบอัตโนมัติ |
-| cloud | Cloud & Infrastructure | โครงสร้างพื้นฐาน คลาวด์ และระบบเครือข่าย |
+| web_application | งานพัฒนาเว็บไซต์ | ระบบเว็บแอปพลิเคชันและพอร์ทัลบริการประชาชน |
+| data_bi | งานข้อมูลและวิเคราะห์ | ระบบข้อมูล วิเคราะห์ และแดชบอร์ดผู้บริหาร |
+| mobile_app | งานแอปพลิเคชันมือถือ | แอปพลิเคชันบนมือถือ iOS และ Android |
+| enterprise_system | งานระบบองค์กร | ระบบสารสนเทศองค์กรและงานหลังบ้าน |
+| consulting_architecture | งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ | งานที่ปรึกษาและออกแบบสถาปัตยกรรมระบบ |
+| cybersecurity | งานความมั่นคงปลอดภัยไซเบอร์ | ความมั่นคงปลอดภัยไซเบอร์และการตรวจสอบระบบ |
+| ai_ml | งานปัญญาประดิษฐ์และแมชชีนเลิร์นนิง | ปัญญาประดิษฐ์ การวิเคราะห์ขั้นสูงและระบบอัตโนมัติ |
+| cloud_infrastructure | งานคลาวด์และโครงสร้างพื้นฐาน | โครงสร้างพื้นฐาน คลาวด์ และระบบเครือข่าย |
 
-The keys match the user interest ids on the profile page.
+`enterprise_system` is the default category (`DEFAULT_CATEGORY_KEY`): the keyword fallback returns it when nothing else matches, so admins can rename it but cannot hide or delete it.
 
 **Classifier output.** The classifier returns `primaryCategory` and `categories`. `normalizeCategories` then cleans them up:
 - Unknown keys are dropped.
@@ -102,7 +105,7 @@ flowchart TD
     D1 -- yes --> F[extracting_text<br/>OpenDataLoader PDF to Markdown]
     F --> G{enough text?<br/>>= 200 chars}
     G -- no --> R2[/review_required:<br/>OCR needed/]
-    G -- yes --> H[classifying<br/>load tor_categories,<br/>LLM call by AI_PROVIDER]
+    G -- yes --> H[classifying<br/>load categories,<br/>LLM call by AI_PROVIDER]
     H --> I[parseTorAnalysis<br/>JSON.parse + zod]
     I --> J{isSoftwareRelated?}
     J -- no --> X[/rejected:<br/>classificationReason/]
@@ -173,7 +176,7 @@ C4Component
         Component(catrepo, "Category Repository", "category.repository.ts", "ensureDefaultCategories, getCategoryCatalog (60s cache), normalizeCategories")
     }
 
-    ContainerDb(mongo, "MongoDB", "mongoose", "ingestion_jobs, tors, tor_categories, data_sources")
+    ContainerDb(mongo, "MongoDB", "mongoose", "ingestion_jobs, tors, categories, data_sources")
     System_Ext(govspending, "GovSpending API", "Project list and metadata: department, status, prices, dates")
     System_Ext(egp, "Central eGP (process5)", "Announcement archive metadata and TOR ZIP")
     System_Ext(gemini, "Gemini (Vertex AI)", "LLM, JSON output")
@@ -198,7 +201,7 @@ C4Component
 
     Rel(jobrepo, mongo, "ingestion_jobs")
     Rel(torrepo, mongo, "tors")
-    Rel(catrepo, mongo, "tor_categories")
+    Rel(catrepo, mongo, "categories")
 ```
 
 ## Operations
@@ -209,7 +212,7 @@ Run all commands from `app/backend`.
 |---|---|
 | `npm run dev:producer` | Runs the GovSpending sync loop. One sync fills `sourceMetadata` on all jobs and refreshes existing TORs. |
 | `npm run dev:ingestion` | Runs the ingestion worker. Several instances can run at once, because claims are lease-based. |
-| `npm run seed:categories` | Inserts any missing default categories. |
+| `npm run seed:categories` | Inserts any missing default categories, including one an admin deleted. |
 | `npm run report:job-failures` | Read-only: job counts by status and stage, plus the most common error messages. |
 | `npm run requeue:jobs -- [--dry-run] [--status=failed,rejected]` | Resets finished jobs to `queued` so the worker reprocesses them. Jobs held by a live lease are skipped. Each reprocessed job costs one eGP download and one LLM call. |
 | `npm run backfill:deadlines -- [--dry-run]` | Parses the stored deadline text into `submissionDeadlineAt` on existing TORs. No LLM calls. |
