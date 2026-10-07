@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { pickLatestSnapshot, toFinishedTor, type FinishedTor } from './finished-tors.js'
+import {
+  isBiddingClosed,
+  mockAwardedPrice,
+  mockSavingsPct,
+  toFinishedTor,
+  type FinishedTor,
+} from './finished-tors.js'
 import {
   categoryComparison,
   filterFinishedTors,
@@ -10,7 +16,9 @@ import {
   monthlyTimeline,
   priceOverview,
   procurementList,
+  reportDateOf,
   savingsBucketOf,
+  withVisibleCategories,
   savingsDistribution,
   summarizeSimilar,
 } from './report.calculations.js'
@@ -18,6 +26,7 @@ import {
 // Pure unit tests: no database. Every expected number is worked out by hand in the comments.
 
 const finished = (overrides: Partial<FinishedTor> & { externalId: string }): FinishedTor => ({
+  id: `id-${overrides.externalId}`,
   projectTitle: `Project ${overrides.externalId}`,
   agencyName: null,
   departmentName: 'กรม ก',
@@ -29,7 +38,9 @@ const finished = (overrides: Partial<FinishedTor> & { externalId: string }): Fin
   budgetBaht: null,
   midPriceBaht: 1_000_000,
   awardedPriceBaht: 900_000,
+  awardedIsMock: false,
   announceDate: null,
+  submissionDeadlineAt: null,
   analyzedAt: new Date('2026-10-04T00:00:00Z'),
   detailUrl: null,
   ...overrides,
@@ -135,20 +146,20 @@ test('filterFinishedTors applies period, category, department, search and bucket
   assert.deepEqual(ids(filterFinishedTors(ALL, {})), ['A', 'B', 'C', 'D'])
 })
 
-test('categoryComparison lists every active category, then unknown keys with projects', () => {
+test('categoryComparison lists only active categories (hidden ones are a soft delete)', () => {
   const categories = [
     { key: 'web_application', name: 'เว็บ', isActive: true },
-    { key: 'data_bi', name: 'ข้อมูล', isActive: true },
+    { key: 'data_bi', name: 'ข้อมูล', isActive: false }, // hidden, but project C uses it
     { key: 'mobile_app', name: 'มือถือ', isActive: true },
     { key: 'hidden_unused', name: 'ซ่อน', isActive: false },
   ]
   const rows = categoryComparison(ALL, categories)
 
-  // hidden_unused has no project so it is left out; enterprise_system is not in the list
-  // but has project D, so it is appended with its key as the label
+  // data_bi is hidden: no bar even though project C is in it. enterprise_system (project D) is
+  // not in the categories collection at all: no bar either. mobile_app is active: a 0 bar.
   assert.deepEqual(
     rows.map((r) => r.category),
-    ['web_application', 'data_bi', 'mobile_app', 'enterprise_system'],
+    ['web_application', 'mobile_app'],
   )
   assert.deepEqual(rows[0], {
     category: 'web_application',
@@ -160,9 +171,45 @@ test('categoryComparison lists every active category, then unknown keys with pro
     avg_awarded_price_baht: 1_300_000,
     avg_savings_pct: 12.5, // (10 + 15) / 2
   })
-  assert.equal(rows[2]!.project_count, 0)
-  assert.equal(rows[2]!.avg_mid_price_baht, null)
-  assert.equal(rows[3]!.category_label, 'enterprise_system')
+  assert.equal(rows[1]!.project_count, 0)
+  assert.equal(rows[1]!.avg_mid_price_baht, null)
+})
+
+test('withVisibleCategories hides inactive categories without changing anything else', () => {
+  const visible = new Set(['web_application', 'mobile_app'])
+  // B: primary web (visible), secondary cloud (not visible)
+  const b = withVisibleCategories(B, visible)
+  assert.equal(b.category, 'web_application')
+  assert.deepEqual(b.categories, ['web_application'])
+  assert.equal(b.midPriceBaht, B.midPriceBaht)
+  // C: primary data_bi not visible -> no category at all
+  const c = withVisibleCategories(C, visible)
+  assert.equal(c.category, null)
+  assert.deepEqual(c.categories, [])
+
+  // A filter on a hidden category finds nothing; the table shows no label
+  const shown = [A, B, C, D].map((tor) => withVisibleCategories(tor, visible))
+  assert.deepEqual(filterFinishedTors(shown, { category: 'data_bi' }), [])
+  const rows = procurementList(
+    shown,
+    { sortBy: 'savings_pct', sortOrder: 'desc', page: 1, pageSize: 10 },
+    new Map([['web_application', 'เว็บ']]),
+  ).items
+  const rowC = rows.find((r) => r.external_id === 'C')!
+  assert.equal(rowC.category, null)
+  assert.equal(rowC.category_label, null)
+  assert.equal(rows.find((r) => r.external_id === 'A')!.category_label, 'เว็บ')
+})
+
+test('findSimilarProjects never matches on a hidden category', () => {
+  const visible = new Set(['web_application'])
+  // Target and C share only data_bi, which is hidden
+  const target = { externalId: 'X', category: null, categories: [], technologies: [] }
+  const matches = findSimilarProjects(
+    target,
+    [C].map((tor) => withVisibleCategories(tor, visible)),
+  )
+  assert.deepEqual(matches, [])
 })
 
 test('monthlyTimeline groups by Bangkok calendar month, oldest first', () => {
@@ -285,40 +332,138 @@ test('median of odd and even lists', () => {
   assert.equal(median([]), null)
 })
 
-test('pickLatestSnapshot picks the newest dated tors_bk_ collection', () => {
-  assert.deepEqual(
-    pickLatestSnapshot([
-      'tors',
-      'tors_bk',
-      'tors_bk_20260930',
-      'tors_bk_20261004',
-      'tors_bk_20261003',
-      'tors_bk_2026',
-      'users',
-    ]),
-    { collection: 'tors_bk_20261004', snapshotDate: '2026-10-04' },
-  )
-  assert.equal(pickLatestSnapshot(['tors', 'tors_bk']), null)
+// "Now" for the tests below: 2026-10-07 10:00 in Bangkok
+const NOW = new Date('2026-10-07T03:00:00Z')
+
+test('isBiddingClosed: closed only once the Bangkok submission day is over', () => {
+  // 2026-10-06 12:00 Bangkok: yesterday
+  assert.equal(isBiddingClosed(new Date('2026-10-06T05:00:00Z'), NOW), true)
+  // 2026-10-07 12:00 Bangkok: today, still open until the day ends
+  assert.equal(isBiddingClosed(new Date('2026-10-07T05:00:00Z'), NOW), false)
+  // 2026-10-06 23:30 UTC is already 2026-10-07 06:30 in Bangkok: today, still open
+  assert.equal(isBiddingClosed(new Date('2026-10-06T23:30:00Z'), NOW), false)
+  assert.equal(isBiddingClosed(new Date('2026-10-20T05:00:00Z'), NOW), false)
+  // No deadline: treated as open
+  assert.equal(isBiddingClosed(null, NOW), false)
 })
 
-test('toFinishedTor keeps only projects with both prices and resolves the category', () => {
+test('mockSavingsPct follows the real savings bands', () => {
+  assert.equal(mockSavingsPct(0), -3)
+  assert.equal(mockSavingsPct(0.005), -1.5) // middle of the 1% "above mid" band
+  assert.equal(mockSavingsPct(0.01), 0)
+  assert.equal(mockSavingsPct(0.305), 2.5) // middle of the 59% 0-5% band
+  assert.equal(mockSavingsPct(0.6), 5)
+  assert.equal(mockSavingsPct(0.79), 15)
+  assert.ok(mockSavingsPct(0.999999) < 30)
+})
+
+test('mockAwardedPrice is deterministic, within -3% .. +30% savings, shaped like real data', () => {
+  assert.equal(
+    mockAwardedPrice('69099316505', 7_087_000),
+    mockAwardedPrice('69099316505', 7_087_000),
+  )
+  const n = 2000
+  let above = 0
+  let small = 0
+  for (let i = 0; i < n; i += 1) {
+    const awarded = mockAwardedPrice(`ext-${i}`, 1_000_000)
+    assert.ok(awarded >= 700_000 && awarded <= 1_030_000, `ext-${i} -> ${awarded}`)
+    assert.equal(awarded % 100, 0)
+    if (awarded > 1_000_000) above += 1
+    if (awarded <= 1_000_000 && awarded > 950_000) small += 1
+  }
+  // About 1% above the mid price and about 59% saving 0-5% (loose bounds for hashing noise)
+  assert.ok(above / n < 0.03, `above ${above}`)
+  assert.ok(small / n > 0.5 && small / n < 0.68, `small ${small}`)
+})
+
+test('toFinishedTor: a TOR still open for bids never gets an awarded price', () => {
   const base = {
+    _id: 'a1',
     externalId: '69000000001',
     projectTitle: 'ระบบทดสอบ',
     midPriceBaht: 1_000_000,
+    awardedPriceBaht: null,
+  }
+  const open = { ...base, submissionDeadlineAt: new Date('2026-10-20T05:00:00Z') }
+  const dueToday = { ...base, submissionDeadlineAt: new Date('2026-10-07T05:00:00Z') }
+  const noDeadline = { ...base, submissionDeadlineAt: null }
+  assert.equal(toFinishedTor(open, NOW), null)
+  assert.equal(toFinishedTor(dueToday, NOW), null)
+  assert.equal(toFinishedTor(noDeadline, NOW), null)
+})
+
+test('toFinishedTor: closed TORs get a labelled mock, cancelled ones none, real prices win', () => {
+  const closed = {
+    _id: 'a2',
+    externalId: '69000000002',
+    projectTitle: 'ระบบที่ปิดรับแล้ว',
+    midPriceBaht: 1_000_000,
+    awardedPriceBaht: null,
+    submissionDeadlineAt: new Date('2026-09-01T05:00:00Z'),
+    contractStatusCode: 'S1',
+  }
+
+  const mocked = toFinishedTor(closed, NOW)
+  assert.equal(mocked?.awardedIsMock, true)
+  assert.equal(mocked?.awardedPriceBaht, mockAwardedPrice('69000000002', 1_000_000))
+  assert.equal(mocked?.id, 'a2')
+
+  // Cancelled project (S5): no winner, so no price at all
+  assert.equal(toFinishedTor({ ...closed, contractStatusCode: 'S5' }, NOW), null)
+
+  // A real awarded price is used as is, even before the deadline
+  const real = toFinishedTor(
+    {
+      ...closed,
+      awardedPriceBaht: 950_000,
+      submissionDeadlineAt: new Date('2026-10-20T05:00:00Z'),
+    },
+    NOW,
+  )
+  assert.equal(real?.awardedIsMock, false)
+  assert.equal(real?.awardedPriceBaht, 950_000)
+
+  // No mid price: left out
+  assert.equal(toFinishedTor({ ...closed, midPriceBaht: null }, NOW), null)
+  assert.equal(toFinishedTor({ ...closed, externalId: '' }, NOW), null)
+})
+
+test('toFinishedTor resolves the category', () => {
+  const base = {
+    _id: 'a3',
+    externalId: '69000000003',
+    midPriceBaht: 1_000_000,
     awardedPriceBaht: 950_000,
   }
-  assert.equal(toFinishedTor({ ...base, awardedPriceBaht: null }), null)
-  assert.equal(toFinishedTor({ ...base, midPriceBaht: 0 }), null)
-  assert.equal(toFinishedTor({ ...base, externalId: '' }), null)
-
-  const stored = toFinishedTor({ ...base, category: 'ai_ml', categories: ['ai_ml', 'data_bi'] })
+  const stored = toFinishedTor(
+    { ...base, category: 'ai_ml', categories: ['ai_ml', 'data_bi'] },
+    NOW,
+  )
   assert.equal(stored?.category, 'ai_ml')
   assert.deepEqual(stored?.categories, ['ai_ml', 'data_bi'])
 
   // No stored category: the keyword fallback decides, and categories lists it
-  const derived = toFinishedTor({ ...base, category: null, technologies: ['Flutter'] })
+  const derived = toFinishedTor({ ...base, category: null, technologies: ['Flutter'] }, NOW)
   assert.equal(derived?.category, 'mobile_app')
   assert.deepEqual(derived?.categories, ['mobile_app'])
   assert.equal(derived?.announceDate, null)
+})
+
+test('reportDateOf: announce date, else submission deadline, else analysed date', () => {
+  const deadline = new Date('2026-09-01T05:00:00Z')
+  const analyzed = new Date('2026-10-04T00:00:00Z')
+  const announce = new Date('2026-08-01T00:00:00Z')
+  assert.equal(
+    reportDateOf({ announceDate: announce, submissionDeadlineAt: deadline, analyzedAt: analyzed }),
+    announce,
+  )
+  assert.equal(
+    reportDateOf({ announceDate: null, submissionDeadlineAt: deadline, analyzedAt: analyzed }),
+    deadline,
+  )
+  assert.equal(
+    reportDateOf({ announceDate: null, submissionDeadlineAt: null, analyzedAt: analyzed }),
+    analyzed,
+  )
 })

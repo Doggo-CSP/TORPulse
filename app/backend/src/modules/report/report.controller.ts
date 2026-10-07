@@ -1,10 +1,10 @@
 import type { Request, Response } from 'express'
 import { isObjectIdOrHexString } from 'mongoose'
 
-import { getCategoryNameMap, listCategories } from '../category/category.repository.js'
+import { getVisibleCategoryNameMap, listCategories } from '../category/category.repository.js'
 import { resolveTorCategory } from '../tor/tor.controller.js'
 import { HIDDEN_TOR_REVIEW_STATUSES, TorModel } from '../tor/tor.model.js'
-import { getFinishedTorSnapshot, snapshotSource, type FinishedTor } from './finished-tors.js'
+import { getFinishedTors, reportSource, type FinishedTor } from './finished-tors.js'
 import {
   categoryComparison,
   filterFinishedTors,
@@ -18,6 +18,7 @@ import {
   savingsDistribution,
   savingsPct,
   summarizeSimilar,
+  withVisibleCategories,
   type FinishedTorFilters,
 } from './report.calculations.js'
 import { periodToCutoff } from './report.constants.js'
@@ -27,36 +28,43 @@ import {
   similarQuerySchema,
 } from './report.validation.js'
 
-// Every report reads finished projects from the newest `tors_bk_*` snapshot (see
-// finished-tors.ts), not from `tors`, which only holds TORs still open for bidding. Money is
-// in baht. Each response carries `source` so the page can say which snapshot it shows.
+// Every report reads TORs from `tors` that have a mid price and an awarded price. Awarded
+// prices are a mock for TORs whose bidding has closed until ingestion stores real ones (see
+// finished-tors.ts); TORs still open for bids never have one. Money is in baht. Each response
+// carries `source` (as_of, project_count, mock_awarded_count).
+//
+// Hidden categories are a soft delete for users: reports never show, filter on or match them
+// (see withVisibleCategories). Showing the category again brings it back.
 
 type FilterQuery = ReturnType<typeof reportFilterQuerySchema.parse>
 
-// The category filter is a key or a display name (case-insensitive). Returns its key, or null
-// after answering 400. Hidden categories still match so old links keep working.
-async function resolveCategoryFilter(
+// The category filter is a key or a display name (case-insensitive) of an active category.
+// Returns its key, or null after answering 400 (unknown or hidden category).
+function resolveCategoryFilter(
   category: string | undefined,
+  visibleNames: Map<string, string>,
   res: Response,
-): Promise<string | undefined | null> {
+): string | undefined | null {
   if (!category) return undefined
   const wanted = category.toLowerCase()
-  for (const [key, name] of await getCategoryNameMap()) {
+  for (const [key, name] of visibleNames) {
     if (key === wanted || name.toLowerCase() === wanted) return key
   }
   res.status(400).json({ success: false, message: 'ไม่พบหมวดหมู่ที่ระบุ' })
   return null
 }
 
-// Parses the shared filters and loads the snapshot. Returns null after answering an error.
+// Parses the shared filters and loads the priced TORs. Returns null after answering an error.
 async function loadFiltered(
   req: Request,
   res: Response,
   options: { ignore?: (keyof FilterQuery)[] } = {},
 ): Promise<{
   items: FinishedTor[]
-  source: ReturnType<typeof snapshotSource>
+  source: ReturnType<typeof reportSource>
   query: FilterQuery
+  // Active categories only
+  categoryNames: Map<string, string>
 } | null> {
   const parsed = reportFilterQuerySchema.safeParse(req.query)
   if (!parsed.success) {
@@ -66,12 +74,16 @@ async function loadFiltered(
   const query = parsed.data
   const ignore = new Set(options.ignore ?? [])
 
+  const [finished, categoryNames] = await Promise.all([
+    getFinishedTors(),
+    getVisibleCategoryNameMap(),
+  ])
   const category = ignore.has('category')
     ? undefined
-    : await resolveCategoryFilter(query.category, res)
+    : resolveCategoryFilter(query.category, categoryNames, res)
   if (category === null) return null
 
-  const snapshot = await getFinishedTorSnapshot()
+  const visible = new Set(categoryNames.keys())
   const filters: FinishedTorFilters = {
     cutoff: periodToCutoff(query.period),
     category,
@@ -80,9 +92,13 @@ async function loadFiltered(
     savingsBucket: ignore.has('savings_bucket') ? undefined : query.savings_bucket,
   }
   return {
-    items: filterFinishedTors(snapshot?.items ?? [], filters),
-    source: snapshotSource(snapshot),
+    items: filterFinishedTors(
+      finished.items.map((tor) => withVisibleCategories(tor, visible)),
+      filters,
+    ),
+    source: reportSource(finished),
     query,
+    categoryNames,
   }
 }
 
@@ -154,7 +170,7 @@ export async function procurementListHandler(req: Request, res: Response): Promi
   const data = procurementList(
     loaded.items,
     { page, pageSize, sortBy, sortOrder },
-    await getCategoryNameMap(),
+    loaded.categoryNames,
   )
   res.json({ success: true, data, source: loaded.source })
 }
@@ -163,25 +179,26 @@ export async function procurementListHandler(req: Request, res: Response): Promi
 // GET /api/v1/reports/filters/departments
 // ---------------------------------------------------------------------------
 
-// Departments that have at least one finished project, for the report's department filter.
+// Departments that have at least one priced TOR, for the report's department filter.
 export async function departmentsFilterHandler(_req: Request, res: Response): Promise<void> {
-  const snapshot = await getFinishedTorSnapshot()
+  const finished = await getFinishedTors()
   const departments = [
     ...new Set(
-      (snapshot?.items ?? [])
+      finished.items
         .map((tor) => tor.departmentName)
         .filter((name): name is string => name !== null),
     ),
   ].sort((a, b) => a.localeCompare(b, 'th'))
-  res.json({ success: true, data: { departments }, source: snapshotSource(snapshot) })
+  res.json({ success: true, data: { departments }, source: reportSource(finished) })
 }
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/tors/:id/similar (UC-05)
 // ---------------------------------------------------------------------------
 
-// Finished projects similar to an open TOR (shared categories and technologies), with their
-// prices, so the user can judge whether the TOR's budget is reasonable.
+// TORs whose bidding has closed and that are similar to this TOR (shared categories and
+// technologies), with their mid and awarded prices, so the user can judge whether this TOR's
+// budget is reasonable. Awarded prices may be mock (awarded_is_mock).
 export async function similarFinishedTorsHandler(req: Request, res: Response): Promise<void> {
   const { id } = req.params
   if (!isObjectIdOrHexString(id)) {
@@ -207,20 +224,29 @@ export async function similarFinishedTorsHandler(req: Request, res: Response): P
     return
   }
 
+  const [finished, categoryNames] = await Promise.all([
+    getFinishedTors(),
+    getVisibleCategoryNameMap(),
+  ])
+  // Hidden categories are never matched on or shown (soft delete)
+  const visible = new Set(categoryNames.keys())
   const category = resolveTorCategory(tor)
+  const targetCategories = (tor.categories?.length ? tor.categories : [category]).filter((key) =>
+    visible.has(key),
+  )
   const target = {
     externalId: tor.externalId,
-    category,
-    categories: tor.categories?.length ? tor.categories : [category],
+    category: visible.has(category) ? category : null,
+    categories: targetCategories,
     technologies: tor.technologies ?? [],
     budgetBaht: tor.budgetBaht ?? null,
   }
 
-  const [snapshot, categoryNames] = await Promise.all([
-    getFinishedTorSnapshot(),
-    getCategoryNameMap(),
-  ])
-  const matches = findSimilarProjects(target, snapshot?.items ?? [], parsed.data.limit)
+  const matches = findSimilarProjects(
+    target,
+    finished.items.map((item) => withVisibleCategories(item, visible)),
+    parsed.data.limit,
+  )
 
   res.json({
     success: true,
@@ -230,11 +256,13 @@ export async function similarFinishedTorsHandler(req: Request, res: Response): P
         tor.budgetBaht ?? null,
       ),
       items: matches.map(({ tor: project, match }) => ({
+        tor_id: project.id,
         external_id: project.externalId,
         project_title: project.projectTitle,
         department_name: project.departmentName,
+        // null when the project's primary category is hidden
         category: project.category,
-        category_label: categoryNames.get(project.category) ?? project.category,
+        category_label: project.category ? (categoryNames.get(project.category) ?? null) : null,
         matched_categories: match.matchedCategories.map((key) => ({
           key,
           label: categoryNames.get(key) ?? key,
@@ -245,12 +273,13 @@ export async function similarFinishedTorsHandler(req: Request, res: Response): P
         budget_baht: project.budgetBaht,
         mid_price_baht: project.midPriceBaht,
         awarded_price_baht: project.awardedPriceBaht,
+        awarded_is_mock: project.awardedIsMock,
         savings_amount_baht: Math.round(savingsBaht(project)),
         savings_pct: round1(savingsPct(project)),
         requirements: project.requirements.slice(0, 5),
         detail_url: project.detailUrl,
       })),
     },
-    source: snapshotSource(snapshot),
+    source: reportSource(finished),
   })
 }
