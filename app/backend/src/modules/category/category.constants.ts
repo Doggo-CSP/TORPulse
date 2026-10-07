@@ -1,3 +1,8 @@
+// The category a TOR gets when the keyword fallback matches nothing (see deriveCategory in
+// tor.controller.ts). Admins cannot hide or delete it, so that fallback always points at a live,
+// filterable category.
+export const DEFAULT_CATEGORY_KEY = 'enterprise_system'
+
 // Seed data only. Categories live in the `categories` collection and are managed by admins;
 // application code must read them from the database (category.repository.ts), never from here.
 // scripts/seed-categories.ts inserts these once (keywords come from the keyword rules in

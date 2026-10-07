@@ -11,7 +11,7 @@ import {
 
 import { processIngestionJob } from '../../modules/ingestion/ingestion.service.js'
 import { TorModel } from '../../modules/tor/tor.model.js'
-import { seedCategories } from '../../scripts/seed-categories.js'
+import { seedCategoriesIfEmpty } from '../../scripts/seed-categories.js'
 
 const POLL_INTERVAL_MS = 5_000 // 5 seconds
 
@@ -19,7 +19,7 @@ export async function startIngestionWorker(signal: AbortSignal): Promise<void> {
   const workerId = `ingestion-${randomUUID()}`
 
   await TorModel.init()
-  await seedCategories()
+  await seedCategoriesIfEmpty()
   console.log(`Ingestion worker started: ${workerId}`)
 
   while (!signal.aborted) {

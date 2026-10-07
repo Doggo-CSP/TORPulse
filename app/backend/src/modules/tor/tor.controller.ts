@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { Request, Response } from 'express'
 import { isObjectIdOrHexString } from 'mongoose'
 
+import { DEFAULT_CATEGORY_KEY } from '../category/category.constants.js'
 import { getCategoryNameMap, listCategories } from '../category/category.repository.js'
 import { cleanDateText, parseThaiDate, toIsoDateString } from '../ingestion/thai-date.js'
 import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from './tor.model.js'
@@ -148,7 +149,7 @@ export function deriveCategory(technologies: string[]): RuleCategoryKey {
     return 'consulting_architecture'
   }
 
-  return 'enterprise_system'
+  return DEFAULT_CATEGORY_KEY
 }
 
 // A stored category (set by the AI classifier at ingestion, by an admin override, or by the
