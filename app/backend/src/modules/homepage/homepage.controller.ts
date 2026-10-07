@@ -47,7 +47,7 @@ export async function getSummaryHandler(_req: Request, res: Response): Promise<v
           { $match: { budgetBaht: { $ne: null } } },
           { $group: { _id: null, sum: { $sum: '$budgetBaht' } } },
         ],
-        new_this_week: [{ $match: { updatedAt: { $gte: start, $lt: end } } }, { $count: 'count' }],
+        new_this_week: [{ $match: { createdAt: { $gte: start, $lt: end } } }, { $count: 'count' }],
         last_updated: [
           { $sort: { updatedAt: -1 } },
           { $limit: 1 },
