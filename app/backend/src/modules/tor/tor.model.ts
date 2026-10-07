@@ -83,6 +83,21 @@ const torSchema = new Schema(
       type: String,
       default: null,
     },
+    // BMA's own project UUID (egp2.bangkok.go.th), separate from the eGP externalId.
+    sourceProjectId: {
+      type: String,
+      default: null,
+    },
+    // Whether the project is still active (e.g. ระหว่างดำเนินการ / S1), unlike projectStatus
+    // which tracks the announcement stage.
+    contractStatus: {
+      type: String,
+      default: null,
+    },
+    contractStatusCode: {
+      type: String,
+      default: null,
+    },
     fiscalYear: {
       type: Number,
       default: null,

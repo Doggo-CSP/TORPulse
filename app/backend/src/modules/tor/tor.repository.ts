@@ -22,6 +22,9 @@ const pickSourceFields = (input: UpsertTorInput) => ({
   departmentName: input.departmentName,
   departmentSubName: input.departmentSubName,
   projectStatus: input.projectStatus,
+  sourceProjectId: input.sourceProjectId,
+  contractStatus: input.contractStatus,
+  contractStatusCode: input.contractStatusCode,
   midPriceBaht: input.midPriceBaht,
   awardedPriceBaht: input.awardedPriceBaht,
 })
@@ -67,6 +70,9 @@ export type TorSourceFields = Pick<
   | 'departmentName'
   | 'departmentSubName'
   | 'projectStatus'
+  | 'sourceProjectId'
+  | 'contractStatus'
+  | 'contractStatusCode'
   | 'fiscalYear'
   | 'announceDate'
   | 'budgetBaht'
@@ -90,6 +96,9 @@ export function torFieldsFromSourceMetadata(
     departmentName: metadata.departmentName,
     departmentSubName: metadata.departmentSubName,
     projectStatus: metadata.projectStatus,
+    sourceProjectId: metadata.sourceProjectId,
+    contractStatus: metadata.contractStatus,
+    contractStatusCode: metadata.contractStatusCode,
     fiscalYear: metadata.fiscalYear,
     announceDate: metadata.announceDate,
     budgetBaht: metadata.budgetBaht,

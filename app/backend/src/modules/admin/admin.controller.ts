@@ -634,6 +634,8 @@ const toAdminTorDetail = (tor: AdminTorLean, categoryNames: Map<string, string>)
     departmentName: tor.departmentName ?? null,
     departmentSubName: tor.departmentSubName ?? null,
     projectStatus: tor.projectStatus ?? null,
+    contractStatus: tor.contractStatus ?? null,
+    contractStatusCode: tor.contractStatusCode ?? null,
     summary: tor.summary ?? null,
     scope: tor.scope ?? null,
     objectives: tor.objectives ?? [],
