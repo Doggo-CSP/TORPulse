@@ -10,7 +10,55 @@ import { useUserProfile } from "@/hooks/use-user-profile";
 import { useHomepage } from "@/hooks/use-homepage";
 import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
 import { useTorFilterOptions, useTorRecommendations, useTors } from "@/hooks/use-tors";
+import { useCategories } from "@/hooks/use-categories";
 import { DeadlineBadge } from "@/app/components/deadline_badge";
+import { formatThaiDate } from "@/api/reports.api";
+
+// Category labels on the price chart's y axis
+const CATEGORY_AXIS_WIDTH = 150;
+// Counts characters including Thai vowel and tone marks, which take no width of their own
+const CATEGORY_LABEL_MAX_CHARS = 20;
+
+// Splits a Thai label into lines of at most maxChars, breaking between words (Thai has no
+// spaces, so Intl.Segmenter finds the word boundaries). A single word longer than maxChars
+// stays on its own line.
+function wrapLabel(label: string, maxChars: number): string[] {
+  const words =
+    typeof Intl !== "undefined" && "Segmenter" in Intl
+      ? Array.from(new Intl.Segmenter("th", { granularity: "word" }).segment(label), (s) => s.segment)
+      : label.split(/(\s+)/);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (current && (current + word).length > maxChars) {
+      lines.push(current.trim());
+      current = word.trimStart();
+    } else {
+      current += word;
+    }
+  }
+  if (current.trim()) lines.push(current.trim());
+  return lines;
+}
+
+// Right-aligned, vertically centred multi-line tick so long category names are not cut off
+function WrappedCategoryTick({ x, y, label }: { x: number; y: number; label: string }) {
+  const lines = wrapLabel(label, CATEGORY_LABEL_MAX_CHARS);
+  return (
+    <text x={x - 4} y={y} textAnchor="end" fontSize={11} fill="var(--muted-foreground)">
+      {lines.map((line, index) => (
+        <tspan
+          key={index}
+          x={x - 4}
+          dy={index === 0 ? `${0.35 - (lines.length - 1) * 0.6}em` : "1.2em"}
+        >
+          {line}
+        </tspan>
+      ))}
+      <title>{label}</title>
+    </text>
+  );
+}
 
 const PriceComparisonChart = dynamic(
   () =>
@@ -60,8 +108,14 @@ const PriceComparisonChart = dynamic(
               <YAxis
                 type="category"
                 dataKey="category"
-                width={170}
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                width={CATEGORY_AXIS_WIDTH}
+                tick={(props) => (
+                  <WrappedCategoryTick
+                    x={Number(props.x)}
+                    y={Number(props.y)}
+                    label={String(props.payload?.value ?? "")}
+                  />
+                )}
                 tickLine={false}
                 axisLine={false}
               />
@@ -74,7 +128,7 @@ const PriceComparisonChart = dynamic(
                       <p className="text-sm font-medium">{label}</p>
                       {!row?.projectCount ? (
                         <p className="mt-1 text-xs text-muted-foreground">
-                          ยังไม่มีโครงการที่ทำสัญญาแล้วในหมวดนี้
+                          ยังไม่มี TOR ที่ปิดรับแล้วในหมวดนี้
                         </p>
                       ) : (
                         <div className="mt-1.5 space-y-0.5">
@@ -122,16 +176,6 @@ const toMillionOrNull = (n: number | null) =>
 
 const ITEMS_PER_PAGE = 4;
 
-const THAI_MONTHS_SHORT = [
-  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
-];
-// "2026-10-04" -> "4 ต.ค. 2569"
-const formatSnapshotDate = (isoDate: string) => {
-  const [year, month, day] = isoDate.split("-").map(Number);
-  return year && month && day ? `${day} ${THAI_MONTHS_SHORT[month - 1]} ${year + 543}` : isoDate;
-};
-
 const priceChartSeries = [
   { key: "midPrice", label: "ราคากลาง", color: "#d18f5dff" },
   { key: "awardedPrice", label: "ราคาที่ชนะ", color: "#4a7c59" },
@@ -142,8 +186,11 @@ export default function HomePage() {
   const { profile, loading: profileLoading } = useUserProfile(!!user);
   const { summary, analytics, loadingSummary } = useHomepage();
 
-  // filter options (fiscal years, departments, statuses, categories) come from the TORs in the database
+  // filter options (fiscal years, departments, statuses) come from the TORs in the database
   const { data: filterOptions } = useTorFilterOptions();
+  // Category chips list every active category, even one no TOR uses yet (filtering on it
+  // then simply finds nothing). /tors/filter-options would drop such categories.
+  const { data: activeCategories } = useCategories();
   const budgetYears = useMemo(
     () => ["ทั้งหมด", ...(filterOptions?.years.map(String) ?? [])],
     [filterOptions],
@@ -156,7 +203,7 @@ export default function HomePage() {
     () => ["ทั้งหมด", ...(filterOptions?.statuses ?? [])],
     [filterOptions],
   );
-  const categoryOptions = filterOptions?.categories ?? [];
+  const categoryOptions = activeCategories ?? [];
 
   // Share of open TORs (`tors`) per category
   const displayedCategorySplit = useMemo(
@@ -168,7 +215,7 @@ export default function HomePage() {
     [analytics],
   );
 
-  // Average mid vs awarded price per category, over finished projects (tors_bk_* snapshot).
+  // Average mid vs awarded price per category, over TORs whose bidding has closed (mock awarded).
   // Every active category is listed; a category with no finished project has no bars.
   const displayedPriceComparison = useMemo(
     () =>
@@ -229,7 +276,8 @@ export default function HomePage() {
       agency: item.agencyName || "หน่วยงานรัฐ",
       budget: item.budgetBaht || 0,
       interestScore: item.score,
-      reason: `ตรงกับหมวดหมู่ ${item.category}`,
+      // Category display name; empty when the TOR's primary category is hidden
+      reason: item.categoryName ? `ตรงกับหมวดหมู่ ${item.categoryName}` : "",
     }));
   }, [isLoggedIn, recommendedTors]);
 
@@ -333,17 +381,13 @@ export default function HomePage() {
                     : loadingSummary
                     ? "..."
                     : "—",
+                  // Third card fills the row on its own
+                  wide: true,
                 },
-                {
-                  k: "TOR เข้าระบบสัปดาห์นี้",
-                  v: summary
-                    ? summary.new_this_week.toLocaleString("th-TH")
-                    : loadingSummary
-                    ? "..."
-                    : "—",
-                },
+                // "TOR เข้าระบบสัปดาห์นี้" (summary.new_this_week) is hidden until its wording
+                // is agreed: it counts the date a TOR entered the system, not the announcement.
               ].map((s) => (
-                <div key={s.k}>
+                <div key={s.k} className={"wide" in s ? "col-span-2" : undefined}>
                   <p className="font-display text-2xl font-semibold text-primary">
                     {s.v}
                   </p>
@@ -790,7 +834,8 @@ export default function HomePage() {
                       {t.title}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {t.agency} · {t.reason}
+                      {t.agency}
+                      {t.reason && ` · ${t.reason}`}
                     </p>
                     <p className="mt-3 font-display text-lg font-semibold">
                       {baht(t.budget)}
@@ -810,13 +855,13 @@ export default function HomePage() {
               ข้อมูลสำหรับวิเคราะห์ราคาย้อนหลัง
             </h2>
             <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-              ราคากลางเทียบกับราคาที่ชนะของโครงการซอฟต์แวร์ที่ทำสัญญาแล้ว
+              ราคากลางเทียบกับราคาที่ชนะของ TOR ที่ผ่านวันปิดรับข้อเสนอแล้ว
               เพื่อช่วยประเมินราคาและเปรียบเทียบกับโครงการปัจจุบัน
             </p>
             {priceSource && (
               <p className="mt-1 text-xs text-muted-foreground">
                 จาก {priceSource.project_count.toLocaleString("th-TH")} โครงการ · ข้อมูล ณ{" "}
-                {formatSnapshotDate(priceSource.snapshot_date)}
+                {formatThaiDate(priceSource.as_of)}
               </p>
             )}
 
@@ -857,7 +902,7 @@ export default function HomePage() {
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  {analytics ? "ยังไม่มีข้อมูลโครงการที่ทำสัญญาแล้ว" : "กำลังโหลด..."}
+                  {analytics ? "ยังไม่มี TOR ที่มีทั้งราคากลางและราคาที่ชนะ" : "กำลังโหลด..."}
                 </div>
               )}
             </div>

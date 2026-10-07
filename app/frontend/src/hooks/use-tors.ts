@@ -57,7 +57,7 @@ export function useSimilarProjects(id: string) {
     queryKey: ["torSimilar", id],
     queryFn: () => fetchSimilarProjects(id),
     enabled: id !== "",
-    staleTime: 5 * 60 * 1000, // finished-project snapshot, no need to refetch often
+    staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
   });
 }

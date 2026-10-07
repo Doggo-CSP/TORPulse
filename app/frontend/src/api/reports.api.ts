@@ -1,8 +1,10 @@
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
-// Reports are computed by the backend from finished projects (contract signed, mid and awarded
-// prices known) in the newest `tors_bk_*` snapshot, not from the open TORs in `tors`.
-// Money is in baht.
+// Reports are computed by the backend from `tors`: TORs with a mid price and an awarded price.
+// TORs still open for bids never have an awarded price. Money is in baht.
+// Dev note: until ingestion stores real awarded prices, the backend fills a mock for TORs whose
+// bidding has closed (awarded_is_mock, source.mock_awarded_count). The pages deliberately do not
+// show this, so nothing here changes when real prices arrive.
 
 export type ReportPeriod = "6m" | "1y" | "3y" | "all";
 export type SavingsBucketKey = "over" | "lt5" | "5to10" | "10to15" | "gt15";
@@ -22,11 +24,14 @@ export interface ReportFilters {
   savingsBucket?: SavingsBucketKey;
 }
 
-// Which snapshot the numbers come from; null when the database has no snapshot yet
+// Where the numbers come from
 export interface ReportSource {
   collection: string;
-  snapshot_date: string;
+  // When the backend read the data (ISO time)
+  as_of: string;
   project_count: number;
+  // How many of project_count use a mock awarded price
+  mock_awarded_count: number;
 }
 
 export interface PriceOverview {
@@ -71,16 +76,20 @@ export interface TimelineMonth {
 }
 
 export interface ProcurementRow {
+  // TOR id, for links to /tor/:id
+  tor_id: string;
   external_id: string;
   project_title: string;
   department_name: string | null;
   agency_name: string | null;
-  category: string;
-  category_label: string;
+  // null when the TOR's primary category is hidden
+  category: string | null;
+  category_label: string | null;
   announce_date: string | null;
   budget_baht: number | null;
   mid_price_baht: number;
   awarded_price_baht: number;
+  awarded_is_mock: boolean;
   savings_amount_baht: number;
   savings_pct: number;
   detail_url: string | null;
@@ -212,10 +221,14 @@ export function formatThaiMonth(month: string): string {
   return `${THAI_MONTHS_SHORT[monthIndex - 1]} ${String((year + 543) % 100).padStart(2, "0")}`;
 }
 
-// "2026-10-04" -> "4 ต.ค. 2569"
-export function formatSnapshotDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-").map(Number);
-  if (!year || !month || !day) return isoDate;
+// ISO time -> "7 ต.ค. 2569" (Bangkok date)
+export function formatThaiDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const [year, month, day] = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" })
+    .format(date)
+    .split("-")
+    .map(Number);
   return `${day} ${THAI_MONTHS_SHORT[month - 1]} ${year + 543}`;
 }
 

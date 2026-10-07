@@ -1,20 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useSimilarProjects } from "@/hooks/use-tors";
-import { formatBahtCurrency, formatSnapshotDate, formatThaiMonth } from "@/api/reports.api";
+import { formatBahtCurrency, formatThaiDate, formatThaiMonth } from "@/api/reports.api";
 
-// UC-05: finished projects similar to this TOR (shared categories and technologies), with the
-// prices they were awarded at, so the user can judge whether this TOR's budget is reasonable.
+// UC-05: TORs whose bidding has closed and that are similar to this TOR (shared categories and
+// technologies), with their mid and awarded prices, so the user can judge whether this TOR's
+// budget is reasonable.
 export function SimilarProjects({ torId, budgetBaht }: { torId: string; budgetBaht: number | null }) {
   const { data, isLoading, error } = useSimilarProjects(torId);
 
   return (
     <section className="panel overflow-hidden">
       <div className="border-b border-border bg-[#F8FAF7] px-6 py-4">
-        <h2 className="font-semibold">โครงการคล้ายกันที่ทำสัญญาแล้ว</h2>
+        <h2 className="font-semibold">TOR คล้ายกันที่ปิดรับข้อเสนอแล้ว</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
           คัดจากหมวดหมู่และเทคโนโลยีที่ตรงกัน เพื่อเทียบงบประมาณกับราคาที่งานลักษณะเดียวกันเคยได้
-          {data?.source && ` · ข้อมูล ณ ${formatSnapshotDate(data.source.snapshot_date)}`}
+          {data?.source && ` · ข้อมูล ณ ${formatThaiDate(data.source.as_of)}`}
         </p>
       </div>
 
@@ -24,7 +26,7 @@ export function SimilarProjects({ torId, budgetBaht }: { torId: string; budgetBa
         <p className="px-6 py-8 text-sm text-rose-600">โหลดโครงการที่คล้ายกันไม่สำเร็จ</p>
       ) : !data || data.items.length === 0 ? (
         <p className="px-6 py-8 text-sm text-muted-foreground">
-          ยังไม่พบโครงการที่ทำสัญญาแล้วในหมวดเดียวกับ TOR นี้
+          ยังไม่พบ TOR ที่ปิดรับข้อเสนอแล้วในหมวดเดียวกับ TOR นี้
         </p>
       ) : (
         <>
@@ -44,12 +46,17 @@ export function SimilarProjects({ torId, budgetBaht }: { torId: string; budgetBa
                 <li key={project.external_id} className="px-6 py-4">
                   <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
                     <span className="rounded bg-surface-2 px-2 py-0.5">{project.external_id}</span>
-                    <span>{project.category_label}</span>
+                    {project.category_label && <span>{project.category_label}</span>}
                     {project.announce_date && (
-                      <span>· ประกาศ {formatThaiMonth(project.announce_date.slice(0, 7))}</span>
+                      <span>· {formatThaiMonth(project.announce_date.slice(0, 7))}</span>
                     )}
                   </div>
-                  <p className="mt-1.5 text-sm font-medium leading-snug">{project.project_title}</p>
+                  <Link
+                    href={`/tor/${encodeURIComponent(project.tor_id)}`}
+                    className="mt-1.5 block text-sm font-medium leading-snug hover:text-primary"
+                  >
+                    {project.project_title}
+                  </Link>
                   {project.department_name && (
                     <p className="mt-0.5 text-xs text-muted-foreground">{project.department_name}</p>
                   )}

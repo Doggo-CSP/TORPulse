@@ -12,8 +12,8 @@ import {
   type ReportFilters,
 } from "@/api/reports.api";
 
-// The reports read a periodic snapshot, so results can stay cached for a while.
-const REPORT_STALE_MS = 5 * 60 * 1000;
+// Report data changes only when ingestion runs, so a short cache is enough.
+const REPORT_STALE_MS = 60 * 1000;
 
 const filterKey = (filters: ReportFilters) => [
   filters.period ?? "all",
