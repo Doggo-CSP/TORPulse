@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { SiteNav } from "@/app/components/site_nav";
 import { useUserProfile, type UserProfileData } from "@/hooks/use-user-profile";
-import { useTorRecommendations, useTorFilterOptions } from "@/hooks/use-tors";
+import { useTorRecommendations } from "@/hooks/use-tors";
+import { useCategories } from "@/hooks/use-categories";
 import { useAuth } from "@/hooks/use-auth";
 import {
   GlobeAltIcon,
@@ -79,20 +80,19 @@ export default function ProfilePage() {
   } = useUserProfile(!!authUser);
   const { data: recommendedTors = [], refetch: refetchRecommendations } =
     useTorRecommendations(!!authUser);
-  const { data: filterOptions, isLoading: categoriesLoading } = useTorFilterOptions();
+  // Every active category, whether or not any TOR uses it right now. (/tors/filter-options only
+  // lists categories some TOR uses, so a category with no TOR yet would vanish from here.)
+  const { data: categories, isLoading: categoriesLoading } = useCategories();
 
   const categoryOptions = useMemo(
     () =>
-      (filterOptions?.categories ?? []).map((c) => ({
+      (categories ?? []).map((c) => ({
         key: c.key,
         name: c.name,
-        description:
-          (c as { description?: string }).description ||
-          CATEGORY_FALLBACK_DESCRIPTIONS[c.key] ||
-          "",
+        description: c.description || CATEGORY_FALLBACK_DESCRIPTIONS[c.key] || "",
         Icon: CATEGORY_ICONS[c.key] ?? GlobeAltIcon,
       })),
-    [filterOptions],
+    [categories],
   );
 
   const categoryNameByKey = useMemo(
@@ -100,14 +100,19 @@ export default function ProfilePage() {
     [categoryOptions],
   );
 
+  // Everything the user has saved, including categories an admin has since hidden
+  const savedInterests = useMemo(
+    () =>
+      Array.from(new Set((profile?.interests || []).map((id) => LEGACY_INTEREST_IDS[id] ?? id))),
+    [profile?.interests],
+  );
+
+  // What the cards show as selected: only categories that are offered right now
   const selectedInterests = useMemo(() => {
-    const mapped = Array.from(
-      new Set((profile?.interests || []).map((id) => LEGACY_INTEREST_IDS[id] ?? id)),
-    );
     // รอหมวดโหลดเสร็จก่อน ค่อยตัด key ที่ไม่มีในรายการ (ซ่อนอยู่/ไม่มีใน DB)
-    if (categoryOptions.length === 0) return mapped;
-    return mapped.filter((k) => categoryNameByKey.has(k));
-  }, [profile?.interests, categoryOptions.length, categoryNameByKey]);
+    if (categoryOptions.length === 0) return savedInterests;
+    return savedInterests.filter((k) => categoryNameByKey.has(k));
+  }, [savedInterests, categoryOptions.length, categoryNameByKey]);
 
   const [activeTab, setActiveTab] = useState<TabType>("profile");
   const [formData, setFormData] = useState<Partial<UserProfileData>>({});
@@ -140,10 +145,12 @@ export default function ProfilePage() {
     e.target.value = "";
   };
 
+  // Toggle against everything saved, not just the cards on screen, so interests in hidden
+  // categories are kept (the backend accepts hidden keys the user already has).
   const handleInterestToggle = (catKey: string) => {
-    const nextInterests = selectedInterests.includes(catKey)
-      ? selectedInterests.filter((id) => id !== catKey)
-      : [...selectedInterests, catKey];
+    const nextInterests = savedInterests.includes(catKey)
+      ? savedInterests.filter((id) => id !== catKey)
+      : [...savedInterests, catKey];
     void Promise.resolve(updateInterests(nextInterests)).then(() =>
       refetchRecommendations(),
     );
@@ -884,7 +891,7 @@ export default function ProfilePage() {
                 {recommendedTors.map((tor) => {
                   const isBookmarked = bookmarkedTors.some((b) => b._id === tor.id);
                   const categoryName = tor.category
-                    ? categoryNameByKey.get(tor.category) ?? tor.category
+                    ? (categoryNameByKey.get(tor.category) ?? null)
                     : null;
 
                   return (
