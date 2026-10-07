@@ -42,8 +42,10 @@ export async function finishCollectionRun(
   ).lean()
 }
 
-export async function findLatestCollectionRun() {
-  return CollectionRunModel.findOne().sort({ startedAt: -1 }).lean()
+export async function findLatestCollectionRun(trigger?: 'scheduled' | 'manual') {
+  return CollectionRunModel.findOne(trigger ? { trigger } : {})
+    .sort({ startedAt: -1 })
+    .lean()
 }
 
 export async function hasRunningCollectionRun(): Promise<boolean> {
