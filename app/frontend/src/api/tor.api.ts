@@ -60,9 +60,12 @@ export interface TorListItem {
   contractStatusCode: string | null;
   technologies: string[];
   createdAt: string;
-  // Primary TOR category key; `categories` lists every matching key, primary first.
-  category: string;
+  // Primary TOR category key; `categories` lists every matching key, primary first. Hidden
+  // categories are left out, so category is null when the primary category is hidden.
+  category: string | null;
   categories: string[];
+  // Display name of `category`; null when the primary category is hidden
+  categoryName: string | null;
 }
 
 export interface RecommendedTorItem extends TorListItem {
@@ -188,14 +191,16 @@ export async function fetchTorRecommendations(): Promise<RecommendedTorItem[]> {
   return data.items || [];
 }
 
-// UC-05: finished projects (contract signed, from the newest tors_bk_* snapshot) similar to a
-// TOR by shared categories and technologies. Money is in baht.
+// UC-05: TORs whose bidding has closed and that are similar to a TOR by shared categories and
+// technologies. The awarded price may be a mock (awarded_is_mock). Money is in baht.
 export interface SimilarProject {
+  tor_id: string;
   external_id: string;
   project_title: string;
   department_name: string | null;
-  category: string;
-  category_label: string;
+  // null when the project's primary category is hidden
+  category: string | null;
+  category_label: string | null;
   matched_categories: { key: string; label: string }[];
   matched_technologies: string[];
   score: number;
@@ -203,6 +208,7 @@ export interface SimilarProject {
   budget_baht: number | null;
   mid_price_baht: number;
   awarded_price_baht: number;
+  awarded_is_mock: boolean;
   savings_amount_baht: number;
   savings_pct: number;
   requirements: string[];
@@ -219,7 +225,12 @@ export interface SimilarProjectsResult {
     budget_vs_median_awarded_pct: number | null;
   };
   items: SimilarProject[];
-  source: { collection: string; snapshot_date: string; project_count: number } | null;
+  source: {
+    collection: string;
+    as_of: string;
+    project_count: number;
+    mock_awarded_count: number;
+  } | null;
 }
 
 export async function fetchSimilarProjects(id: string): Promise<SimilarProjectsResult> {

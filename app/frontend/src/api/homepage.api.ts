@@ -24,8 +24,9 @@ export interface CategoryMetric {
   percentage: number;
 }
 
-// Prices come from finished projects (newest tors_bk_* snapshot). Every active category is
-// listed; averages are null when a category has no finished project.
+// Prices come from TORs in `tors` with a mid and an awarded price. The awarded price is a mock
+// for TORs whose bidding has closed (priceSource.mock_awarded_count). Every active category is
+// listed; averages are null when a category has no such TOR.
 export interface PriceComparisonMetric {
   category: string;
   label: string;
@@ -46,8 +47,14 @@ export interface HomepageAnalytics {
   categoryDistribution: CategoryMetric[];
   priceComparison: PriceComparisonMetric[];
   priceSummary: PriceSummary;
-  // Which snapshot the prices come from; null when there is none
-  priceSource: { collection: string; snapshot_date: string; project_count: number } | null;
+  // Where the prices come from
+  priceSource: {
+    collection: string;
+    as_of: string;
+    project_count: number;
+    // How many of project_count use a mock awarded price
+    mock_awarded_count: number;
+  } | null;
 }
 
 /**

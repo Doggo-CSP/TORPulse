@@ -9,7 +9,7 @@ import { useProcurementList, useReportCharts, useReportDepartments } from "@/hoo
 import {
   exportProcurementCsv,
   formatBahtCurrency,
-  formatSnapshotDate,
+  formatThaiDate,
   formatThaiMonth,
   type ProcurementSortField,
   type ReportFilters,
@@ -117,7 +117,7 @@ const DynamicPriceBarChart = dynamic(
                     <div className="rounded-xl border border-border bg-surface p-3.5 shadow-xl">
                       <p className="font-semibold text-sm text-foreground">{label}</p>
                       {item.projectCount === 0 ? (
-                        <p className="mt-1 text-xs text-muted-foreground">ยังไม่มีโครงการที่จบแล้วในหมวดนี้</p>
+                        <p className="mt-1 text-xs text-muted-foreground">ยังไม่มี TOR ที่ปิดรับแล้วในหมวดนี้</p>
                       ) : (
                         <div className="mt-2 space-y-1 text-xs">
                           <p className="text-muted-foreground">
@@ -401,7 +401,8 @@ export default function ReportsDashboardPage() {
 
   const loadError =
     charts.overview.error ?? charts.categories.error ?? charts.distribution.error ?? charts.timeline.error;
-  const noSnapshot = charts.overview.isSuccess && source === null;
+  // No TOR has both a mid and an awarded price yet (independent of the filters)
+  const noData = charts.overview.isSuccess && (source?.project_count ?? 0) === 0;
 
   const categoryBars: CategoryBarPoint[] = useMemo(
     () =>
@@ -522,12 +523,12 @@ export default function ReportsDashboardPage() {
                   className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary border border-primary/20"
                   title={`ข้อมูลจาก ${source.collection}`}
                 >
-                  ข้อมูล ณ {formatSnapshotDate(source.snapshot_date)}
+                  ข้อมูล ณ {formatThaiDate(source.as_of)}
                 </span>
               )}
             </div>
             <p className="mt-1.5 text-sm text-muted-foreground max-w-3xl">
-              เปรียบเทียบราคากลางกับราคาที่ชนะการประมูลของโครงการซอฟต์แวร์ภาครัฐที่ทำสัญญาแล้ว
+              เปรียบเทียบราคากลางกับราคาที่ชนะการประมูลของ TOR ที่ผ่านวันปิดรับข้อเสนอแล้ว
               {source && ` (${source.project_count.toLocaleString("th-TH")} โครงการ)`}{" "}
               เพื่อใช้ประเมินราคาและความคุ้มค่าของงานลักษณะเดียวกัน
             </p>
@@ -537,7 +538,7 @@ export default function ReportsDashboardPage() {
             <div className="flex items-center gap-2.5">
               <button
                 onClick={() => void handleExportCsv()}
-                disabled={exporting || noSnapshot || !overview?.project_count}
+                disabled={exporting || noData || !overview?.project_count}
                 className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-xs sm:text-sm font-medium hover:bg-surface-2 transition-colors shadow-sm disabled:opacity-50"
                 title="ส่งออกโครงการตามตัวกรองเป็นไฟล์ CSV"
               >
@@ -563,13 +564,13 @@ export default function ReportsDashboardPage() {
           </div>
         )}
 
-        {noSnapshot ? (
+        {noData ? (
           <section className="mt-8 panel flex flex-col items-center gap-2 px-6 py-16 text-center">
             <InformationCircleIcon className="size-10 text-muted-foreground/60" />
-            <p className="text-base font-semibold text-foreground">ยังไม่มีข้อมูลโครงการที่ทำสัญญาแล้ว</p>
+            <p className="text-base font-semibold text-foreground">ยังไม่มี TOR ที่มีทั้งราคากลางและราคาที่ชนะ</p>
             <p className="max-w-lg text-sm text-muted-foreground">
-              รายงานนี้คำนวณจากโครงการที่ประกาศผู้ชนะและมีทั้งราคากลางและราคาที่ชนะ
-              เมื่อมีข้อมูลชุดแรก รายงานจะแสดงที่นี่
+              รายงานนี้คำนวณจาก TOR ที่ผ่านวันปิดรับข้อเสนอแล้วและมีราคากลาง
+              เมื่อมีข้อมูล รายงานจะแสดงที่นี่
             </p>
           </section>
         ) : (
@@ -681,7 +682,7 @@ export default function ReportsDashboardPage() {
                 <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
                   <div className="flex items-center gap-1.5">
                     <label htmlFor="report-period" className="text-muted-foreground font-mono text-xs">
-                      ช่วงประกาศ:
+                      ช่วงเวลา:
                     </label>
                     <select
                       id="report-period"
@@ -863,7 +864,7 @@ export default function ReportsDashboardPage() {
                         : "แนวโน้มมูลค่าโครงการรายเดือน"}
                     </h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      ราคากลางรวม ราคาที่ชนะรวม และส่วนต่าง แยกตามเดือนที่ประกาศ
+                      ราคากลางรวม ราคาที่ชนะรวม และส่วนต่าง แยกตามเดือน (วันประกาศ หรือวันปิดรับข้อเสนอถ้าไม่มีวันประกาศ)
                     </p>
                   </div>
                   <div className="flex items-center gap-2.5 self-start sm:self-auto text-xs font-mono text-muted-foreground">
@@ -941,11 +942,11 @@ export default function ReportsDashboardPage() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-5 border-b border-border">
                 <div>
                   <h3 className="font-display text-base font-semibold text-foreground">
-                    รายการโครงการที่ทำสัญญาแล้ว
+                    รายการ TOR ที่ปิดรับข้อเสนอแล้ว
                   </h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {(page?.total_count ?? 0).toLocaleString("th-TH")} โครงการตามตัวกรอง
-                    ลิงก์ไปยังประกาศต้นฉบับบน e-GP
+                    กดชื่อเพื่อดูรายละเอียด TOR หรือเปิดประกาศต้นฉบับบน e-GP
                   </p>
                 </div>
                 <button
@@ -1036,9 +1037,11 @@ export default function ReportsDashboardPage() {
                           >
                             <td className="px-5 py-4 max-w-sm">
                               <div className="flex flex-wrap items-center gap-2 mb-1">
-                                <span className="inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground font-mono">
-                                  {item.category_label}
-                                </span>
+                                {item.category_label && (
+                                  <span className="inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground font-mono">
+                                    {item.category_label}
+                                  </span>
+                                )}
                                 <span className="font-mono text-[11px] text-muted-foreground">{item.external_id}</span>
                                 {item.announce_date && (
                                   <span className="font-mono text-[11px] text-muted-foreground">
@@ -1046,7 +1049,12 @@ export default function ReportsDashboardPage() {
                                   </span>
                                 )}
                               </div>
-                              <p className="font-medium text-foreground line-clamp-2">{item.project_title}</p>
+                              <Link
+                                href={`/tor/${encodeURIComponent(item.tor_id)}`}
+                                className="font-medium text-foreground hover:text-primary transition-colors line-clamp-2"
+                              >
+                                {item.project_title}
+                              </Link>
                             </td>
 
                             <td className="px-4 py-4 text-muted-foreground text-xs">
