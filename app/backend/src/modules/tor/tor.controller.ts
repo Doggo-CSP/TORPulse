@@ -216,6 +216,8 @@ interface TorLeanFields {
   submissionDeadline?: string | null
   submissionDeadlineAt?: Date | null
   projectStatus?: string | null
+  contractStatus?: string | null
+  contractStatusCode?: string | null
   technologies?: string[]
   category?: string | null
   categories?: string[]
@@ -234,6 +236,8 @@ export function toTorListItem(tor: TorLeanFields, categoryNames: Map<string, str
     budgetBaht: tor.budgetBaht ?? null,
     ...deadlineFields(tor),
     projectStatus: tor.projectStatus ?? null,
+    contractStatus: tor.contractStatus ?? null,
+    contractStatusCode: tor.contractStatusCode ?? null,
     technologies: tor.technologies ?? [],
     createdAt: tor.createdAt,
     category,
@@ -412,6 +416,8 @@ export async function getTorByIdHandler(req: Request, res: Response): Promise<vo
     departmentName: tor.departmentName ?? null,
     departmentSubName: tor.departmentSubName ?? null,
     projectStatus: tor.projectStatus ?? null,
+    contractStatus: tor.contractStatus ?? null,
+    contractStatusCode: tor.contractStatusCode ?? null,
     summary: tor.summary ?? null,
     objectives: tor.objectives,
     requirements: tor.requirements,

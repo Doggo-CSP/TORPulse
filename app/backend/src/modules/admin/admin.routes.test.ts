@@ -16,13 +16,13 @@ import torRouter from '../tor/tor.routes.js'
 import router from './admin.routes.js'
 import { AuditLogModel } from './audit-log.model.js'
 import { SETTINGS_KEY, SettingsModel } from './settings.model.js'
-import { GovSpendingDiscoveryAdapter } from '../ingestion/adapters/govspending-discovery.adapter.js'
+import { BmaDiscoveryAdapter } from '../ingestion/adapters/bma-discovery.adapter.js'
 import { CollectionRunModel } from '../ingestion/collection-run.model.js'
 import { DataSourceModel } from '../ingestion/data-source.model.js'
 import {
+  BMA_SOURCE_KEY,
   claimProducerLease,
-  ensureGovSpendingDataSource,
-  GOVSPENDING_SOURCE_KEY,
+  ensureBmaDataSource,
   releaseProducerLease,
 } from '../ingestion/data-source.repository.js'
 import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
@@ -949,7 +949,7 @@ test('admin routes: system settings', async (t) => {
     assert.deepEqual(response.body.settings, {
       ingestionEnabled: true,
       senderEmail: null,
-      ingestionIntervalMinutes: env.GOVSPENDING_SYNC_INTERVAL_MS / 60_000,
+      ingestionIntervalMinutes: env.DISCOVERY_SYNC_INTERVAL_MS / 60_000,
     })
   })
 
@@ -1001,20 +1001,20 @@ test('admin routes: system settings', async (t) => {
 test('admin routes: e-GP sync status and manual sync', async (t) => {
   await database.connect()
 
-  // Point the GovSpending data source at a test-only document so the real
-  // 'govspending-egp' source (its lease and last-run fields) is never touched.
-  const TEST_SOURCE_KEY = `${SEED_PREFIX}govspending-egp`
+  // Point the BMA data source at a test-only document so the real
+  // 'bma-egp' source (its lease and last-run fields) is never touched.
+  const TEST_SOURCE_KEY = `${SEED_PREFIX}bma-egp`
   const originalFindOneAndUpdate = DataSourceModel.findOneAndUpdate.bind(DataSourceModel)
   t.mock.method(
     DataSourceModel,
     'findOneAndUpdate',
     (filter: Record<string, unknown>, ...rest: unknown[]) =>
       (originalFindOneAndUpdate as (...args: unknown[]) => unknown)(
-        filter.key === GOVSPENDING_SOURCE_KEY ? { ...filter, key: TEST_SOURCE_KEY } : filter,
+        filter.key === BMA_SOURCE_KEY ? { ...filter, key: TEST_SOURCE_KEY } : filter,
         ...rest,
       ),
   )
-  const testSource = (await ensureGovSpendingDataSource())!
+  const testSource = (await ensureBmaDataSource())!
   assert.equal(testSource.key, TEST_SOURCE_KEY)
 
   const actor = await User.create({
@@ -1026,10 +1026,17 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
     status: 'active',
   })
   const runIds: Types.ObjectId[] = []
-  const originalApiKey = env.GOVSPENDING_API_KEY
+  const originalEnv = {
+    BMA_SYNC_ENABLED: env.BMA_SYNC_ENABLED,
+    BMA_BUDGET_YEARS: env.BMA_BUDGET_YEARS,
+    BMA_KEYWORDS: env.BMA_KEYWORDS,
+  }
+  // One keyword and one year, so the mocked adapter is called once per page.
+  env.BMA_BUDGET_YEARS = [2569]
+  env.BMA_KEYWORDS = ['test']
 
   t.after(async () => {
-    env.GOVSPENDING_API_KEY = originalApiKey
+    Object.assign(env, originalEnv)
     await AuditLogModel.deleteMany({ targetId: { $in: runIds } })
     await CollectionRunModel.deleteMany({ _id: { $in: runIds } })
     await IngestionJobModel.deleteMany({ dataSourceId: testSource._id })
@@ -1038,13 +1045,16 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
     await database.disconnect()
   })
 
-  // Never call the real GovSpending API: the first page returns one project that is already
+  // Never call the real BMA API: the first page returns one project that is already
   // queued and one new project; every later page is empty.
   const projectMetadata = (title: string) => ({
     title,
     departmentName: null,
     departmentSubName: null,
     projectStatus: null,
+    sourceProjectId: null,
+    contractStatus: null,
+    contractStatusCode: null,
     fiscalYear: 2569,
     announceDate: null,
     budgetBaht: null,
@@ -1065,11 +1075,11 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
   }
   await enqueueDiscoveredProjects(testSource._id, [knownProject])
   let listCalls = 0
-  t.mock.method(GovSpendingDiscoveryAdapter.prototype, 'listProjects', async () => {
+  t.mock.method(BmaDiscoveryAdapter.prototype, 'listProjects', async () => {
     listCalls += 1
     return listCalls === 1
-      ? { projects: [knownProject, newProject], total: 2 }
-      : { projects: [], total: 0 }
+      ? { projects: [knownProject, newProject], total: 2, hasNextPage: true, skipped: 0 }
+      : { projects: [], total: 0, hasNextPage: false, skipped: 0 }
   })
 
   let currentUser: Express.User | undefined = {
@@ -1101,8 +1111,8 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
     throw new Error(`run ${runId} did not finish`)
   }
 
-  await t.test('POST /admin/ingestion/sync returns 503 without an API key', async () => {
-    env.GOVSPENDING_API_KEY = undefined
+  await t.test('POST /admin/ingestion/sync returns 503 when BMA sync is disabled', async () => {
+    env.BMA_SYNC_ENABLED = false
 
     const response = await request(app).post('/admin/ingestion/sync')
 
@@ -1110,7 +1120,7 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
   })
 
   await t.test('a manual sync returns 202 and records the run, counts and feed entry', async () => {
-    env.GOVSPENDING_API_KEY = 'test-key'
+    env.BMA_SYNC_ENABLED = true
 
     const response = await request(app).post('/admin/ingestion/sync')
     assert.equal(response.status, 202)
@@ -1143,7 +1153,7 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
   await t.test(
     'POST /admin/ingestion/sync returns 409 while another run holds the lease',
     async () => {
-      env.GOVSPENDING_API_KEY = 'test-key'
+      env.BMA_SYNC_ENABLED = true
       const holder = `${SEED_PREFIX}lease-holder`
       assert.equal(await claimProducerLease(testSource._id, holder), true)
 
@@ -1174,7 +1184,7 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
   })
 
   await t.test('starting a new run closes any run still marked running as a timeout', async () => {
-    env.GOVSPENDING_API_KEY = 'test-key'
+    env.BMA_SYNC_ENABLED = true
     const recent = await CollectionRunModel.create({
       trigger: 'scheduled',
       status: 'running',

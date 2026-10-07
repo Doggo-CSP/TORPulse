@@ -138,6 +138,9 @@ export async function processIngestionJob(
     departmentName: null,
     departmentSubName: null,
     projectStatus: null,
+    sourceProjectId: null,
+    contractStatus: null,
+    contractStatusCode: null,
     fiscalYear: null,
     announceDate: null,
     midPriceBaht: null,
@@ -150,7 +153,7 @@ export async function processIngestionJob(
     category,
     categories,
     budgetBaht: extractedTor.budgetBaht,
-    // GovSpending owns department, status, year, announce date and prices,
+    // The discovery source owns department, status, year, announce date and prices,
     // and its project budget wins over the LLM-extracted one.
     ...torFieldsFromSourceMetadata(sourceMetadata),
     submissionDeadline: deadline.text,

@@ -17,7 +17,6 @@ flowchart LR
   end
 
   google[Google OAuth 2.0]
-  gov[GovSpending API<br/>opend.data.go.th]
   bma[BMA e-GP<br/>egp2.bangkok.go.th]
   egp[Central e-GP<br/>process5.gprocurement.go.th]
   ai[AI provider<br/>Gemini on Vertex AI or DeepSeek]
@@ -26,7 +25,6 @@ flowchart LR
   fe -- "/api/v1, /auth (cookie session)" --> api
   api -- sign-in --> google
   api <--> db
-  producer -- "contracted projects (by keyword)" --> gov
   producer -- "ประกาศเชิญชวน projects (by keyword)" --> bma
   producer -- enqueue jobs --> db
   worker -- "claim jobs, store TORs" --> db
@@ -61,7 +59,6 @@ flowchart TB
       ingM[ingestion]
     end
     subgraph producerApp[apps/queue-producer]
-      govA[GovSpendingDiscoveryAdapter]
       bmaA[BmaDiscoveryAdapter]
     end
     subgraph workerApp[apps/ingestion-worker]
@@ -91,20 +88,13 @@ flowchart TB
 sequenceDiagram
   autonumber
   participant P as Queue producer
-  participant G as GovSpending
   participant B as BMA e-GP
   participant DB as MongoDB
   participant W as Ingestion worker
   participant E as Central e-GP
   participant AI as Gemini / DeepSeek
 
-  loop every GOVSPENDING_SYNC_INTERVAL_MS
-    P->>DB: claim lease on data source (govspending-egp)
-    loop each GOVSPENDING_KEYWORDS
-      P->>G: egp-contract?keyword&year&offset
-      P->>DB: upsert ingestion_jobs (central_egp), refresh tor metadata
-    end
-    P->>DB: release lease
+  loop every DISCOVERY_SYNC_INTERVAL_MS
     P->>DB: claim lease on data source (bma-egp)
     loop each BMA_KEYWORDS
       P->>B: GetProjectFromFilter?projectSearchText&ประกาศเชิญชวน&e-bidding&budgetYear
@@ -169,7 +159,7 @@ erDiagram
   users ||--o{ sessions : "logged-in session"
 
   data_sources {
-    string key UK "govspending-egp | bma-egp"
+    string key UK "bma-egp | govspending-egp (legacy key, used by discover:egp)"
     bool enabled
     string lockedBy "producer lease"
     date lockedUntil
@@ -222,9 +212,10 @@ erDiagram
 
 | Source | Data source key | Job `sourceAdapter` | What it finds | Auth |
 |---|---|---|---|---|
-| GovSpending | `govspending-egp` | `central_egp` | Projects that already have a contract, matched by keyword and fiscal year | `GOVSPENDING_API_KEY` |
 | BMA e-GP | `bma-egp` | `bma_egp` | Bangkok ประกาศเชิญชวน e-bidding projects (still open for bids), matched by keyword and budget year | none |
 | eGP announcement search (manual `discover:egp`) | `govspending-egp` | `central_egp` | ร่างประกาศ / ประกาศเชิญชวน on Central e-GP | Turnstile token copied from a browser |
+
+GovSpending discovery was removed because it only lists projects that already have a contract. Its `govspending-egp` data source key is kept for the manual eGP announcement search, so existing jobs and TORs stay linked.
 
 Every source ends up as an 11-digit Central e-GP project id. That's why one worker, using `CentralEgpAdapter`, processes jobs from all of them.
 

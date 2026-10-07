@@ -174,6 +174,9 @@ test('refreshes existing TORs without creating new ones', async (context) => {
         departmentName: 'Dept',
         departmentSubName: null,
         projectStatus: null,
+        sourceProjectId: 'c41de67f-393f-4238-8cd3-430e2c1d9cdd',
+        contractStatus: 'ระหว่างดำเนินการ',
+        contractStatusCode: null,
         fiscalYear: 2568,
         announceDate: null,
         budgetBaht: null,
@@ -187,7 +190,14 @@ test('refreshes existing TORs without creating new ones', async (context) => {
   assert.deepEqual(operations[0]?.updateOne, {
     filter: { dataSourceId, externalId: '68069160377', sourceVersion: 'initial' },
     update: {
-      $set: { departmentName: 'Dept', fiscalYear: 2568, midPriceBaht: 90, awardedPriceBaht: 80 },
+      $set: {
+        departmentName: 'Dept',
+        sourceProjectId: 'c41de67f-393f-4238-8cd3-430e2c1d9cdd',
+        contractStatus: 'ระหว่างดำเนินการ',
+        fiscalYear: 2568,
+        midPriceBaht: 90,
+        awardedPriceBaht: 80,
+      },
     },
   })
   assert.equal('upsert' in (operations[0]?.updateOne ?? {}), false)
