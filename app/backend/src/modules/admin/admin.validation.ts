@@ -48,6 +48,8 @@ export const activityQuerySchema = z.object({
   group: z.enum(ACTIVITY_GROUPS).optional(),
 })
 
+export const updateDataSourceSchema = z.object({ enabled: z.boolean() }).strict()
+
 // ingestionIntervalMinutes is read-only (it comes from the scheduler's env), so it is not here.
 export const updateSettingsSchema = z
   .object({

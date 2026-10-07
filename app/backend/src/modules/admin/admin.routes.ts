@@ -18,6 +18,7 @@ import {
   updateAdminSettings,
   getIngestionStatus,
   triggerIngestionSync,
+  updateDataSource,
   getAdminCategories,
   createAdminCategory,
   updateAdminCategory,
@@ -33,6 +34,7 @@ router.use(requireAdmin)
 router.get('/stats', getAdminStats)
 router.get('/ingestion/status', getIngestionStatus)
 router.post('/ingestion/sync', triggerIngestionSync)
+router.patch('/ingestion/sources/:key', updateDataSource)
 router.get('/users', getAdminUsers)
 router.get('/users/:userId', getAdminUserById)
 router.patch('/users/:userId', updateAdminUser)

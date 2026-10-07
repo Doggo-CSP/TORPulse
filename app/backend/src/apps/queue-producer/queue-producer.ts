@@ -113,13 +113,17 @@ export async function runScheduledSync(
     return
   }
 
-  const claim = await beginSync(source, producerId, { trigger: 'scheduled' })
-  if (!claim) {
-    console.log(`${source.label} sync skipped because another producer owns the lease`)
+  const begin = await beginSync(source, producerId, { trigger: 'scheduled' })
+  if (!begin.claim) {
+    console.log(
+      begin.reason === 'disabled'
+        ? `${source.label} sync skipped because the data source is disabled`
+        : `${source.label} sync skipped because another producer owns the lease`,
+    )
     return
   }
 
-  await completeSync(claim, source, producerId, signal, { trigger: 'scheduled' })
+  await completeSync(begin.claim, source, producerId, signal, { trigger: 'scheduled' })
 }
 
 export interface SyncTrigger {
@@ -133,20 +137,28 @@ export interface SyncClaim {
   runId: Types.ObjectId
 }
 
-// Claims the source's shared lease and records a running CollectionRun. Returns null when
-// another run (scheduled or manual, in any process) already holds the lease.
+// No claim means the sync must not start: the source is switched off, or another sync holds the lease
+export type SyncBegin = { claim: SyncClaim } | { claim: null; reason: 'disabled' | 'busy' }
+
+// Claims the source's shared lease and records a running CollectionRun. Returns no claim when
+// the source is disabled or another run (scheduled or manual, in any process) holds the lease.
 async function beginSync(
   source: Pick<DiscoverySource, 'label' | 'ensureDataSource'>,
   producerId: string,
   trigger: SyncTrigger,
-): Promise<SyncClaim | null> {
+): Promise<SyncBegin> {
   const dataSource = await source.ensureDataSource()
   if (!dataSource) {
     throw new Error(`Could not initialize the ${source.label} data source`)
   }
 
+  if (!dataSource.enabled) {
+    return { claim: null, reason: 'disabled' }
+  }
+
+  // The lease filter re-checks enabled, so a source disabled after the read above still wins
   if (!(await claimProducerLease(dataSource._id, producerId))) {
-    return null
+    return { claim: null, reason: 'busy' }
   }
 
   // We hold the lease now, so any run still marked running belongs to a process that died
@@ -156,7 +168,7 @@ async function beginSync(
     trigger: trigger.trigger,
     triggeredBy: trigger.triggeredBy ?? null,
   })
-  return { dataSourceId: dataSource._id, runId: run._id }
+  return { claim: { dataSourceId: dataSource._id, runId: run._id } }
 }
 
 async function completeSync(
@@ -191,7 +203,7 @@ async function completeSync(
 }
 
 // Manual "sync now" from the admin panel (BMA only). Shares the scheduled lease.
-export function beginBmaSync(producerId: string, trigger: SyncTrigger): Promise<SyncClaim | null> {
+export function beginBmaSync(producerId: string, trigger: SyncTrigger): Promise<SyncBegin> {
   return beginSync({ label: 'BMA', ensureDataSource: ensureBmaDataSource }, producerId, trigger)
 }
 
