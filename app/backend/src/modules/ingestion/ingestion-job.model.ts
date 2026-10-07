@@ -1,6 +1,6 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
-// Project metadata from GovSpending, refreshed on every producer sync.
+// Project metadata from the discovery source, refreshed on every producer sync.
 const sourceMetadataSchema = new Schema(
   {
     title: { type: String, default: null },

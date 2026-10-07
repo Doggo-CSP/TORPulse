@@ -2,13 +2,13 @@
 
 > **Thailand Government Procurement (TOR) Monitoring & Ingestion Platform**
 
-TORPulse is a full-stack platform designed to automate the discovery, ingestion, parsing, AI analysis, and monitoring of Thai Government Terms of Reference (TOR) procurement documents across platforms like **GovSpending**, **Central e-GP**, and **BMA e-GP**.
+TORPulse is a full-stack platform designed to automate the discovery, ingestion, parsing, AI analysis, and monitoring of Thai Government Terms of Reference (TOR) procurement documents across platforms like **Central e-GP** and **BMA e-GP**.
 
 ---
 
 ## 🚀 Features
 
-- 🔍 **Automated Procurement Discovery**: Queue producers & ingestion workers continuously poll and index e-GP & GovSpending procurement APIs.
+- 🔍 **Automated Procurement Discovery**: Queue producers & ingestion workers continuously poll and index e-GP procurement APIs.
 - 📄 **PDF Extraction & Parsing**: Intelligent parsing of TOR PDF documents to extract budgets, submission deadlines, contact details, project scope, and technological requirements.
 - 🧠 **AI Classification & Analysis**: DeepSeek AI model integrations for classifying procurement scope, evaluating project objectives, and scoring confidence.
 - 📊 **Analytics Dashboard**: Dynamic charts, budget insights, and keyword tracking powered by Recharts & TanStack React Query.
@@ -108,11 +108,11 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 GOOGLE_CALLBACK_URL=http://localhost:8000/auth/google/callback
 FRONTEND_URL=http://localhost:3000
 
-# GovSpending API Config (Optional)
-GOVSPENDING_API_KEY=your-govspending-api-key
-GOVSPENDING_SYNC_INTERVAL_MS=600000
-GOVSPENDING_FISCAL_YEAR=2568
-GOVSPENDING_KEYWORDS=ซอฟต์แวร์,ระบบสารสนเทศ,พัฒนาระบบ,โปรแกรมคอมพิวเตอร์,แอปพลิเคชัน,เว็บไซต์,software,application,website
+# Discovery (BMA e-GP)
+DISCOVERY_SYNC_INTERVAL_MS=600000
+BMA_SYNC_ENABLED=true
+# BMA_KEYWORDS=ซอฟต์แวร์,ระบบสารสนเทศ,พัฒนาระบบ,โปรแกรมคอมพิวเตอร์,แอปพลิเคชัน,เว็บไซต์,software,application,website
+# BMA_BUDGET_YEAR=2570,2569
 
 # DeepSeek AI Integration (Optional)
 DEEPSEEK_API_KEY=your-deepseek-api-key
@@ -171,7 +171,7 @@ cd app/backend
 # Ingestion Worker (Processes queue jobs & extracts TOR PDFs)
 npm run dev:ingestion
 
-# Queue Producer (Polls GovSpending & e-GP sources)
+# Queue Producer (Polls BMA e-GP)
 npm run dev:producer
 ```
 
@@ -185,7 +185,7 @@ In `app/backend/`:
 # Run unit & integration test suites
 npm run test:tor            # TOR model, repository & repair tests
 npm run test:auth           # Authentication & route tests
-npm run test:producer       # GovSpending discovery & producer tests
+npm run test:producer       # Discovery adapters & producer tests
 npm run test:central-egp     # Central e-GP adapter tests
 
 # Utility & Repair Scripts

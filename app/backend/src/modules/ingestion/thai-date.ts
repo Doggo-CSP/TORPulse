@@ -95,3 +95,8 @@ export function cleanDateText(value: string | null | undefined): string | null {
   const text = value?.trim() ?? ''
   return EMPTY_TEXT.has(text.toLowerCase()) ? null : text
 }
+
+// The Thai fiscal year starts on 1 October and is numbered in the Buddhist era.
+export function getThaiFiscalYear(date = new Date()): number {
+  return date.getUTCFullYear() + (date.getUTCMonth() >= 9 ? 544 : 543)
+}
