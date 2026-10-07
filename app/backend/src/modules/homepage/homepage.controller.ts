@@ -1,11 +1,7 @@
 import type { Request, Response } from 'express'
 
 import { listCategories } from '../category/category.repository.js'
-import {
-  getFinishedTorSnapshot,
-  snapshotSource,
-  type FinishedTor,
-} from '../report/finished-tors.js'
+import { getFinishedTors, reportSource, type FinishedTor } from '../report/finished-tors.js'
 import {
   categoryComparison,
   priceOverview,
@@ -108,24 +104,19 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
 
   const totalTors = torDocs.length
 
-  // Every active category is listed (0% when unused). Hidden or unknown category keys are listed
-  // only when some TOR still carries them, so existing TORs keep showing their category.
+  // Every active category is listed in display order (0% when unused). Hidden categories are a
+  // soft delete for users, so they are left out; their TORs still count in the total, so the
+  // shares can add up to less than 100%.
   const names = new Map(categories.map((category) => [category.key, category.name]))
   const counts = new Map<string, number>(
     categories.filter((category) => category.isActive).map((category) => [category.key, 0]),
   )
   for (const doc of torDocs) {
     const category = resolveTorCategory(doc)
-    counts.set(category, (counts.get(category) ?? 0) + 1)
+    if (counts.has(category)) counts.set(category, counts.get(category)! + 1)
   }
 
-  // Display order: categories by sortOrder, then any key not in the categories collection
-  const orderedKeys = [
-    ...categories.map((category) => category.key).filter((key) => counts.has(key)),
-    ...[...counts.keys()].filter((key) => !names.has(key)),
-  ]
-
-  const categoryDistribution = orderedKeys.map((category) => {
+  const categoryDistribution = [...counts.keys()].map((category) => {
     const rawPercentage = totalTors === 0 ? 0 : ((counts.get(category) ?? 0) / totalTors) * 100
     return {
       category,
@@ -134,17 +125,17 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
     }
   })
 
-  // Prices come from finished projects (newest tors_bk_* snapshot). TORs in `tors` are still
-  // open, so they have no mid or awarded price yet.
-  const snapshot = await getFinishedTorSnapshot()
-  const { priceComparison, priceSummary } = homepagePrices(snapshot?.items ?? [], categories)
+  // Prices: TORs in `tors` with a mid price and an awarded price. Awarded prices are a labelled
+  // mock for TORs whose bidding has closed (see report/finished-tors.ts); open TORs have none.
+  const finished = await getFinishedTors()
+  const { priceComparison, priceSummary } = homepagePrices(finished.items, categories)
 
   res.json({
     topTechnologies,
     categoryDistribution,
     priceComparison,
     priceSummary,
-    priceSource: snapshotSource(snapshot),
+    priceSource: reportSource(finished),
   })
 }
 

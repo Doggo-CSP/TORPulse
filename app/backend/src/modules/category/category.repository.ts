@@ -57,6 +57,13 @@ export async function getCategoryNameMap(): Promise<Map<string, string>> {
   return new Map(categories.map((category) => [category.key, category.name]))
 }
 
+// key -> name for active categories only. Use this for anything users see: a hidden category
+// is a soft delete for them (admin pages keep using getCategoryNameMap).
+export async function getVisibleCategoryNameMap(): Promise<Map<string, string>> {
+  const categories = await CategoryModel.find({ isActive: true }, { key: 1, name: 1 }).lean()
+  return new Map(categories.map((category) => [category.key, category.name]))
+}
+
 export async function getActiveCategoryKeys(): Promise<Set<string>> {
   const categories = await CategoryModel.find({ isActive: true }, { key: 1 }).lean()
   return new Set(categories.map((category) => category.key))

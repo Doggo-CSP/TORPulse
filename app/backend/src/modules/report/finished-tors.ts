@@ -1,27 +1,34 @@
-import mongoose from 'mongoose'
+import { createHash } from 'node:crypto'
 
 import { resolveTorCategory } from '../tor/tor.controller.js'
+import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 
-// Finished projects (contract signed, mid and awarded prices known) are not in `tors`, which
-// holds the TORs still open for bidding. They live in dated snapshot collections named
-// `tors_bk_YYYYMMDD`. Reports, homepage price charts and "similar past projects" read the
-// newest snapshot.
+// Price reports, the homepage price chart and "similar projects" (UC-05) need a mid price and a
+// winning (awarded) price. Both come from `tors`, the same collection as the rest of the app.
 //
-// The snapshots are read-only: this module only lists collections and runs find(). Never add a
-// write here.
+// Ingestion does not store awarded prices yet, so until it does, a TOR whose bidding has closed
+// gets a MOCK awarded price, computed here at read time and never written to the database:
+// - only TORs with a mid price whose submission day (Bangkok time) is over,
+// - never a cancelled project (contractStatusCode S5), which has no winner,
+// - never a TOR still open for bids: its winning price does not exist yet.
+// A real awardedPriceBaht always wins over the mock. Every item says which one it carries
+// (awardedIsMock) so the pages can label mock numbers.
 
-export const FINISHED_SNAPSHOT_PATTERN = /^tors_bk_(\d{4})(\d{2})(\d{2})$/
+export const CANCELLED_CONTRACT_STATUS_CODES = ['S5']
 
-// The data is a periodic snapshot used for trends, so a short in-process cache is enough.
-const CACHE_TTL_MS = 30 * 60 * 1000
+// Data changes with every ingestion run; a short cache is enough for report traffic.
+const CACHE_TTL_MS = 60 * 1000
 
 export interface FinishedTor {
+  // Mongo id of the TOR, for links to /tor/:id
+  id: string
   externalId: string
   projectTitle: string
   agencyName: string | null
   departmentName: string | null
-  // Resolved category key (stored category, else the keyword fallback)
-  category: string
+  // Resolved category key (stored category, else the keyword fallback). null after
+  // withVisibleCategories() when that category is hidden.
+  category: string | null
   categories: string[]
   technologies: string[]
   requirements: string[]
@@ -29,31 +36,57 @@ export interface FinishedTor {
   budgetBaht: number | null
   midPriceBaht: number
   awardedPriceBaht: number
+  // true when awardedPriceBaht is the mock below, false when it came from the source
+  awardedIsMock: boolean
   announceDate: Date | null
+  submissionDeadlineAt: Date | null
   analyzedAt: Date | null
   detailUrl: string | null
 }
 
-export interface FinishedTorSnapshot {
-  collection: string
-  // YYYY-MM-DD from the collection name
-  snapshotDate: string
+export interface FinishedTorSet {
+  // When the set was read from the database
+  asOf: Date
   items: FinishedTor[]
 }
 
-// Newest `tors_bk_YYYYMMDD` name, or null. The undated `tors_bk` is an old export and is skipped.
-export function pickLatestSnapshot(
-  collectionNames: string[],
-): { collection: string; snapshotDate: string } | null {
-  const dated = collectionNames
-    .map((name) => ({ name, match: FINISHED_SNAPSHOT_PATTERN.exec(name) }))
-    .filter((entry): entry is { name: string; match: RegExpExecArray } => entry.match !== null)
-    .sort((a, b) => b.name.localeCompare(a.name))
+const bangkokDay = (date: Date) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(date)
 
-  const latest = dated[0]
-  if (!latest) return null
-  const [, year, month, day] = latest.match
-  return { collection: latest.name, snapshotDate: `${year}-${month}-${day}` }
+// Bidding is closed once the submission day (Bangkok calendar day) is over. A TOR whose
+// deadline is today, or that has no deadline, still counts as open.
+export function isBiddingClosed(submissionDeadlineAt: Date | null, now: Date): boolean {
+  return submissionDeadlineAt !== null && bangkokDay(submissionDeadlineAt) < bangkokDay(now)
+}
+
+// Share of projects per savings band, taken from 563 real finished software projects (e-GP
+// snapshot of 2026-10-04): savings % = (mid - awarded) / mid.
+const MOCK_SAVINGS_BANDS: { share: number; min: number; max: number }[] = [
+  { share: 0.01, min: -3, max: 0 }, // winning bid above the mid price
+  { share: 0.59, min: 0, max: 5 },
+  { share: 0.12, min: 5, max: 10 },
+  { share: 0.07, min: 10, max: 15 },
+  { share: 0.21, min: 15, max: 30 },
+]
+
+// Maps u in [0, 1] to a savings % that follows the bands above.
+export function mockSavingsPct(u: number): number {
+  let start = 0
+  for (const band of MOCK_SAVINGS_BANDS) {
+    if (u < start + band.share) {
+      return band.min + ((u - start) / band.share) * (band.max - band.min)
+    }
+    start += band.share
+  }
+  return MOCK_SAVINGS_BANDS[MOCK_SAVINGS_BANDS.length - 1]!.max
+}
+
+// Deterministic mock: the same TOR always gets the same price (hash of its externalId),
+// rounded to 100 baht.
+export function mockAwardedPrice(externalId: string, midPriceBaht: number): number {
+  const hash = createHash('md5').update(externalId).digest()
+  const u = hash.readUInt32BE(0) / 0x1_0000_0000
+  return Math.round((midPriceBaht * (1 - mockSavingsPct(u) / 100)) / 100) * 100
 }
 
 const asString = (value: unknown): string | null =>
@@ -70,19 +103,35 @@ const asPositiveNumber = (value: unknown): number | null =>
 const asDate = (value: unknown): Date | null =>
   value instanceof Date && !Number.isNaN(value.getTime()) ? value : null
 
-// A snapshot document becomes a FinishedTor only when both prices are known; projects still
-// open for bidding in a snapshot have no awarded price and are left out.
-export function toFinishedTor(doc: Record<string, unknown>): FinishedTor | null {
+// A TOR becomes a FinishedTor when it has a mid price and either a real awarded price or a
+// closed, not-cancelled bidding (mock awarded price). Everything else returns null.
+export function toFinishedTor(doc: Record<string, unknown>, now: Date): FinishedTor | null {
   const midPriceBaht = asPositiveNumber(doc.midPriceBaht)
-  const awardedPriceBaht = asPositiveNumber(doc.awardedPriceBaht)
   const externalId = asString(doc.externalId)
-  if (midPriceBaht === null || awardedPriceBaht === null || externalId === null) return null
+  if (midPriceBaht === null || externalId === null) return null
+
+  const submissionDeadlineAt = asDate(doc.submissionDeadlineAt)
+  const realAwarded = asPositiveNumber(doc.awardedPriceBaht)
+  let awardedPriceBaht: number
+  let awardedIsMock: boolean
+  if (realAwarded !== null) {
+    awardedPriceBaht = realAwarded
+    awardedIsMock = false
+  } else {
+    const cancelled = CANCELLED_CONTRACT_STATUS_CODES.includes(
+      asString(doc.contractStatusCode) ?? '',
+    )
+    if (cancelled || !isBiddingClosed(submissionDeadlineAt, now)) return null
+    awardedPriceBaht = mockAwardedPrice(externalId, midPriceBaht)
+    awardedIsMock = true
+  }
 
   const technologies = asStringArray(doc.technologies)
   const category = resolveTorCategory({ category: asString(doc.category), technologies })
   const categories = asStringArray(doc.categories)
 
   return {
+    id: String(doc._id),
     externalId,
     projectTitle: asString(doc.projectTitle) ?? externalId,
     agencyName: asString(doc.agencyName),
@@ -95,7 +144,9 @@ export function toFinishedTor(doc: Record<string, unknown>): FinishedTor | null 
     budgetBaht: asPositiveNumber(doc.budgetBaht),
     midPriceBaht,
     awardedPriceBaht,
+    awardedIsMock,
     announceDate: asDate(doc.announceDate),
+    submissionDeadlineAt,
     analyzedAt: asDate(doc.analyzedAt),
     detailUrl: asString(doc.detailUrl),
   }
@@ -114,42 +165,36 @@ const PROJECTION = {
   budgetBaht: 1,
   midPriceBaht: 1,
   awardedPriceBaht: 1,
+  contractStatusCode: 1,
   announceDate: 1,
+  submissionDeadlineAt: 1,
   analyzedAt: 1,
   detailUrl: 1,
 } as const
 
-let cache: { snapshot: FinishedTorSnapshot | null; expiresAt: number } | null = null
-let pending: Promise<FinishedTorSnapshot | null> | null = null
+let cache: { set: FinishedTorSet; expiresAt: number } | null = null
+let pending: Promise<FinishedTorSet> | null = null
 
-async function loadSnapshot(): Promise<FinishedTorSnapshot | null> {
-  const db = mongoose.connection.db
-  if (!db) throw new Error('MongoDB is not connected')
-
-  const names = (await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name)
-  const latest = pickLatestSnapshot(names)
-  if (!latest) return null
-
-  const docs = await db
-    .collection(latest.collection)
-    .find({ midPriceBaht: { $gt: 0 }, awardedPriceBaht: { $gt: 0 } }, { projection: PROJECTION })
-    .toArray()
-
+async function loadFinishedTors(): Promise<FinishedTorSet> {
+  const now = new Date()
+  const docs = await TorModel.find(
+    { ...PUBLIC_TOR_FILTER, midPriceBaht: { $gt: 0 } },
+    PROJECTION,
+  ).lean()
   const items = docs
-    .map((doc) => toFinishedTor(doc as Record<string, unknown>))
+    .map((doc) => toFinishedTor(doc as unknown as Record<string, unknown>, now))
     .filter((item): item is FinishedTor => item !== null)
-
-  return { ...latest, items }
+  return { asOf: now, items }
 }
 
-// The newest snapshot of finished projects, or null when the database has none.
-export async function getFinishedTorSnapshot(): Promise<FinishedTorSnapshot | null> {
-  if (cache && cache.expiresAt > Date.now()) return cache.snapshot
+// TORs with a mid and an awarded price (real or mock), read from `tors`.
+export async function getFinishedTors(): Promise<FinishedTorSet> {
+  if (cache && cache.expiresAt > Date.now()) return cache.set
   if (!pending) {
-    pending = loadSnapshot()
-      .then((snapshot) => {
-        cache = { snapshot, expiresAt: Date.now() + CACHE_TTL_MS }
-        return snapshot
+    pending = loadFinishedTors()
+      .then((set) => {
+        cache = { set, expiresAt: Date.now() + CACHE_TTL_MS }
+        return set
       })
       .finally(() => {
         pending = null
@@ -162,13 +207,13 @@ export function clearFinishedTorCache(): void {
   cache = null
 }
 
-// Summary of where report numbers come from, sent with every report response.
-export function snapshotSource(snapshot: FinishedTorSnapshot | null) {
-  return snapshot
-    ? {
-        collection: snapshot.collection,
-        snapshot_date: snapshot.snapshotDate,
-        project_count: snapshot.items.length,
-      }
-    : null
+// Where report numbers come from, sent with every report response.
+export function reportSource(set: FinishedTorSet) {
+  const mockCount = set.items.filter((tor) => tor.awardedIsMock).length
+  return {
+    collection: 'tors',
+    as_of: set.asOf.toISOString(),
+    project_count: set.items.length,
+    mock_awarded_count: mockCount,
+  }
 }

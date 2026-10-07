@@ -22,10 +22,12 @@ export const savingsBaht = (tor: Pick<FinishedTor, 'midPriceBaht' | 'awardedPric
 export const savingsPct = (tor: Pick<FinishedTor, 'midPriceBaht' | 'awardedPriceBaht'>) =>
   ((tor.midPriceBaht - tor.awardedPriceBaht) / tor.midPriceBaht) * 100
 
-// Date a finished project is placed on the calendar by: its announcement, else when it was
-// analysed.
-export const reportDateOf = (tor: Pick<FinishedTor, 'announceDate' | 'analyzedAt'>) =>
-  tor.announceDate ?? tor.analyzedAt
+// Date a project is placed on the calendar by: its announcement, else its submission deadline
+// (BMA TORs have no announce date), else when it was analysed.
+export const reportDateOf = (
+  tor: Pick<FinishedTor, 'announceDate' | 'analyzedAt'> &
+    Partial<Pick<FinishedTor, 'submissionDeadlineAt'>>,
+) => tor.announceDate ?? tor.submissionDeadlineAt ?? tor.analyzedAt
 
 export function savingsBucketOf(pct: number): SavingsBucketKey {
   const bucket = SAVINGS_BUCKETS.find(
@@ -42,6 +44,21 @@ export function median(values: number[]): number | null {
 }
 
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
+
+// ---------------------------------------------------------------------------
+// Hidden categories
+// ---------------------------------------------------------------------------
+
+// A hidden category is a soft delete for users: it is never shown, filtered on or matched,
+// and comes back as soon as an admin shows it again. The TOR keeps its stored category; only
+// what users see changes. `visible` is the set of active category keys.
+export function withVisibleCategories(tor: FinishedTor, visible: ReadonlySet<string>): FinishedTor {
+  return {
+    ...tor,
+    category: tor.category !== null && visible.has(tor.category) ? tor.category : null,
+    categories: tor.categories.filter((key) => visible.has(key)),
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Filters
@@ -145,21 +162,19 @@ export interface CategoryInfo {
   isActive: boolean
 }
 
-// Every active category in display order, empty ones included, then hidden or unknown
-// categories that still have projects.
+// Every active category in display order, empty ones included. Hidden categories are left out
+// (soft delete), and so are projects whose primary category is hidden or unknown.
 export function categoryComparison(items: FinishedTor[], categories: CategoryInfo[]) {
   const groups = new Map<string, FinishedTor[]>()
   for (const tor of items) {
+    if (tor.category === null) continue
     const group = groups.get(tor.category)
     if (group) group.push(tor)
     else groups.set(tor.category, [tor])
   }
 
   const names = new Map(categories.map((c) => [c.key, c.name]))
-  const keys = categories.filter((c) => c.isActive || groups.has(c.key)).map((c) => c.key)
-  for (const key of groups.keys()) {
-    if (!names.has(key)) keys.push(key)
-  }
+  const keys = categories.filter((c) => c.isActive).map((c) => c.key)
 
   return keys.map((key) => {
     const group = groups.get(key) ?? []
@@ -234,16 +249,20 @@ export function procurementList(
   categoryNames: Map<string, string>,
 ) {
   const rows = items.map((tor) => ({
+    tor_id: tor.id,
     external_id: tor.externalId,
     project_title: tor.projectTitle,
     department_name: tor.departmentName,
     agency_name: tor.agencyName,
-    category: tor.category,
-    category_label: categoryNames.get(tor.category) ?? tor.category,
+    // null when the category is hidden (categoryNames holds active categories only)
+    category: tor.category !== null && categoryNames.has(tor.category) ? tor.category : null,
+    category_label: tor.category !== null ? (categoryNames.get(tor.category) ?? null) : null,
     announce_date: reportDateOf(tor)?.toISOString() ?? null,
     budget_baht: tor.budgetBaht,
     mid_price_baht: tor.midPriceBaht,
     awarded_price_baht: tor.awardedPriceBaht,
+    // Mock until ingestion stores real awarded prices (see finished-tors.ts)
+    awarded_is_mock: tor.awardedIsMock,
     savings_amount_baht: roundBaht(savingsBaht(tor)),
     savings_pct: round1(savingsPct(tor)),
     detail_url: tor.detailUrl,
@@ -293,7 +312,7 @@ export function procurementList(
 
 export interface SimilarityTarget {
   externalId: string
-  category: string
+  category: string | null
   categories: string[]
   technologies: string[]
 }
@@ -306,12 +325,14 @@ const normalizeTech = (tech: string) => tech.trim().toLowerCase()
 // Score = 3 for the same primary category, +1 per other shared category, +1 per shared
 // technology (at most 3). A project must share at least one category to count as similar.
 export function scoreSimilarity(target: SimilarityTarget, candidate: FinishedTor) {
-  const targetCategories = new Set(target.categories.length ? target.categories : [target.category])
+  const targetCategories = new Set(
+    target.categories.length ? target.categories : target.category ? [target.category] : [],
+  )
   const candidateCategories = new Set(candidate.categories)
   const matchedCategories = [...targetCategories].filter((key) => candidateCategories.has(key))
   if (matchedCategories.length === 0) return null
 
-  const samePrimary = target.category === candidate.category
+  const samePrimary = target.category !== null && target.category === candidate.category
   const targetTech = new Set(target.technologies.map(normalizeTech))
   const matchedTechnologies = candidate.technologies.filter((tech) =>
     targetTech.has(normalizeTech(tech)),

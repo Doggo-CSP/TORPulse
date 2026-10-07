@@ -4,7 +4,7 @@ import type { Request, Response } from 'express'
 import { isObjectIdOrHexString } from 'mongoose'
 
 import { DEFAULT_CATEGORY_KEY } from '../category/category.constants.js'
-import { getCategoryNameMap, listCategories } from '../category/category.repository.js'
+import { getVisibleCategoryNameMap, listCategories } from '../category/category.repository.js'
 import { cleanDateText, parseThaiDate, toIsoDateString } from '../ingestion/thai-date.js'
 import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from './tor.model.js'
 
@@ -224,9 +224,12 @@ interface TorLeanFields {
   createdAt: Date
 }
 
-// categoryNames maps category keys to their current names (getCategoryNameMap).
+// categoryNames maps active category keys to their names (getVisibleCategoryNameMap). A hidden
+// category is a soft delete for users: it is left out of `categories`, and `category` /
+// `categoryName` are null when the primary category is hidden.
 export function toTorListItem(tor: TorLeanFields, categoryNames: Map<string, string>) {
-  const category = resolveTorCategory(tor)
+  const resolved = resolveTorCategory(tor)
+  const category = categoryNames.has(resolved) ? resolved : null
   return {
     id: String(tor._id),
     externalId: tor.externalId,
@@ -241,8 +244,10 @@ export function toTorListItem(tor: TorLeanFields, categoryNames: Map<string, str
     technologies: tor.technologies ?? [],
     createdAt: tor.createdAt,
     category,
-    categories: tor.categories?.length ? tor.categories : [category],
-    categoryName: categoryNames.get(category) ?? null,
+    categories: (tor.categories?.length ? tor.categories : [resolved]).filter((key) =>
+      categoryNames.has(key),
+    ),
+    categoryName: category ? (categoryNames.get(category) ?? null) : null,
   }
 }
 
@@ -372,7 +377,7 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
 
   const [docs, categoryNames] = await Promise.all([
     TorModel.find(query).sort({ createdAt: -1 }).lean(),
-    getCategoryNameMap(),
+    getVisibleCategoryNameMap(),
   ])
   const items = docs.map((tor) => toTorListItem(tor, categoryNames))
   if (sort === 'deadline') {
@@ -457,7 +462,7 @@ export async function getRecommendationsHandler(req: Request, res: Response): Pr
   const profile: UserInterestProfile = { userId: req.user._id.toString() }
   const [candidates, categoryNames] = await Promise.all([
     TorModel.find(PUBLIC_TOR_FILTER).sort({ createdAt: -1 }).limit(CANDIDATE_POOL_SIZE).lean(),
-    getCategoryNameMap(),
+    getVisibleCategoryNameMap(),
   ])
 
   const items = candidates
