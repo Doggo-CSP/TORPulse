@@ -131,7 +131,7 @@ sequenceDiagram
   end
 ```
 
-The deadline read from the announcement PDF takes priority over the LLM's reading; the LLM value is used only when the PDF gives no date. The bidding method (`biddingMethod`) is read from the same PDF text, falling back to the project title and then source metadata. All Central e-GP requests in a process go through a single limiter, spaced 1.2 s apart. HTTP 429 and 5xx responses are retried with backoff.
+The deadline read from the announcement PDF takes priority over the LLM's reading; the LLM value is used only when the PDF gives no date. The stage (`projectStatus`: `ร่างประกาศ` or `ประกาศเชิญชวน`), announce date, mid price and bidding method are read from the same PDF text and override discovery metadata; the method falls back to the project title. The PDF is read once per ingestion, so `npm run refresh:announcements` re-reads it for drafts until they are published. All Central e-GP requests in a process go through a single limiter, spaced 1.2 s apart. HTTP 429 and 5xx responses are retried with backoff.
 
 ## 4. Ingestion job lifecycle
 
@@ -220,7 +220,7 @@ erDiagram
 | Source | Data source key | Job `sourceAdapter` | What it finds | Auth |
 |---|---|---|---|---|
 | GovSpending | `govspending-egp` | `central_egp` | Projects that already have a contract, matched by keyword and fiscal year | `GOVSPENDING_API_KEY` |
-| BMA e-GP | `bma-egp` | `bma_egp` | Bangkok projects in the ร่าง TOR, ราคากลาง and ประกาศเชิญชวน stages (all methods), matched by keyword and budget year | none |
+| BMA e-GP | `bma-egp` | `bma_egp` | Bangkok project ids from the ร่าง TOR, ราคากลาง and ประกาศเชิญชวน filters (all methods), matched by keyword and budget year; stage comes from the eGP announcement | none |
 | eGP announcement search (manual `discover:egp`) | `govspending-egp` | `central_egp` | ร่างประกาศ / ประกาศเชิญชวน on Central e-GP | Turnstile token copied from a browser |
 
 Every source ends up as an 11-digit Central e-GP project id. That's why one worker, using `CentralEgpAdapter`, processes jobs from all of them.

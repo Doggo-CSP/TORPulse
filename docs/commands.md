@@ -10,7 +10,7 @@ Before running backend commands, copy `app/backend/.env.example` to `.env` and f
 |---|---|
 | `npm run dev` | Starts the REST API (`src/apps/api/server.ts`) on `PORT` (default 8000) with hot reload. Serves `/auth/*` (Google OAuth) and `/api/v1/*`. |
 | `npm run dev:producer` | Starts the queue producer with hot reload. It loops through each configured discovery source, enqueues ingestion jobs, then sleeps for `GOVSPENDING_SYNC_INTERVAL_MS`. The sources are: GovSpending when `GOVSPENDING_API_KEY` is set and `GOVSPENDING_SYNC_ENABLED` is not `false`, and BMA unless `BMA_SYNC_ENABLED=false`. |
-| `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with the AI provider (`AI_PROVIDER`), reads the submission deadline and bidding method from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
+| `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with the AI provider (`AI_PROVIDER`), reads the stage, submission deadline, bidding method, mid price and announce date from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
 | `npm run build` | Compiles TypeScript to `dist/`. |
 | `npm start` | Runs the compiled API (`dist/apps/api/server.js`). |
 | `npm run start:producer` | Runs the compiled queue producer. |
@@ -47,6 +47,7 @@ These scripts write to the configured database unless they are marked read-only.
 | `npm run report:job-failures` | **Read-only.** Shows job counts by status and stage, then error messages grouped by both. |
 | `npm run repair:missing-tors` | Finds jobs marked `completed` whose TOR record is missing and queues them again. |
 | `npm run backfill:deadlines -- [--dry-run]` | Parses the stored `submissionDeadline` text into `submissionDeadlineAt` on existing TORs. No LLM calls. |
+| `npm run refresh:announcements -- [--dry-run] [--all]` | Re-reads the eGP announcement PDF of `central_egp`/`bma_egp` TORs and updates `projectStatus`, `announceDate`, `midPriceBaht`, `biddingMethod` and the deadline. By default only TORs not yet at ประกาศเชิญชวน or without a deadline (drafts waiting to be published); `--all` re-reads every one. Clears stale BMA stage labels when the PDF is unreadable. Needs Java, no LLM calls. Writes to the configured DB. |
 | `npm run backfill:bidding-method -- [--dry-run] [--fetch-announcement]` | Fills `biddingMethod` on existing TORs from the project title. `--fetch-announcement` reads the eGP announcement PDF for the rest (needs Java). No LLM calls. |
 | `npm run backfill:egp-details` | Fills department, status and prices on TORs with `sourceAdapter: central_egp` (not `bma_egp`) from the eGP project-detail endpoints. Exits with code 1 if any project fails. |
 | `npm run discover:egp -- [--announce-type 1,2,3] [--budget-year 2570] [--max-pages 50] [--dry-run]` | One-off discovery of projects still open for bidding, from the Central eGP announcement search. Needs `EGP_ANNOUNCEMENT_TOKEN`: copy the `X-Announcement-Token` header from a browser search on process5.gprocurement.go.th. The token expires after about 20 minutes. |
