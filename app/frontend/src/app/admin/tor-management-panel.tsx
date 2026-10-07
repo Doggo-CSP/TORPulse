@@ -432,7 +432,7 @@ export function TorManagementPanel({
                 <th className="px-5 py-3.5">โครงการ</th>
                 <th className="px-5 py-3.5">หมวดหมู่</th>
                 <th className="px-5 py-3.5 text-right">งบประมาณ</th>
-                <th className="px-5 py-3.5 text-right">ความมั่นใจ AI</th>
+                {/* <th className="px-5 py-3.5 text-right">ความมั่นใจ AI</th> */}
                 <th className="px-5 py-3.5">สถานะ</th>
                 <th className="px-5 py-3.5 text-right">การจัดการ</th>
               </tr>
@@ -485,9 +485,9 @@ export function TorManagementPanel({
                           <div className="text-[10px] text-[#998f80]">(ราคากลาง)</div>
                         )}
                       </td>
-                      <td className="px-5 py-4 text-right text-xs tabular-nums text-[#5c5446]">
+                      {/* <td className="px-5 py-4 text-right text-xs tabular-nums text-[#5c5446]">
                         {Math.round(tor.confidence * 100)}%
-                      </td>
+                      </td> */}
                       <td className="px-5 py-4">
                         <span
                           className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${status.badge}`}
@@ -716,12 +716,12 @@ export function TorManagementPanel({
                   className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-2 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
                 />
               </div>
-
+{/* 
               <p className="text-[11px] text-[#998f80]">
                 AI: {editing.analysisModel} ({editing.analysisVersion}) · วิเคราะห์เมื่อ{" "}
                 {formatThaiDateTime(editing.analyzedAt)} · ความมั่นใจ{" "}
                 {Math.round(editing.confidence * 100)}%
-              </p>
+              </p> */}
             </div>
 
             <div className="flex items-center justify-end gap-3 border-t border-[#f0e8dc] p-6 pt-4">

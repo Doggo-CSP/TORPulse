@@ -126,8 +126,8 @@ export default function TorDetailPage({
         { label: "หน่วยงานพัฒนา / ผู้ว่าจ้าง", value: tor.agencyName ?? "-" },
         { label: "หน่วยงาน", value: tor.departmentName ?? "-" },
         { label: "หน่วยงานย่อย", value: tor.departmentSubName ?? "-" },
-        { label: "สถานะโครงการ", value: tor.projectStatus ?? "-" },
-        // { label: "สถานะสัญญา", value: tor.contractStatus ?? "-" },
+        { label: "สถานะโครงการ", value: tor.contractStatus ?? "-" },
+        { label: "ประเภทการประกาศ", value: tor.projectStatus ?? "-" },
         { label: "วงเงิน", value: formatBaht(tor.budgetBaht) },
         { label: "ราคากลาง", value: formatBaht(tor.midPriceBaht) },
         // { label: "ราคาที่ชนะการเสนอราคา", value: formatBaht(tor.awardedPriceBaht) },
@@ -296,9 +296,9 @@ export default function TorDetailPage({
                             <p className="text-sm leading-relaxed text-muted-foreground">
                                 {tor.classificationReason}
                             </p>
-                            <p className="mt-2 text-xs text-muted-foreground">
+                            {/* <p className="mt-2 text-xs text-muted-foreground">
                                 ความมั่นใจ {(tor.confidence * 100).toFixed(0)}%
-                            </p>
+                            </p> */}
                         </section>
 
                         <SimilarProjects torId={tor.id} budgetBaht={tor.budgetBaht} />
