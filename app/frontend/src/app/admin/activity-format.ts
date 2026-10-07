@@ -109,6 +109,10 @@ export function describeActivity(item: ActivityItem): { title: string; detail?: 
         detail: `พบ ${num(meta.fetchedCount)} โครงการ · ใหม่ ${num(meta.createdCount)} · มีอยู่แล้ว ${num(meta.existingCount)}`,
       };
     }
+    case "ingestion.source_enabled":
+      return { title: `เปิดใช้งานแหล่งข้อมูล ${target}` };
+    case "ingestion.source_disabled":
+      return { title: `ปิดใช้งานแหล่งข้อมูล ${target}` };
     case "ingestion.failed":
       return {
         title: `ดึงข้อมูล ${formatValue(meta.source)} ไม่สำเร็จ`,

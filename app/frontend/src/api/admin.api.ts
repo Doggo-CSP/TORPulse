@@ -212,15 +212,55 @@ export interface CollectionRun {
   errorMessage: string | null;
 }
 
-export function fetchIngestionStatus(): Promise<{
+export interface DataSourceStatus {
+  key: string;
+  label: string;
+  enabled: boolean;
+  lastStartedAt: string | null;
+  lastSucceededAt: string | null;
+  lastError: { message: string; occurredAt: string | null } | null;
+}
+
+// How the scheduled queue-producer looks, judged from the scheduled runs it leaves behind
+export type SchedulerState =
+  | "running"
+  | "ok"
+  | "waiting"
+  | "stalled"
+  | "off"
+  | "source_disabled"
+  | "not_configured";
+
+export interface IngestionStatus {
   lastRun: CollectionRun | null;
   isRunning: boolean;
-}> {
+  // false when the server has the BMA sync turned off in its environment
+  manualSyncAvailable: boolean;
+  sources: DataSourceStatus[];
+  scheduler: {
+    state: SchedulerState;
+    expectedBy: string | null;
+    intervalMinutes: number;
+    lastScheduledRunAt: string | null;
+  };
+}
+
+export function fetchIngestionStatus(): Promise<IngestionStatus> {
   return adminRequest("/ingestion/status");
 }
 
 export function triggerIngestionSync(): Promise<{ message: string; runId: string }> {
   return adminRequest("/ingestion/sync", { method: "POST" });
+}
+
+export function updateDataSource(
+  key: string,
+  enabled: boolean
+): Promise<{ message: string; source: DataSourceStatus }> {
+  return adminRequest(`/ingestion/sources/${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    body: { enabled },
+  });
 }
 
 // ---------------------------------------------------------------------------

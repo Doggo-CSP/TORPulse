@@ -34,6 +34,7 @@ import {
   describeActivity,
   formatRelativeTime,
 } from "./activity-format";
+import { IngestionSourcesSection } from "./ingestion-sources-card";
 import { TorManagementPanel } from "./tor-management-panel";
 import {
   Squares2X2Icon,
@@ -1436,9 +1437,10 @@ export default function AdminPage() {
                           การดึงข้อมูลอัตโนมัติ (Automated Ingestion)
                         </p>
                         <p className="text-xs text-[#7a8b6f]">
-                          ดึงประกาศจากแหล่งข้อมูลทุก {settings.ingestionIntervalMinutes} นาที
-                          (ค่ารอบเวลาตั้งที่เซิร์ฟเวอร์) ปุ่ม &quot;สั่งดึงข้อมูลทันที&quot;
-                          ในหน้าจัดการ TOR ยังใช้ได้แม้ปิดอยู่
+                          เปิดไว้ ระบบจะดึงประกาศใหม่ทุก {settings.ingestionIntervalMinutes} นาที
+                        </p>
+                        <p className="text-xs text-[#7a8b6f]">
+                          ถ้าปิด ยังกด &quot;สั่งดึงข้อมูลทันที&quot; ในหน้าจัดการ TOR ได้
                         </p>
                       </div>
                       <button
@@ -1459,6 +1461,12 @@ export default function AdminPage() {
                       </button>
                     </div>
 
+                    <IngestionSourcesSection onToast={showToast} onChanged={refreshAfterChange} />
+                  </div>
+                )}
+
+                {settings && !settingsError && (
+                  <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm">
                     <form
                       className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"
                       onSubmit={(e) => {
@@ -1474,7 +1482,7 @@ export default function AdminPage() {
                           อีเมลผู้ส่ง (Sender Email)
                         </label>
                         <p className="text-xs text-[#7a8b6f]">
-                          เก็บไว้สำหรับระบบแจ้งเตือนทางอีเมลในอนาคต ตอนนี้ระบบยังไม่ส่งอีเมล
+                          ยังไม่ได้ใช้ส่งอีเมล (เตรียมไว้สำหรับระบบแจ้งเตือน)
                         </p>
                         <input
                           id="admin-sender-email"
