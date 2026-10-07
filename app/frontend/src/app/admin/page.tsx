@@ -34,7 +34,7 @@ import {
   describeActivity,
   formatRelativeTime,
 } from "./activity-format";
-import { IngestionSourcesCard } from "./ingestion-sources-card";
+import { IngestionSourcesSection } from "./ingestion-sources-card";
 import { TorManagementPanel } from "./tor-management-panel";
 import {
   Squares2X2Icon,
@@ -1461,6 +1461,12 @@ export default function AdminPage() {
                       </button>
                     </div>
 
+                    <IngestionSourcesSection onToast={showToast} onChanged={refreshAfterChange} />
+                  </div>
+                )}
+
+                {settings && !settingsError && (
+                  <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm">
                     <form
                       className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"
                       onSubmit={(e) => {
@@ -1500,11 +1506,6 @@ export default function AdminPage() {
                     </form>
                   </div>
                 )}
-
-                <IngestionSourcesCard
-                  onToast={showToast}
-                  onChanged={refreshAfterChange}
-                />
               </div>
             )}
           </section>

@@ -35,14 +35,15 @@ function useIngestionStatus(refreshKey: unknown) {
   return { status, loadError, load };
 }
 
-interface IngestionSourcesCardProps {
+interface IngestionSourcesSectionProps {
   onToast: (message: string, kind?: ToastKind) => void;
   // Called after a source is switched so the activity feed picks up the audit log
   onChanged: () => void;
 }
 
-// UC-12: the on/off switch for each website TORs are collected from
-export function IngestionSourcesCard({ onToast, onChanged }: IngestionSourcesCardProps) {
+// UC-12: the on/off switch for each website TORs are collected from. Rendered inside the
+// automatic-ingestion card on the settings tab, so it has no card frame of its own.
+export function IngestionSourcesSection({ onToast, onChanged }: IngestionSourcesSectionProps) {
   const { status, loadError, load } = useIngestionStatus(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
@@ -72,7 +73,7 @@ export function IngestionSourcesCard({ onToast, onChanged }: IngestionSourcesCar
   const sources = status?.sources;
 
   return (
-    <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm space-y-4">
+    <div className="space-y-3">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="font-semibold text-sm text-[#2d2d2d]">แหล่งข้อมูล (Data Sources)</p>
@@ -98,9 +99,9 @@ export function IngestionSourcesCard({ onToast, onChanged }: IngestionSourcesCar
       ) : sources.length === 0 ? (
         <p className="text-xs text-[#8a8070]">ยังไม่มีแหล่งข้อมูล</p>
       ) : (
-        <ul className="divide-y divide-[#f0e8dc]">
+        <ul className="divide-y divide-[#f0e8dc] rounded-2xl border border-[#f0e8dc] px-4">
           {sources.map((source) => (
-            <li key={source.key} className="flex items-start justify-between gap-4 py-3 first:pt-0">
+            <li key={source.key} className="flex items-start justify-between gap-4 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-[#2d2d2d]">{source.label}</p>
                 <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-[#7a8b6f]">
