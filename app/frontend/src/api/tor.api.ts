@@ -17,6 +17,9 @@ export interface TorDetail {
   departmentName: string | null;
   departmentSubName: string | null;
   projectStatus: string | null;
+  // Whether the project is still active (e.g. ระหว่างดำเนินการ); projectStatus is the announcement stage.
+  contractStatus: string | null;
+  contractStatusCode: string | null;
   summary: string | null;
   objectives: string[];
   requirements: string[];
@@ -52,6 +55,9 @@ export interface TorListItem {
   submissionDeadline: string | null;
   submissionDeadlineText: string | null;
   projectStatus: string | null;
+  // Whether the project is still active (e.g. ระหว่างดำเนินการ); projectStatus is the announcement stage.
+  contractStatus: string | null;
+  contractStatusCode: string | null;
   technologies: string[];
   createdAt: string;
   // Primary TOR category key; `categories` lists every matching key, primary first.
