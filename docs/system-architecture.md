@@ -121,7 +121,7 @@ sequenceDiagram
     end
     W->>E: downloadFileTest (ZIP) → tor_*, Attach_TOR_*, doc_* PDFs
     W->>W: OpenDataLoader → Markdown (OCR needed → review_required)
-    W->>AI: classify + extract fields (category catalog from tor_categories)
+    W->>AI: classify + extract fields (category catalog from categories)
     alt not software related
       W->>DB: job → rejected
     end
@@ -162,7 +162,8 @@ erDiagram
   data_sources ||--o{ ingestion_jobs : "discovers"
   data_sources ||--o{ tors : "owns"
   ingestion_jobs |o--o| tors : "produces (torId)"
-  tor_categories ||--o{ tors : "category / categories[] (by key)"
+  categories ||--o{ tors : "category / categories[] (by key)"
+  categories ||--o{ users : "interests[] (by key)"
   users ||--o{ userbookmarks : "saves"
   tors ||--o{ userbookmarks : "saved as"
   users ||--o{ sessions : "logged-in session"
@@ -198,11 +199,13 @@ erDiagram
     date submissionDeadlineAt
     string analysisModel
   }
-  tor_categories {
-    string key UK
-    string name
+  categories {
+    string key UK "immutable"
+    string name UK
     string aiHint
-    bool active
+    string keywords
+    bool isActive
+    int sortOrder
   }
   users {
     string email
@@ -229,12 +232,23 @@ Every source ends up as an 11-digit Central e-GP project id. That's why one work
 
 | Prefix | Endpoints | Used by |
 |---|---|---|
-| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations` | TOR list and detail pages |
+| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar` | TOR list and detail pages (`/:id/similar` = similar finished projects, UC-05) |
 | `/homepage` | `GET /summary`, `GET /analytics` | Homepage dashboard |
 | `/user` | `GET/PUT /profile`, `PUT /interests`, `GET /bookmarks`, `POST /bookmarks/:torId` | Profile and saved pages |
-| `/reports` | `GET /price-overview`, `/savings-distribution`, `/category-comparison`, `/procurement-list`, `/filters/departments` | Reports page |
-| `/admin` | `GET /stats`, `GET /users`, `PATCH /users/:userId/role`, `PATCH /users/:userId/status`, `GET /activities` | Admin page |
+| `/reports` | `GET /price-overview`, `/savings-distribution`, `/category-comparison`, `/timeline`, `/procurement-list`, `/filters/departments` | Reports page (finished projects, see below) |
+| `/admin` | `GET /stats` · `GET /users`, `GET/PATCH /users/:userId`, `PATCH /users/:userId/role`, `PATCH /users/:userId/status` · `GET /activity` · `GET/PATCH /settings` · `GET /tors`, `GET/PATCH/DELETE /tors/:torId`, `POST /tors/:torId/verify`, `POST /tors/:torId/archive` · `GET /ingestion/status`, `POST /ingestion/sync` · `GET/POST /categories`, `PATCH/DELETE /categories/:categoryId`, `PATCH /categories/:categoryId/status` | Admin page (admin role only) |
 | `/ingestion` | `GET /report` | Not called by the frontend yet (ops, job status report) |
 | `/categories` | `GET /` | Not called by the frontend yet (active category list) |
 
 Auth lives outside `/api/v1`: `GET /auth/google`, `GET /auth/google/callback`, `GET /auth/me` and `POST /auth/logout`. Sessions are stored in the MongoDB `sessions` collection, using the `torpulse.sid` cookie.
+
+## 8. Open TORs and finished projects
+
+TORs live in two places, for two questions:
+
+| Data | Collection | Answers | Used by |
+|---|---|---|---|
+| Open TORs (ร่าง TOR, ประกาศเชิญชวน, ประกาศราคากลาง) | `tors` | "What can I bid on?" Mid price, awarded price and announce date are normally empty here, because the project has not finished. | TOR list and detail, homepage counts (UC-04), admin |
+| Finished projects (contract signed) | newest `tors_bk_YYYYMMDD` snapshot | "What did work like this end at, and how much was saved?" | `/reports/*`, homepage price chart and cards, `/tors/:id/similar` (UC-05) |
+
+The snapshots are **read-only**: `modules/report/finished-tors.ts` only lists collections and runs `find()`. It picks the newest `tors_bk_YYYYMMDD` by name, keeps the projects that have both a mid and an awarded price, and caches them in memory for 30 minutes. Each report response includes `source` (collection, snapshot date, project count). Report dates use `announceDate`, falling back to `analyzedAt`. The report maths is in `report.calculations.ts` and is unit tested without a database.
