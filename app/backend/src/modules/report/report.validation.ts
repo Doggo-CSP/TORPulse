@@ -1,31 +1,28 @@
 import { z } from 'zod'
 
-import { PROCUREMENT_LIST_SORT_FIELDS, REPORT_PERIODS } from './report.constants.js'
+import {
+  PROCUREMENT_LIST_SORT_FIELDS,
+  REPORT_PERIODS,
+  SAVINGS_BUCKET_KEYS,
+} from './report.constants.js'
 
-// Category key or name; checked against the categories collection in the handler.
-const categoryParam = z.string().trim().min(1).optional()
-
-export const priceOverviewQuerySchema = z.object({
+// Filters shared by every report endpoint. Category is a key or a display name; it is checked
+// against the categories collection in the handler.
+export const reportFilterQuerySchema = z.object({
   period: z.enum(REPORT_PERIODS).optional().default('all'),
-  category: categoryParam,
-  agencyName: z.string().min(1).optional(),
+  category: z.string().trim().min(1).optional(),
+  department: z.string().trim().min(1).optional(),
+  q: z.string().trim().min(1).max(200).optional(),
+  savings_bucket: z.enum(SAVINGS_BUCKET_KEYS).optional(),
 })
 
-export const savingsDistributionQuerySchema = priceOverviewQuerySchema
-
-export const categoryComparisonQuerySchema = z.object({
-  period: z.enum(REPORT_PERIODS).optional().default('all'),
-  agencyName: z.string().min(1).optional(),
-})
-
-export const procurementListQuerySchema = z.object({
-  period: z.enum(REPORT_PERIODS).optional().default('all'),
-  category: categoryParam,
-  agencyName: z.string().min(1).optional(),
-  budget_min: z.coerce.number().min(0).optional(),
-  budget_max: z.coerce.number().min(0).optional(),
+export const procurementListQuerySchema = reportFilterQuerySchema.extend({
   page: z.coerce.number().int().min(1).optional().default(1),
-  page_size: z.coerce.number().int().min(1).max(100).optional().default(8),
-  sort_by: z.enum(PROCUREMENT_LIST_SORT_FIELDS).optional().default('savings_amount'),
+  page_size: z.coerce.number().int().min(1).max(100).optional().default(10),
+  sort_by: z.enum(PROCUREMENT_LIST_SORT_FIELDS).optional().default('announceDate'),
   sort_order: z.enum(['asc', 'desc']).optional().default('desc'),
+})
+
+export const similarQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(20).optional().default(5),
 })

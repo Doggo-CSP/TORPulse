@@ -10,6 +10,7 @@ import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 import { BookmarkIcon as BookmarkOutlineIcon } from "@heroicons/react/24/outline";
 import { formatThaiDate, getDeadlineInfo } from "@/api/tor.api";
 import { DeadlineBadge } from "@/app/components/deadline_badge";
+import { SimilarProjects } from "./similar-projects";
 
 const formatBaht = (amount: number | null) =>
     amount === null
@@ -298,6 +299,8 @@ export default function TorDetailPage({
                                 ความมั่นใจ {(tor.confidence * 100).toFixed(0)}%
                             </p>
                         </section>
+
+                        <SimilarProjects torId={tor.id} budgetBaht={tor.budgetBaht} />
                     </div>
 
                     <aside className="space-y-5">

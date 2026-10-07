@@ -29,7 +29,7 @@ A full local pipeline needs three terminals: `dev`, `dev:producer` and `dev:inge
 | `npm run test:auth` | Auth routes and auth config. |
 | `npm run test:user` | Profile, interests and bookmarks: model, repository and routes. |
 | `npm run test:homepage` | TOR controller, homepage routes and TOR routes. |
-| `npm run test:report` | Procurement report controller. |
+| `npm run test:report` | Report maths (overview, savings buckets, category comparison, timeline, list, similar projects). Pure unit tests, no database. |
 | `npm run test:queue-upsert` | Manual check against the configured database. Upserts one test job twice and confirms the queue stays idempotent. |
 | `npm run type-check` | `tsc --noEmit`. CI runs it. |
 | `npm run format` | Formats the code with Prettier. |
@@ -41,7 +41,7 @@ These scripts write to the configured database unless they are marked read-only.
 
 | Command | What it does |
 |---|---|
-| `npm run seed:categories` | Inserts the 8 default TOR categories into `tor_categories`. Existing rows are never overwritten. The API and the worker also do this on start. |
+| `npm run seed:categories` | Inserts any of the 8 default TOR categories that is missing from `categories`, including one an admin deleted. Existing rows are never overwritten. The API and the worker seed only when the collection is empty. |
 | `npm run set-admin -- <email>` | Makes a user an active admin. The user must have signed in with Google once first, so that their record exists. |
 | `npm run requeue:jobs -- [--dry-run] [--status=failed,rejected]` | Resets finished jobs to `queued`, so a running worker processes them again. With no `--status`, it resets every finished status (`completed`, `failed`, `rejected`, `review_required`, `skipped`). Jobs held by a worker are never touched. |
 | `npm run report:job-failures` | **Read-only.** Shows job counts by status and stage, then error messages grouped by both. |
@@ -51,7 +51,7 @@ These scripts write to the configured database unless they are marked read-only.
 | `npm run discover:egp -- [--announce-type 1,2,3] [--budget-year 2570] [--max-pages 50] [--dry-run]` | One-off discovery of projects still open for bidding, from the Central eGP announcement search. Needs `EGP_ANNOUNCEMENT_TOKEN`: copy the `X-Announcement-Token` header from a browser search on process5.gprocurement.go.th. The token expires after about 20 minutes. |
 | `npm run sandbox:egp -- [--project <id>] [--download] ...` | **Experiment.** Lists eGP announcements, or reads one project, and resolves each submit deadline from its announcement PDF. Writes to `sandbox-output/`, not to the database. |
 | `npx tsx src/scripts/seed-homepage-tors.ts` | Seeds sample TORs (`seed-homepage-*` data sources) for the homepage. |
-| `npx tsx src/scripts/seed-procurement-reports.ts` | Seeds a fixed, hand-checkable dataset for the procurement report pages. |
+| `npx tsx src/scripts/seed-procurement-reports.ts` | **Outdated, do not run on a shared database.** Seeds priced TORs into `tors`, but the report pages now read finished projects from the newest `tors_bk_*` snapshot, so these rows only pollute the open-TOR list. |
 
 ## Frontend
 
