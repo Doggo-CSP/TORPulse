@@ -1,5 +1,5 @@
 import { parseThaiDate } from '../thai-date.js'
-import type { DiscoveredProcurementProject } from './govspending-discovery.adapter.js'
+import type { DiscoveredProcurementProject } from './discovered-project.js'
 
 const ANNOUNCEMENT_URL =
   'https://process5.gprocurement.go.th/egp-oann10-service/pb/a-egp-allt-project/announcement'
@@ -7,8 +7,7 @@ const ANNOUNCEMENT_URL =
 const DEFAULT_TIMEOUT_MS = 60_000
 
 /**
- * GovSpending only lists projects that already have a contract, so open
- * announcements come from the eGP search. Its project status is stored as
+ * Open announcements come from the eGP search. Its project status is stored as
  * the announcement stage.
  */
 const ANNOUNCE_TYPE_LABELS: Record<string, string> = {
@@ -113,6 +112,9 @@ export function toDiscoveredProject(
       departmentName: announcement.deptName,
       departmentSubName: announcement.deptSubName,
       projectStatus: ANNOUNCE_TYPE_LABELS[type] ?? `announceType ${type}`,
+      sourceProjectId: null,
+      contractStatus: null,
+      contractStatusCode: null,
       fiscalYear: budgetYear,
       announceDate: parseThaiDate(announcement.announceDate),
       budgetBaht: announcement.projectMoney,

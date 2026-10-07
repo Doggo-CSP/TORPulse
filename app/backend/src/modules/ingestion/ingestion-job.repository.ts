@@ -1,7 +1,7 @@
 import { Types } from 'mongoose'
 
 import { IngestionJobModel } from './ingestion-job.model.js'
-import type { DiscoveredProcurementProject } from './adapters/govspending-discovery.adapter.js'
+import type { DiscoveredProcurementProject } from './adapters/discovered-project.js'
 
 const MAX_ATTEMPTS = 2
 const LEASE_DURATION_MS = 5 * 60_000

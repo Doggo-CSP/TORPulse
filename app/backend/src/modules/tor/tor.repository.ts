@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 
-import type { GovSpendingProjectMetadata } from '../ingestion/adapters/govspending-discovery.adapter.js'
+import type { ProjectSourceMetadata } from '../ingestion/adapters/discovered-project.js'
 import { TorModel } from './tor.model.js'
 import type { UpsertTorInput } from './tor.types.js'
 
@@ -22,6 +22,9 @@ const pickSourceFields = (input: UpsertTorInput) => ({
   departmentName: input.departmentName,
   departmentSubName: input.departmentSubName,
   projectStatus: input.projectStatus,
+  sourceProjectId: input.sourceProjectId,
+  contractStatus: input.contractStatus,
+  contractStatusCode: input.contractStatusCode,
   midPriceBaht: input.midPriceBaht,
   awardedPriceBaht: input.awardedPriceBaht,
 })
@@ -67,6 +70,9 @@ export type TorSourceFields = Pick<
   | 'departmentName'
   | 'departmentSubName'
   | 'projectStatus'
+  | 'sourceProjectId'
+  | 'contractStatus'
+  | 'contractStatusCode'
   | 'fiscalYear'
   | 'announceDate'
   | 'budgetBaht'
@@ -75,14 +81,12 @@ export type TorSourceFields = Pick<
 >
 
 /**
- * TOR fields owned by GovSpending. Null values are left out so a gap in
- * one GovSpending sync never erases a value already stored on the TOR.
+ * TOR fields owned by the discovery source. Null values are left out so a gap in
+ * one sync never erases a value already stored on the TOR.
  */
 export function torFieldsFromSourceMetadata(
   metadata:
-    | { [K in keyof GovSpendingProjectMetadata]?: GovSpendingProjectMetadata[K] | null }
-    | null
-    | undefined,
+    { [K in keyof ProjectSourceMetadata]?: ProjectSourceMetadata[K] | null } | null | undefined,
 ): Partial<TorSourceFields> {
   if (!metadata) {
     return {}
@@ -92,6 +96,9 @@ export function torFieldsFromSourceMetadata(
     departmentName: metadata.departmentName,
     departmentSubName: metadata.departmentSubName,
     projectStatus: metadata.projectStatus,
+    sourceProjectId: metadata.sourceProjectId,
+    contractStatus: metadata.contractStatus,
+    contractStatusCode: metadata.contractStatusCode,
     fiscalYear: metadata.fiscalYear,
     announceDate: metadata.announceDate,
     budgetBaht: metadata.budgetBaht,
@@ -105,12 +112,12 @@ export function torFieldsFromSourceMetadata(
 }
 
 /**
- * Refresh GovSpending-owned fields on TORs that already exist. Does not
+ * Refresh source-owned fields on TORs that already exist. Does not
  * create TORs; those are only created by the ingestion worker.
  */
 export async function updateTorSourceMetadata(
   dataSourceId: Types.ObjectId,
-  projects: Array<{ externalId: string; metadata: GovSpendingProjectMetadata }>,
+  projects: Array<{ externalId: string; metadata: ProjectSourceMetadata }>,
 ): Promise<number> {
   const operations = projects
     .map((project) => ({ project, fields: torFieldsFromSourceMetadata(project.metadata) }))

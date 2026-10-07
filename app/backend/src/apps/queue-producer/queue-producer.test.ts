@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { getThaiFiscalYear } from '../../modules/ingestion/adapters/govspending-discovery.adapter.js'
 import { SettingsModel } from '../../modules/admin/settings.model.js'
 import { DataSourceModel } from '../../modules/ingestion/data-source.model.js'
-import { ensureGovSpendingDataSource } from '../../modules/ingestion/data-source.repository.js'
+import { ensureBmaDataSource } from '../../modules/ingestion/data-source.repository.js'
+import { getThaiFiscalYear } from '../../modules/ingestion/thai-date.js'
 import { runScheduledSync } from './queue-producer.js'
 
 test('calculates the Thai fiscal year across the October boundary', () => {
@@ -22,8 +22,8 @@ test('a scheduled sync is skipped when automatic ingestion is turned off', async
 
   await runScheduledSync(
     {
-      label: 'GovSpending',
-      ensureDataSource: ensureGovSpendingDataSource,
+      label: 'BMA',
+      ensureDataSource: ensureBmaDataSource,
       sync: async () => {
         throw new Error('the sync must not run')
       },

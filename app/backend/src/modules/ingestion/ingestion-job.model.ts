@@ -1,12 +1,15 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
-// Project metadata from GovSpending, refreshed on every producer sync.
+// Project metadata from the discovery source, refreshed on every producer sync.
 const sourceMetadataSchema = new Schema(
   {
     title: { type: String, default: null },
     departmentName: { type: String, default: null },
     departmentSubName: { type: String, default: null },
     projectStatus: { type: String, default: null },
+    sourceProjectId: { type: String, default: null },
+    contractStatus: { type: String, default: null },
+    contractStatusCode: { type: String, default: null },
     fiscalYear: { type: Number, default: null },
     announceDate: { type: Date, default: null },
     budgetBaht: { type: Number, min: 0, default: null },

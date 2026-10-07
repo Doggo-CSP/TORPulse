@@ -2,12 +2,13 @@ import { Types } from 'mongoose'
 
 import { DataSourceModel } from './data-source.model.js'
 
-export const GOVSPENDING_SOURCE_KEY = 'govspending-egp'
+// Legacy key from the removed GovSpending source, kept so existing jobs and TORs stay linked.
+export const CENTRAL_EGP_SOURCE_KEY = 'govspending-egp'
 export const BMA_SOURCE_KEY = 'bma-egp'
 export const PRODUCER_LEASE_MS = 15 * 60_000
 
-export function ensureGovSpendingDataSource() {
-  return ensureDataSource(GOVSPENDING_SOURCE_KEY, 'GovSpending e-GP discovery')
+export function ensureCentralEgpDataSource() {
+  return ensureDataSource(CENTRAL_EGP_SOURCE_KEY, 'Central e-GP discovery')
 }
 
 export function ensureBmaDataSource() {

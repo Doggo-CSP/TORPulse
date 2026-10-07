@@ -18,6 +18,9 @@ export interface UpsertTorInput {
   departmentName?: string | null
   departmentSubName?: string | null
   projectStatus?: string | null
+  sourceProjectId?: string | null
+  contractStatus?: string | null
+  contractStatusCode?: string | null
   fiscalYear?: number | null
   announceDate?: Date | null
   summary: string | null
