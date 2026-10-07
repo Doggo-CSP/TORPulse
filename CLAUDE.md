@@ -59,7 +59,7 @@ CI ([.github/workflows](.github/workflows)) runs backend type-check, format chec
 - Backend imports use `.js` extensions on relative paths (`nodenext` resolution). `noUncheckedIndexedAccess` is on.
 - Backend tests use `node:test` + `node:assert/strict`, with `supertest` for routes. Repository tests usually stub Mongoose model methods instead of hitting a DB.
 - Categories live in the `categories` collection and are managed by admins. Read them via `category.repository.ts`. `category.constants.ts` is seed data only. TORs reference categories by `key`; legacy keys are renamed by `npm run migrate:categories`.
-- Public TOR queries must apply `PUBLIC_TOR_FILTER` from `tor.model.ts` (hides archived/deleted TORs).
+- Public TOR queries must apply `publicTorFilter()` from `tor.model.ts` (hides archived/deleted TORs and drafts unpublished for `STALE_DRAFT_DAYS`, unless verified).
 - `tor.controller.ts` holds pure helpers (`deriveCategory`, `compareByDeadline`, `toTorListItem`) shared with homepage and report modules.
 - Dates: Thai Buddhist-era text is parsed by `modules/ingestion/thai-date.ts`. The submission deadline from the announcement PDF overrides the LLM's value.
 - Admin routes use `requireAdmin` from `middleware/admin.middleware.ts`. User-facing error messages are in Thai.
