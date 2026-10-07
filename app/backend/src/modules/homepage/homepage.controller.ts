@@ -1,6 +1,16 @@
 import type { Request, Response } from 'express'
 
 import { listCategories } from '../category/category.repository.js'
+import {
+  getFinishedTorSnapshot,
+  snapshotSource,
+  type FinishedTor,
+} from '../report/finished-tors.js'
+import {
+  categoryComparison,
+  priceOverview,
+  type CategoryInfo,
+} from '../report/report.calculations.js'
 import { resolveTorCategory } from '../tor/tor.controller.js'
 import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 
@@ -28,13 +38,14 @@ export function getBangkokWeekRange(now: Date): { start: Date; end: Date } {
   return { start, end }
 }
 
+// Reads `tors`, the TORs still open for bidding (UC-04).
 export async function getSummaryHandler(_req: Request, res: Response): Promise<void> {
   const { start, end } = getBangkokWeekRange(new Date())
 
   const [facet] = await TorModel.aggregate<{
     total_tors: Array<{ count: number }>
     total_sources: Array<{ count: number }>
-    total_budget: Array<{ sum: number }>
+    total_budget: Array<{ sum: number; count: number }>
     new_this_week: Array<{ count: number }>
     last_updated: Array<{ updatedAt: Date }>
   }>([
@@ -45,9 +56,11 @@ export async function getSummaryHandler(_req: Request, res: Response): Promise<v
         total_sources: [{ $group: { _id: '$dataSourceId' } }, { $count: 'count' }],
         total_budget: [
           { $match: { budgetBaht: { $ne: null } } },
-          { $group: { _id: null, sum: { $sum: '$budgetBaht' } } },
+          { $group: { _id: null, sum: { $sum: '$budgetBaht' }, count: { $sum: 1 } } },
         ],
-        new_this_week: [{ $match: { updatedAt: { $gte: start, $lt: end } } }, { $count: 'count' }],
+        // createdAt is set once, when the TOR first enters the system. updatedAt changes on
+        // every producer sync, so it would count old TORs as new.
+        new_this_week: [{ $match: { createdAt: { $gte: start, $lt: end } } }, { $count: 'count' }],
         last_updated: [
           { $sort: { updatedAt: -1 } },
           { $limit: 1 },
@@ -58,16 +71,20 @@ export async function getSummaryHandler(_req: Request, res: Response): Promise<v
   ])
 
   const lastUpdated = facet?.last_updated[0]?.updatedAt ?? null
+  const budget = facet?.total_budget[0]
 
   res.json({
     total_tors: facet?.total_tors[0]?.count ?? 0,
     total_sources: facet?.total_sources[0]?.count ?? 0,
-    total_budget: facet?.total_budget[0]?.sum ?? 0,
+    total_budget: budget?.sum ?? 0,
+    // Average over the TORs that state a budget
+    avg_budget: budget && budget.count > 0 ? Math.round(budget.sum / budget.count) : null,
     new_this_week: facet?.new_this_week[0]?.count ?? 0,
     last_updated: lastUpdated ? lastUpdated.toISOString() : null,
   })
 }
 
+// Category share and technologies come from `tors` (open TORs); prices from finished projects.
 export async function getAnalyticsHandler(_req: Request, res: Response): Promise<void> {
   const [topTechnologies, torDocs, categories] = await Promise.all([
     TorModel.aggregate<{ _id: string; count: number; percentage: number }>([
@@ -85,13 +102,7 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
       { $sort: { count: -1, _id: 1 } },
       { $limit: 10 },
     ]),
-    TorModel.find(PUBLIC_TOR_FILTER, {
-      technologies: 1,
-      category: 1,
-      midPriceBaht: 1,
-      awardedPriceBaht: 1,
-      _id: 0,
-    }).lean(),
+    TorModel.find(PUBLIC_TOR_FILTER, { technologies: 1, category: 1, _id: 0 }).lean(),
     listCategories(),
   ])
 
@@ -99,48 +110,13 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
 
   // Every active category is listed (0% when unused). Hidden or unknown category keys are listed
   // only when some TOR still carries them, so existing TORs keep showing their category.
-  type PriceAccumulator = {
-    midSum: number
-    midCount: number
-    awardedSum: number
-    awardedCount: number
-  }
   const names = new Map(categories.map((category) => [category.key, category.name]))
   const counts = new Map<string, number>(
     categories.filter((category) => category.isActive).map((category) => [category.key, 0]),
   )
-  const priceSums = new Map<string, PriceAccumulator>()
-
-  // overall (cross-category) stats — only over TORs where both prices are known,
-  // so the discount % is comparing like-for-like
-  let overallMidSum = 0
-  let overallAwardedSum = 0
-  let overallPairedCount = 0
-
   for (const doc of torDocs) {
     const category = resolveTorCategory(doc)
     counts.set(category, (counts.get(category) ?? 0) + 1)
-    const sums = priceSums.get(category) ?? {
-      midSum: 0,
-      midCount: 0,
-      awardedSum: 0,
-      awardedCount: 0,
-    }
-    priceSums.set(category, sums)
-
-    if (doc.midPriceBaht != null) {
-      sums.midSum += doc.midPriceBaht
-      sums.midCount += 1
-    }
-    if (doc.awardedPriceBaht != null) {
-      sums.awardedSum += doc.awardedPriceBaht
-      sums.awardedCount += 1
-    }
-    if (doc.midPriceBaht != null && doc.awardedPriceBaht != null) {
-      overallMidSum += doc.midPriceBaht
-      overallAwardedSum += doc.awardedPriceBaht
-      overallPairedCount += 1
-    }
   }
 
   // Display order: categories by sortOrder, then any key not in the categories collection
@@ -158,35 +134,38 @@ export async function getAnalyticsHandler(_req: Request, res: Response): Promise
     }
   })
 
-  const priceComparison = orderedKeys
-    .filter((category) => {
-      const sums = priceSums.get(category)
-      return sums !== undefined && (sums.midCount > 0 || sums.awardedCount > 0)
-    })
-    .map((category) => {
-      const sums = priceSums.get(category)!
-      return {
-        category,
-        label: names.get(category) ?? category,
-        avgMidPriceBaht: sums.midCount > 0 ? Math.round(sums.midSum / sums.midCount) : null,
-        avgAwardedPriceBaht:
-          sums.awardedCount > 0 ? Math.round(sums.awardedSum / sums.awardedCount) : null,
-      }
-    })
-
-  const avgMidPriceBaht =
-    overallPairedCount > 0 ? Math.round(overallMidSum / overallPairedCount) : null
-  const avgAwardedPriceBaht =
-    overallPairedCount > 0 ? Math.round(overallAwardedSum / overallPairedCount) : null
-  const avgDiscountPct =
-    avgMidPriceBaht && avgAwardedPriceBaht
-      ? Math.round(((avgMidPriceBaht - avgAwardedPriceBaht) / avgMidPriceBaht) * 100 * 100) / 100
-      : null
+  // Prices come from finished projects (newest tors_bk_* snapshot). TORs in `tors` are still
+  // open, so they have no mid or awarded price yet.
+  const snapshot = await getFinishedTorSnapshot()
+  const { priceComparison, priceSummary } = homepagePrices(snapshot?.items ?? [], categories)
 
   res.json({
     topTechnologies,
     categoryDistribution,
     priceComparison,
-    priceSummary: { avgMidPriceBaht, avgAwardedPriceBaht, avgDiscountPct },
+    priceSummary,
+    priceSource: snapshotSource(snapshot),
   })
+}
+
+// Homepage price chart and cards: every active category (null averages when a category has no
+// finished project), plus overall averages over all finished projects.
+export function homepagePrices(items: FinishedTor[], categories: CategoryInfo[]) {
+  const priceComparison = categoryComparison(items, categories).map((row) => ({
+    category: row.category,
+    label: row.category_label,
+    projectCount: row.project_count,
+    avgMidPriceBaht: row.avg_mid_price_baht,
+    avgAwardedPriceBaht: row.avg_awarded_price_baht,
+  }))
+  const overview = priceOverview(items)
+  return {
+    priceComparison,
+    priceSummary: {
+      projectCount: overview.project_count,
+      avgMidPriceBaht: overview.avg_mid_price_baht,
+      avgAwardedPriceBaht: overview.avg_awarded_price_baht,
+      avgDiscountPct: overview.overall_savings_pct,
+    },
+  }
 }

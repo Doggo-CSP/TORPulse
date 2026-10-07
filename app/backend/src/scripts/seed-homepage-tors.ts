@@ -232,8 +232,12 @@ export async function seedHomepageTors(): Promise<void> {
       throw new Error(`Failed to seed TOR ${fixture.externalId}`)
     }
 
-    const updatedAt = fixture.recency === 'this_week' ? thisWeekTimestamp : lastWeekTimestamp
-    await TorModel.collection.updateOne({ _id: tor._id }, { $set: { updatedAt } })
+    // "New this week" counts createdAt, so move both timestamps
+    const timestamp = fixture.recency === 'this_week' ? thisWeekTimestamp : lastWeekTimestamp
+    await TorModel.collection.updateOne(
+      { _id: tor._id },
+      { $set: { createdAt: timestamp, updatedAt: timestamp } },
+    )
   }
 }
 
