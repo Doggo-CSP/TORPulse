@@ -12,6 +12,15 @@ import {
   staleRunCutoff,
 } from '../ingestion/collection-run.repository.js'
 import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
+import {
+  ACTIVE_SOURCE_KEYS,
+  DATA_SOURCE_LABELS,
+  PRODUCER_LEASE_MS,
+  findDataSourceByKey,
+  listActiveDataSources,
+  setDataSourceEnabled,
+} from '../ingestion/data-source.repository.js'
+import { schedulerHealth } from '../ingestion/ingestion-health.js'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
 import { User, type UserDocument } from '../auth/user.model.js'
 import { DEFAULT_CATEGORY_KEY } from '../category/category.constants.js'
@@ -42,10 +51,11 @@ import {
   updateCategorySchema,
   updateAdminTorSchema,
   updateAdminUserSchema,
+  updateDataSourceSchema,
   updateSettingsSchema,
 } from './admin.validation.js'
 import { activityGroupOf, createAuditLog, listAuditLogs } from './audit-log.repository.js'
-import { getSettings, updateSettings } from './settings.repository.js'
+import { getSettings, getSettingsUpdatedAt, updateSettings } from './settings.repository.js'
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -955,15 +965,64 @@ const toRunResponse = (run: CollectionRunLean) => ({
   errorMessage: run.errorMessage ?? null,
 })
 
+type DataSourceLean = NonNullable<Awaited<ReturnType<typeof findDataSourceByKey>>>
+
+const toDataSourceResponse = (source: DataSourceLean) => ({
+  key: source.key,
+  label: DATA_SOURCE_LABELS[source.key] ?? source.name,
+  enabled: source.enabled,
+  lastStartedAt: source.lastStartedAt ?? null,
+  lastSucceededAt: source.lastSucceededAt ?? null,
+  lastError: source.lastError?.message
+    ? { message: source.lastError.message, occurredAt: source.lastError.occurredAt ?? null }
+    : null,
+})
+
+const latestDate = (dates: (Date | null | undefined)[]): Date | null =>
+  dates.reduce<Date | null>((max, date) => (date && (!max || date > max) ? date : max), null)
+
 export const getIngestionStatus = async (_req: Request, res: Response): Promise<void> => {
   try {
     await expireStaleCollectionRuns({ olderThan: staleRunCutoff() })
-    const [lastRun, isRunning] = await Promise.all([
-      findLatestCollectionRun(),
-      hasRunningCollectionRun(),
-    ])
+    const [lastRun, lastScheduledRun, isRunning, sources, settings, settingsUpdatedAt] =
+      await Promise.all([
+        findLatestCollectionRun(),
+        findLatestCollectionRun('scheduled'),
+        hasRunningCollectionRun(),
+        listActiveDataSources(),
+        getSettings(),
+        getSettingsUpdatedAt(),
+      ])
 
-    res.json({ lastRun: lastRun ? toRunResponse(lastRun) : null, isRunning })
+    // The queue-producer is a separate process, so its health is judged from the scheduled
+    // runs it leaves behind. A source not created yet (fresh database) starts enabled.
+    const health = schedulerHealth({
+      configured: env.BMA_SYNC_ENABLED,
+      ingestionEnabled: settings.ingestionEnabled,
+      anySourceEnabled: sources.length === 0 || sources.some((source) => source.enabled),
+      isRunning,
+      lastScheduledStartedAt: lastScheduledRun?.startedAt ?? null,
+      enabledSince: latestDate([
+        settingsUpdatedAt,
+        ...sources.map((source) => source.enabledChangedAt),
+      ]),
+      intervalMs: env.DISCOVERY_SYNC_INTERVAL_MS,
+      leaseMs: PRODUCER_LEASE_MS,
+      now: new Date(),
+    })
+
+    res.json({
+      lastRun: lastRun ? toRunResponse(lastRun) : null,
+      isRunning,
+      manualSyncAvailable: env.BMA_SYNC_ENABLED,
+      sources: sources.map(toDataSourceResponse),
+      scheduler: {
+        state: health.state,
+        expectedBy: health.expectedBy,
+        intervalMinutes: env.DISCOVERY_SYNC_INTERVAL_MS / 60_000,
+        lastScheduledRunAt: lastScheduledRun?.startedAt ?? null,
+      },
+    })
   } catch (error) {
     res.status(500).json({ success: false, message: (error as Error).message })
   }
@@ -988,11 +1047,19 @@ export const triggerIngestionSync = async (req: Request, res: Response): Promise
 
     // The lease is the same one the scheduled producer uses, so a scheduled run and a
     // manual run can never overlap, even across processes.
-    const claim = await beginBmaSync(producerId, trigger)
-    if (!claim) {
-      res.status(409).json({ success: false, message: 'มีการซิงก์ข้อมูลที่กำลังทำงานอยู่' })
+    const begin = await beginBmaSync(producerId, trigger)
+    if (!begin.claim) {
+      res.status(409).json({
+        success: false,
+        reason: begin.reason,
+        message:
+          begin.reason === 'disabled'
+            ? 'แหล่งข้อมูล e-GP กรุงเทพมหานครถูกปิดอยู่ เปิดใช้งานในแท็บตั้งค่าระบบก่อน'
+            : 'มีการดึงข้อมูลที่กำลังทำงานอยู่ รอให้รอบนี้เสร็จก่อน',
+      })
       return
     }
+    const claim = begin.claim
 
     void completeBmaSync(
       claim,
@@ -1006,8 +1073,70 @@ export const triggerIngestionSync = async (req: Request, res: Response): Promise
 
     res.status(202).json({
       success: true,
-      message: 'เริ่มซิงก์ข้อมูล e-GP แล้ว',
+      message: 'เริ่มค้นหาประกาศจาก e-GP แล้ว',
       runId: claim.runId.toString(),
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error as Error).message })
+  }
+}
+
+// UC-12: switch one discovery source on or off. The producer only claims the lease of an
+// enabled source, so this pauses both the scheduled sync and "sync now" for that source.
+export const updateDataSource = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const key = String(req.params.key)
+    const parsed = updateDataSourceSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'ข้อมูลแหล่งข้อมูลไม่ถูกต้อง' })
+      return
+    }
+    if (!ACTIVE_SOURCE_KEYS.includes(key)) {
+      res.status(404).json({ success: false, message: 'ไม่พบแหล่งข้อมูลนี้' })
+      return
+    }
+
+    const { enabled } = parsed.data
+    let saved = null as DataSourceLean | null
+
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        const current = await findDataSourceByKey(key, session)
+        if (!current || current.enabled === enabled) {
+          saved = current
+          return
+        }
+
+        saved = await setDataSourceEnabled(key, enabled, session)
+        if (!saved) return
+        await createAuditLog(
+          {
+            actorId: req.user!._id,
+            action: enabled ? 'ingestion.source_enabled' : 'ingestion.source_disabled',
+            targetType: 'data_source',
+            targetId: saved._id,
+            actorName: req.user!.name,
+            targetLabel: DATA_SOURCE_LABELS[key] ?? saved.name,
+            before: { enabled: current.enabled },
+            after: { enabled },
+          },
+          session,
+        )
+      })
+    } finally {
+      await session.endSession()
+    }
+
+    if (!saved) {
+      res.status(404).json({ success: false, message: 'ไม่พบแหล่งข้อมูลนี้' })
+      return
+    }
+
+    res.json({
+      success: true,
+      message: enabled ? 'เปิดใช้งานแหล่งข้อมูลแล้ว' : 'ปิดใช้งานแหล่งข้อมูลแล้ว',
+      source: toDataSourceResponse(saved),
     })
   } catch (error) {
     res.status(500).json({ success: false, message: (error as Error).message })
