@@ -223,23 +223,27 @@ Every source ends up as an 11-digit Central e-GP project id. That's why one work
 
 | Prefix | Endpoints | Used by |
 |---|---|---|
-| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar` | TOR list and detail pages (`/:id/similar` = similar finished projects, UC-05) |
+| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar` | TOR list and detail pages (`/:id/similar` = similar TORs whose bidding has closed, UC-05) |
 | `/homepage` | `GET /summary`, `GET /analytics` | Homepage dashboard |
 | `/user` | `GET/PUT /profile`, `PUT /interests`, `GET /bookmarks`, `POST /bookmarks/:torId` | Profile and saved pages |
-| `/reports` | `GET /price-overview`, `/savings-distribution`, `/category-comparison`, `/timeline`, `/procurement-list`, `/filters/departments` | Reports page (finished projects, see below) |
+| `/reports` | `GET /price-overview`, `/savings-distribution`, `/category-comparison`, `/timeline`, `/procurement-list`, `/filters/departments` | Reports page (mock awarded price, see §8) |
 | `/admin` | `GET /stats` · `GET /users`, `GET/PATCH /users/:userId`, `PATCH /users/:userId/role`, `PATCH /users/:userId/status` · `GET /activity` · `GET/PATCH /settings` · `GET /tors`, `GET/PATCH/DELETE /tors/:torId`, `POST /tors/:torId/verify`, `POST /tors/:torId/archive` · `GET /ingestion/status`, `POST /ingestion/sync` · `GET/POST /categories`, `PATCH/DELETE /categories/:categoryId`, `PATCH /categories/:categoryId/status` | Admin page (admin role only) |
 | `/ingestion` | `GET /report` | Not called by the frontend yet (ops, job status report) |
 | `/categories` | `GET /` | Not called by the frontend yet (active category list) |
 
 Auth lives outside `/api/v1`: `GET /auth/google`, `GET /auth/google/callback`, `GET /auth/me` and `POST /auth/logout`. Sessions are stored in the MongoDB `sessions` collection, using the `torpulse.sid` cookie.
 
-## 8. Open TORs and finished projects
+## 8. Price reports and the mock awarded price
 
-TORs live in two places, for two questions:
+Every page reads `tors`. Price reports (`/reports/*`, the homepage price chart and cards, and `/tors/:id/similar` for UC-05) need a mid price and an awarded (winning) price. BMA ingestion stores the mid price, but **not the awarded price yet**, so `modules/report/finished-tors.ts` fills in a **mock** awarded price at read time:
 
-| Data | Collection | Answers | Used by |
-|---|---|---|---|
-| Open TORs (ร่าง TOR, ประกาศเชิญชวน, ประกาศราคากลาง) | `tors` | "What can I bid on?" Mid price, awarded price and announce date are normally empty here, because the project has not finished. | TOR list and detail, homepage counts (UC-04), admin |
-| Finished projects (contract signed) | newest `tors_bk_YYYYMMDD` snapshot | "What did work like this end at, and how much was saved?" | `/reports/*`, homepage price chart and cards, `/tors/:id/similar` (UC-05) |
+| TOR | Awarded price in reports |
+|---|---|
+| Has a real `awardedPriceBaht` | the real price (`awarded_is_mock: false`) |
+| Mid price known, submission day (Bangkok) is over, not cancelled (`contractStatusCode` ≠ `S5`) | mock (`awarded_is_mock: true`) |
+| Still open for bids (deadline today or later, or no deadline) | none: left out of price reports |
+| Cancelled (`S5`) or no mid price | none: left out of price reports |
 
-The snapshots are **read-only**: `modules/report/finished-tors.ts` only lists collections and runs `find()`. It picks the newest `tors_bk_YYYYMMDD` by name, keeps the projects that have both a mid and an awarded price, and caches them in memory for 30 minutes. Each report response includes `source` (collection, snapshot date, project count). Report dates use `announceDate`, falling back to `analyzedAt`. The report maths is in `report.calculations.ts` and is unit tested without a database.
+The mock is never written to the database and never returned by `/tors` or `/tors/:id`, so a TOR still open for bids shows no winning price anywhere. It is deterministic (an md5 hash of `externalId`) and its savings % follows the bands seen in 563 real finished software projects: 1% above the mid price, 59% saving 0–5%, 12% saving 5–10%, 7% saving 10–15%, 21% saving 15–30%. Each report response carries `source` (`collection`, `as_of`, `project_count`, `mock_awarded_count`) and every row carries `awarded_is_mock`, for developers. The pages deliberately do not show which prices are mock, so the frontend needs no change when real prices arrive; only the mock in `finished-tors.ts` goes away. Results are cached in memory for 60 seconds. Report dates use `announceDate`, then `submissionDeadlineAt`, then `analyzedAt`. The report maths is in `report.calculations.ts` and is unit tested without a database.
+
+When ingestion starts storing real awarded prices, they replace the mock automatically, TOR by TOR.

@@ -59,7 +59,7 @@ Categories live in MongoDB (`categories`) and admins manage them at `/api/v1/adm
 - `name`, `description`
 - `aiHint`: extra guidance for the classifier. Admins can edit it.
 - `keywords`: shown and searched on the admin page.
-- `sortOrder`, `isActive`: hidden categories are left out of the classifier prompt and of new choices, but TORs and users keep them.
+- `sortOrder`, `isActive`: hiding a category is a soft delete for users. It is left out of the classifier prompt, of every user-facing list, filter, chart and label (`/categories`, `/tors`, `/homepage/*`, `/reports/*`, `/tors/:id/similar`), and of similarity matching. TORs and users keep the key in the database, so showing the category again brings everything back. Admin pages still list hidden categories.
 
 The API and the worker insert the 8 defaults only when the collection is empty, so a default an admin deleted stays deleted after a restart. `npm run seed:categories` inserts any missing default on purpose. Rows that already exist are never overwritten.
 
