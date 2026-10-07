@@ -6,6 +6,8 @@ import {
   fetchTorFilterOptions,
   fetchTors,
   fetchTorRecommendations,
+  fetchSimilarProjects,
+  type SimilarProjectsResult,
   type FetchTorsParams,
   type TorFilterOptions,
   type FetchTorsResponse,
@@ -46,6 +48,16 @@ export function useTors(params: FetchTorsParams) {
     ],
     queryFn: () => fetchTors(params),
     staleTime: 30 * 1000, // 30 seconds
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useSimilarProjects(id: string) {
+  return useQuery<SimilarProjectsResult>({
+    queryKey: ["torSimilar", id],
+    queryFn: () => fetchSimilarProjects(id),
+    enabled: id !== "",
+    staleTime: 5 * 60 * 1000, // finished-project snapshot, no need to refetch often
     refetchOnWindowFocus: false,
   });
 }

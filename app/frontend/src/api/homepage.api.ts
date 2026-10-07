@@ -1,9 +1,13 @@
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
+// Counts over `tors`, the TORs still open for bidding
 export interface HomepageSummary {
   total_tors: number;
   total_sources: number;
   total_budget: number;
+  // Average budget over the TORs that state one
+  avg_budget: number | null;
+  // TORs that entered the system this week (Monday start, Bangkok time)
   new_this_week: number;
   last_updated: string | null;
 }
@@ -20,14 +24,18 @@ export interface CategoryMetric {
   percentage: number;
 }
 
+// Prices come from finished projects (newest tors_bk_* snapshot). Every active category is
+// listed; averages are null when a category has no finished project.
 export interface PriceComparisonMetric {
   category: string;
   label: string;
+  projectCount: number;
   avgMidPriceBaht: number | null;
   avgAwardedPriceBaht: number | null;
 }
 
 export interface PriceSummary {
+  projectCount: number;
   avgMidPriceBaht: number | null;
   avgAwardedPriceBaht: number | null;
   avgDiscountPct: number | null;
@@ -38,6 +46,8 @@ export interface HomepageAnalytics {
   categoryDistribution: CategoryMetric[];
   priceComparison: PriceComparisonMetric[];
   priceSummary: PriceSummary;
+  // Which snapshot the prices come from; null when there is none
+  priceSource: { collection: string; snapshot_date: string; project_count: number } | null;
 }
 
 /**

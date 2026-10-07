@@ -1,5 +1,3 @@
-export const UNKNOWN_DEPARTMENT_LABEL = 'อื่นๆ'
-
 export const REPORT_PERIODS = ['6m', '1y', '3y', 'all'] as const
 export type ReportPeriod = (typeof REPORT_PERIODS)[number]
 
@@ -14,16 +12,24 @@ export function periodToCutoff(period: ReportPeriod, now: Date = new Date()): Da
 }
 
 export interface SavingsBucket {
+  key: SavingsBucketKey
   label: string
+  // Savings % range: min inclusive, max exclusive
   min?: number
   max?: number
 }
 
+export const SAVINGS_BUCKET_KEYS = ['over', 'lt5', '5to10', '10to15', 'gt15'] as const
+export type SavingsBucketKey = (typeof SAVINGS_BUCKET_KEYS)[number]
+
+// Savings % = (mid - awarded) / mid. A negative value means the winning bid was above the
+// reference price, which does happen, so it gets its own bucket.
 export const SAVINGS_BUCKETS: SavingsBucket[] = [
-  { label: 'ประหยัด < 5%', max: 5 },
-  { label: 'ประหยัด 5% - 10%', min: 5, max: 10 },
-  { label: 'ประหยัด 10% - 15%', min: 10, max: 15 },
-  { label: 'ประหยัดสูง > 15%', min: 15 },
+  { key: 'over', label: 'สูงกว่าราคากลาง', max: 0 },
+  { key: 'lt5', label: 'ประหยัด 0% - 5%', min: 0, max: 5 },
+  { key: '5to10', label: 'ประหยัด 5% - 10%', min: 5, max: 10 },
+  { key: '10to15', label: 'ประหยัด 10% - 15%', min: 10, max: 15 },
+  { key: 'gt15', label: 'ประหยัดสูง > 15%', min: 15 },
 ]
 
 export const PROCUREMENT_LIST_SORT_FIELDS = [
@@ -32,5 +38,6 @@ export const PROCUREMENT_LIST_SORT_FIELDS = [
   'awardedPriceBaht',
   'savings_amount',
   'savings_pct',
+  'announceDate',
 ] as const
 export type ProcurementListSortField = (typeof PROCUREMENT_LIST_SORT_FIELDS)[number]
