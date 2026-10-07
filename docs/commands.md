@@ -72,4 +72,4 @@ These scripts write to the configured database unless they are marked read-only.
 | `GOVSPENDING_SYNC_INTERVAL_MS` | `600000` | Pause between producer rounds, for every source. |
 | `BMA_SYNC_ENABLED` | `true` | Set to `false` to turn off BMA discovery. |
 | `BMA_KEYWORDS` | `GOVSPENDING_KEYWORDS` | Keywords sent to the BMA search as `projectSearchText`. BMA titles are Thai. |
-| `BMA_BUDGET_YEAR` | current Thai fiscal year | BMA `masterBudgetYearId`, for example `2570`. |
+| `BMA_BUDGET_YEAR` | current Thai fiscal year | Comma-separated BMA `masterBudgetYearId` values, for example `2570,2569`. Every listed year is synced. |
