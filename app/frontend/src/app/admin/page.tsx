@@ -1097,7 +1097,7 @@ export default function AdminPage() {
                     จัดการประกาศจัดซื้อจัดจ้าง (TOR Management)
                   </h1>
                   <p className="text-sm text-[#7a8b6f]">
-                    ตรวจสอบสถานะประกาศ TOR ที่ดึงจากระบบ e-GP และ GovSpending
+                    ตรวจสอบสถานะประกาศ TOR ที่ดึงจากระบบ e-GP
                   </p>
                 </div>
 
@@ -1301,7 +1301,7 @@ export default function AdminPage() {
                         การดึงข้อมูลอัตโนมัติ (Automated Ingestion)
                       </p>
                       <p className="text-xs text-[#7a8b6f]">
-                        ตั้งเวลารอบการดึงประกาศจัดซื้อจัดจ้างจาก GovSpending และ e-GP ทุก 10 นาที
+                        ตั้งเวลารอบการดึงประกาศจัดซื้อจัดจ้างจาก e-GP ทุก 10 นาที
                       </p>
                     </div>
                     <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">

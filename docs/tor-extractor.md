@@ -6,14 +6,16 @@ Source: `app/backend/src/apps/queue-producer/`, `app/backend/src/apps/ingestion-
 
 Two processes share MongoDB:
 
-- **Queue producer** calls GovSpending (`opend.data.go.th/govspending/service/egp-contract`) for each keyword and fiscal year. It does three things with each project:
+- **Queue producer** runs BMA discovery when `BMA_SYNC_ENABLED` is on, which is the default. It searches `egp2.bangkok.go.th` (`GetProjectFromFilter`) for each keyword in `BMA_KEYWORDS`, sent as `projectSearchText`. It does three things with each project:
   - enqueues an ingestion job, which is idempotent per `{dataSourceId, externalId, sourceVersion}`;
   - saves the project metadata on the job as `sourceMetadata`, refreshed on every sync;
   - refreshes those fields on TORs that already exist, with no LLM call.
-- **BMA discovery** runs in the same producer when `BMA_SYNC_ENABLED` is on, which is the default. It searches `egp2.bangkok.go.th` (`GetProjectFromFilter`) for each keyword in `BMA_KEYWORDS`, sent as `projectSearchText`. The keywords fall back to `GOVSPENDING_KEYWORDS`. The search is limited to ประกาศเชิญชวน e-bidding projects in each budget year listed in `BMA_BUDGET_YEAR` (comma-separated, defaulting to the current Thai fiscal year).
+
+  The search is limited to ประกาศเชิญชวน e-bidding projects in each budget year listed in `BMA_BUDGET_YEAR` (comma-separated, defaulting to the current Thai fiscal year).
   - BMA's `projectNumber` is the Central eGP project id. Jobs are queued under the `bma-egp` data source with `sourceAdapter: 'bma_egp'`, and the worker processes them with the Central eGP adapter.
   - Metadata mapping: department is `masterOrgGroupName`, sub-department is `masterOrgDepartmentName`, budget is `projectBudget`, and status is `ประกาศเชิญชวน`.
-  - BMA needs no API key. The producer starts if either source is configured.
+  - BMA needs no API key. The producer refuses to start when BMA sync is disabled.
+  - GovSpending discovery was removed: it only lists projects that already have a contract, so it never found TORs still open for bidding.
 - **Ingestion worker** polls for jobs, claims one at a time with a lease, and runs `processIngestionJob`:
   1. **Fetch archive metadata** from Central eGP (`process5.gprocurement.go.th`). If there is no announcement archive (`data: null`, code `E0001`), the job becomes `skipped`.
   2. **Download** the announcement ZIP and keep only the TOR PDFs, in this order:
@@ -27,7 +29,7 @@ Two processes share MongoDB:
   5. **Gate**: if `isSoftwareRelated` is false, the job becomes `rejected`.
   6. **Store**: the TOR is upserted and the job becomes `completed`. The fields come from these sources:
      - LLM fields: summary, requirements, qualifications, technologies and categories.
-     - GovSpending fields, taken from `job.sourceMetadata`: department, status, fiscal year, announce date and prices.
+     - Discovery source fields, taken from `job.sourceMetadata`: department, status, fiscal year and budget.
 
 **Errors.** Any other thrown error calls `failJob`, and the job is retried with backoff. Retries follow these rules:
 - A job gets at most 2 attempts (`MAX_ATTEMPTS`).
@@ -38,20 +40,17 @@ Two processes share MongoDB:
 
 | TOR field | Source |
 |---|---|
-| `departmentName`, `departmentSubName` | GovSpending `dept_name`, `dept_sub_name` |
-| `projectStatus` | GovSpending `project_status` |
-| `fiscalYear` | GovSpending `year` (Buddhist era, for example 2568) |
-| `announceDate` | GovSpending `announce_date` ("19 มิ.ย. 68" is parsed to a Date; `"-"` gives null) |
-| `budgetBaht` | GovSpending `project_money`, falling back to the LLM value when null |
-| `midPriceBaht` (reference price) | GovSpending `price_build` |
-| `awardedPriceBaht` | GovSpending `sum_price_agree` |
-| `projectTitle`, `agencyName` | LLM, falling back to the GovSpending `project_name` |
+| `departmentName`, `departmentSubName` | BMA `masterOrgGroupName`, `masterOrgDepartmentName` |
+| `projectStatus` | BMA announcement stage (`ประกาศเชิญชวน`) |
+| `fiscalYear` | BMA budget year that was searched (Buddhist era, for example 2570) |
+| `budgetBaht` | BMA `projectBudget`, falling back to the LLM value when null |
+| `projectTitle`, `agencyName` | LLM, falling back to the BMA `projectName` |
 | `summary`, `objectives`, `requirements`, `bidderQualifications`, `technologies`, `contactInformation` | LLM |
 | `submissionDeadline` (raw text), `submissionDeadlineAt` (Date) | LLM text, parsed by `parseThaiDate` (`modules/ingestion/thai-date.ts`). The date is null when no exact day is stated, for example "มกราคม 2569". The API returns `submissionDeadline` as `YYYY-MM-DD` or null, and the raw text as `submissionDeadlineText`. |
 | `category`, `categories[]` | LLM, limited to active keys in `tor_categories` |
 | `documents[]` | Names and URLs of the PDFs that were extracted |
 
-GovSpending values that are null never overwrite a value already stored on a TOR. Central eGP's token and project-detail endpoints are not called during ingestion. `getProjectDetails` is kept only for `npm run backfill:egp-details`.
+Source values that are null never overwrite a value already stored on a TOR. Central eGP's token and project-detail endpoints are not called during ingestion. `getProjectDetails` is kept only for `npm run backfill:egp-details`.
 
 ## TOR categories
 
@@ -87,7 +86,7 @@ The keys match the user interest ids on the profile page.
 
 ```mermaid
 flowchart TD
-    P[Queue producer<br/>GovSpending sync] -->|enqueue job + sourceMetadata| Q[(ingestion_jobs)]
+    P[Queue producer<br/>BMA sync] -->|enqueue job + sourceMetadata| Q[(ingestion_jobs)]
     P -->|refresh metadata on existing TORs| T[(tors)]
 
     A[Worker loop<br/>poll every 5s] --> B{claimNextJob<br/>queued / failed+retry due /<br/>expired lease, attempts < 2}
@@ -154,8 +153,8 @@ C4Component
     title Component diagram: TOR ingestion (producer + worker)
 
     Container_Boundary(producer, "Queue Producer") {
-        Component(sync, "GovSpending Sync", "queue-producer.ts", "Pages GovSpending per keyword and fiscal year, holds a single-owner lease")
-        Component(gsAdapter, "GovSpending Adapter", "govspending-discovery.adapter.ts", "listProjects, maps metadata, parseThaiShortDate")
+        Component(sync, "BMA Sync", "queue-producer.ts", "Pages BMA per keyword and budget year, holds a single-owner lease")
+        Component(bmaAdapter, "BMA Adapter", "bma-discovery.adapter.ts", "listProjects, maps metadata")
     }
 
     Container_Boundary(worker, "Ingestion Worker") {
@@ -174,13 +173,13 @@ C4Component
     }
 
     ContainerDb(mongo, "MongoDB", "mongoose", "ingestion_jobs, tors, tor_categories, data_sources")
-    System_Ext(govspending, "GovSpending API", "Project list and metadata: department, status, prices, dates")
+    System_Ext(bma, "BMA e-GP (egp2.bangkok.go.th)", "Project list and metadata: department, status, budget")
     System_Ext(egp, "Central eGP (process5)", "Announcement archive metadata and TOR ZIP")
     System_Ext(gemini, "Gemini (Vertex AI)", "LLM, JSON output")
     System_Ext(deepseek, "DeepSeek API", "LLM, JSON output")
 
-    Rel(sync, gsAdapter, "listProjects")
-    Rel(gsAdapter, govspending, "HTTPS GET")
+    Rel(sync, bmaAdapter, "listProjects")
+    Rel(bmaAdapter, bma, "HTTPS GET")
     Rel(sync, jobrepo, "enqueueDiscoveredProjects (+ sourceMetadata)")
     Rel(sync, torrepo, "updateTorSourceMetadata")
 
@@ -207,7 +206,7 @@ Run all commands from `app/backend`.
 
 | Command | What it does |
 |---|---|
-| `npm run dev:producer` | Runs the GovSpending sync loop. One sync fills `sourceMetadata` on all jobs and refreshes existing TORs. |
+| `npm run dev:producer` | Runs the BMA sync loop. One sync fills `sourceMetadata` on all jobs and refreshes existing TORs. |
 | `npm run dev:ingestion` | Runs the ingestion worker. Several instances can run at once, because claims are lease-based. |
 | `npm run seed:categories` | Inserts any missing default categories. |
 | `npm run report:job-failures` | Read-only: job counts by status and stage, plus the most common error messages. |

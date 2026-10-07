@@ -9,7 +9,7 @@ Before running backend commands, copy `app/backend/.env.example` to `.env` and f
 | Command | What it does |
 |---|---|
 | `npm run dev` | Starts the REST API (`src/apps/api/server.ts`) on `PORT` (default 8000) with hot reload. Serves `/auth/*` (Google OAuth) and `/api/v1/*`. |
-| `npm run dev:producer` | Starts the queue producer with hot reload. It loops through each configured discovery source, enqueues ingestion jobs, then sleeps for `GOVSPENDING_SYNC_INTERVAL_MS`. The sources are: GovSpending when `GOVSPENDING_API_KEY` is set, and BMA unless `BMA_SYNC_ENABLED=false`. |
+| `npm run dev:producer` | Starts the queue producer with hot reload. It runs BMA discovery (unless `BMA_SYNC_ENABLED=false`), enqueues ingestion jobs, then sleeps for `DISCOVERY_SYNC_INTERVAL_MS`. |
 | `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with the AI provider (`AI_PROVIDER`), reads the submission deadline from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
 | `npm run build` | Compiles TypeScript to `dist/`. |
 | `npm start` | Runs the compiled API (`dist/apps/api/server.js`). |
@@ -24,7 +24,7 @@ A full local pipeline needs three terminals: `dev`, `dev:producer` and `dev:inge
 |---|---|
 | `npm test` | Runs every test group below in order and stops at the first failing group. Some route tests need a reachable MongoDB, so use a throwaway local database. CI does this, using a `mongo:7` service container. |
 | `npm run test:central-egp` | Central eGP adapter: archive metadata, ZIP download and TOR file selection, throttling and retries. |
-| `npm run test:producer` | Discovery adapters (GovSpending, eGP announcement search, BMA) and the Thai fiscal year helper. |
+| `npm run test:producer` | Discovery adapters (eGP announcement search, BMA) and the Thai fiscal year helper. |
 | `npm run test:tor` | TOR model and repository, job queue repository, ingestion report, Thai date parsing, submit deadline extraction, repair and backfill helpers, and the DeepSeek and Gemini extractors. |
 | `npm run test:auth` | Auth routes and auth config. |
 | `npm run test:user` | Profile, interests and bookmarks: model, repository and routes. |
@@ -66,10 +66,7 @@ These scripts write to the configured database unless they are marked read-only.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `GOVSPENDING_API_KEY` | none | Turns on GovSpending discovery when set. |
-| `GOVSPENDING_KEYWORDS` | software-related Thai and English terms | Keywords for the GovSpending search. |
-| `GOVSPENDING_FISCAL_YEAR` | current Thai fiscal year | Fiscal year for GovSpending, for example `2569`. |
-| `GOVSPENDING_SYNC_INTERVAL_MS` | `600000` | Pause between producer rounds, for every source. |
+| `DISCOVERY_SYNC_INTERVAL_MS` | `600000` | Pause between producer rounds. Also shown read-only in admin settings. |
 | `BMA_SYNC_ENABLED` | `true` | Set to `false` to turn off BMA discovery. |
-| `BMA_KEYWORDS` | `GOVSPENDING_KEYWORDS` | Keywords sent to the BMA search as `projectSearchText`. BMA titles are Thai. |
+| `BMA_KEYWORDS` | software-related Thai and English terms | Keywords sent to the BMA search as `projectSearchText`. BMA titles are Thai. |
 | `BMA_BUDGET_YEAR` | current Thai fiscal year | Comma-separated BMA `masterBudgetYearId` values, for example `2570,2569`. Every listed year is synced. |

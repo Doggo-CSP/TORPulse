@@ -1,12 +1,9 @@
 import { randomUUID } from 'node:crypto'
 
 import type { Request, Response } from 'express'
-import {
-  beginGovSpendingSync,
-  completeGovSpendingSync,
-} from '../../apps/queue-producer/queue-producer.js'
+import { beginBmaSync, completeBmaSync } from '../../apps/queue-producer/queue-producer.js'
 import { env } from '../../config/env.js'
-import { GovSpendingDiscoveryAdapter } from '../ingestion/adapters/govspending-discovery.adapter.js'
+import { BmaDiscoveryAdapter } from '../ingestion/adapters/bma-discovery.adapter.js'
 import { getBangkokWeekRange } from '../homepage/homepage.controller.js'
 import {
   expireStaleCollectionRuns,
@@ -976,9 +973,8 @@ export const triggerIngestionSync = async (req: Request, res: Response): Promise
     // The sync runs in this API process. That is fine because the API is a long-running
     // Express server (apps/api/server.ts); there is no serverless deploy. If it ever moves
     // to a scale-to-zero platform, record the request instead and let queue-producer run it.
-    // The API then also needs GOVSPENDING_API_KEY.
-    if (!env.GOVSPENDING_API_KEY) {
-      res.status(503).json({ success: false, message: 'ยังไม่ได้ตั้งค่า GOVSPENDING_API_KEY' })
+    if (!env.BMA_SYNC_ENABLED) {
+      res.status(503).json({ success: false, message: 'ยังไม่ได้เปิดการซิงก์ข้อมูล BMA' })
       return
     }
 
@@ -991,21 +987,20 @@ export const triggerIngestionSync = async (req: Request, res: Response): Promise
 
     // The lease is the same one the scheduled producer uses, so a scheduled run and a
     // manual run can never overlap, even across processes.
-    const claim = await beginGovSpendingSync(producerId, trigger)
+    const claim = await beginBmaSync(producerId, trigger)
     if (!claim) {
       res.status(409).json({ success: false, message: 'มีการซิงก์ข้อมูลที่กำลังทำงานอยู่' })
       return
     }
 
-    const adapter = new GovSpendingDiscoveryAdapter({ apiKey: env.GOVSPENDING_API_KEY })
-    void completeGovSpendingSync(
+    void completeBmaSync(
       claim,
       producerId,
-      adapter,
+      new BmaDiscoveryAdapter(),
       new AbortController().signal,
       trigger,
     ).catch((error: unknown) => {
-      console.error('Manual GovSpending sync failed', error)
+      console.error('Manual BMA sync failed', error)
     })
 
     res.status(202).json({
@@ -1026,7 +1021,7 @@ export const triggerIngestionSync = async (req: Request, res: Response): Promise
 // so it is reported read-only next to the editable settings.
 const toSettingsResponse = (settings: SystemSettings) => ({
   ...settings,
-  ingestionIntervalMinutes: env.GOVSPENDING_SYNC_INTERVAL_MS / 60_000,
+  ingestionIntervalMinutes: env.DISCOVERY_SYNC_INTERVAL_MS / 60_000,
 })
 
 export const getAdminSettings = async (_req: Request, res: Response): Promise<void> => {

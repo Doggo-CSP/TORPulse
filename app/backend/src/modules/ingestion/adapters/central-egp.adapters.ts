@@ -216,7 +216,7 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
 
     /**
      * Only the archive metadata is needed here. Department, status and
-     * prices come from GovSpending (job.sourceMetadata), so the token and
+     * prices come from the discovery source (job.sourceMetadata), so the token and
      * detail endpoints are not called during ingestion.
      */
     const metadata = await this.fetchArchiveMetadata(projectId)

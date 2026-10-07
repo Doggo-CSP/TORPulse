@@ -7,8 +7,8 @@ import {
   listAnnouncements,
   tokenMinutesLeft,
 } from '../modules/ingestion/adapters/egp-announcement-discovery.adapter.js'
-import { getThaiFiscalYear } from '../modules/ingestion/adapters/govspending-discovery.adapter.js'
-import { ensureGovSpendingDataSource } from '../modules/ingestion/data-source.repository.js'
+import { getThaiFiscalYear } from '../modules/ingestion/thai-date.js'
+import { ensureCentralEgpDataSource } from '../modules/ingestion/data-source.repository.js'
 import { IngestionJobModel } from '../modules/ingestion/ingestion-job.model.js'
 import { enqueueDiscoveredProjects } from '../modules/ingestion/ingestion-job.repository.js'
 
@@ -16,17 +16,13 @@ import { enqueueDiscoveredProjects } from '../modules/ingestion/ingestion-job.re
 //   EGP_ANNOUNCEMENT_TOKEN=<token> npm run discover:egp -- [--announce-type 1,2,3]
 //     [--budget-year 2570] [--max-pages 50] [--dry-run]
 //
-// GovSpending only lists projects that already have a contract, so projects still open for
-// bidding (ร่างประกาศ / ประกาศเชิญชวน) are discovered from the eGP announcement search and queued
-// for the normal ingestion worker.
+// Projects still open for bidding (ร่างประกาศ / ประกาศเชิญชวน) are discovered from the eGP
+// announcement search and queued for the normal ingestion worker.
 //
 // The search is gated by Cloudflare Turnstile, so the token must come from a real browser
 // session: open https://process5.gprocurement.go.th/egp-agpc01-web/announcement, run a search,
 // then copy the X-Announcement-Token request header from DevTools > Network. It expires ~20
 // minutes after it is issued.
-//
-// Jobs go to the GovSpending data source so a project that later gets a contract in GovSpending
-// updates the same job and TOR instead of creating a duplicate.
 
 // Same pacing as CentralEgpAdapter (EGP_MIN_REQUEST_INTERVAL_MS).
 const EGP_REQUEST_GAP_MS = 1_200
@@ -66,9 +62,9 @@ async function main(): Promise<void> {
 
   try {
     await IngestionJobModel.init()
-    const dataSource = await ensureGovSpendingDataSource()
+    const dataSource = await ensureCentralEgpDataSource()
     if (!dataSource) {
-      throw new Error('Could not initialize the GovSpending data source')
+      throw new Error('Could not initialize the Central e-GP data source')
     }
 
     const totals: Record<string, TypeTotals> = {}

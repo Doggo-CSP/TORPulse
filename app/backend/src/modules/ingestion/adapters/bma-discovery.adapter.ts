@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { z } from 'zod'
 
-import type { DiscoveredProcurementProject } from './govspending-discovery.adapter.js'
+import type { DiscoveredProcurementProject } from './discovered-project.js'
 
 const BMA_PROJECT_SEARCH_URL = 'https://egp2.bangkok.go.th/appapi/api/Projects/GetProjectFromFilter'
 
