@@ -8,7 +8,7 @@ export interface AuthUser {
   email: string;
   image: string | null;
   role?: "admin" | "user";
-  status?: "active" | "pending" | "suspended";
+  status?: "active" | "suspended";
 }
 
 interface MeResponse {
