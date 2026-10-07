@@ -22,7 +22,13 @@ const govSpendingKeywords = (
   .map((keyword) => keyword.trim())
   .filter(Boolean)
 const bmaSyncEnabled = (process.env.BMA_SYNC_ENABLED ?? 'true').trim().toLowerCase() !== 'false'
-const bmaBudgetYear = process.env.BMA_BUDGET_YEAR ? Number(process.env.BMA_BUDGET_YEAR) : undefined
+// Comma-separated, e.g. "2570,2569". Every listed year is synced.
+const bmaBudgetYears = process.env.BMA_BUDGET_YEAR
+  ? process.env.BMA_BUDGET_YEAR.split(',')
+      .map((year) => year.trim())
+      .filter(Boolean)
+      .map(Number)
+  : undefined
 // BMA project titles are Thai, so it falls back to the GovSpending keywords.
 const bmaKeywords = process.env.BMA_KEYWORDS
   ? process.env.BMA_KEYWORDS.split(',')
@@ -60,8 +66,12 @@ if (
   throw new Error('GOVSPENDING_FISCAL_YEAR must be a valid Thai fiscal year')
 }
 
-if (bmaBudgetYear !== undefined && (!Number.isInteger(bmaBudgetYear) || bmaBudgetYear < 2500)) {
-  throw new Error('BMA_BUDGET_YEAR must be a valid Thai fiscal year')
+if (
+  bmaBudgetYears !== undefined &&
+  (bmaBudgetYears.length === 0 ||
+    bmaBudgetYears.some((year) => !Number.isInteger(year) || year < 2500))
+) {
+  throw new Error('BMA_BUDGET_YEAR must be a comma-separated list of valid Thai fiscal years')
 }
 
 export const env = {
@@ -81,6 +91,6 @@ export const env = {
   GOVSPENDING_FISCAL_YEAR: govSpendingFiscalYear,
   GOVSPENDING_KEYWORDS: govSpendingKeywords,
   BMA_SYNC_ENABLED: bmaSyncEnabled,
-  BMA_BUDGET_YEAR: bmaBudgetYear,
+  BMA_BUDGET_YEARS: bmaBudgetYears,
   BMA_KEYWORDS: bmaKeywords,
 }

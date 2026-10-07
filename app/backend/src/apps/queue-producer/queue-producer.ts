@@ -124,7 +124,7 @@ function configuredSources(): DiscoverySource[] {
           dataSourceId,
           producerId,
           adapter,
-          env.BMA_BUDGET_YEAR ?? getThaiFiscalYear(),
+          env.BMA_BUDGET_YEARS ?? [getThaiFiscalYear()],
           env.BMA_KEYWORDS,
           signal,
         ),
@@ -381,45 +381,53 @@ async function syncBmaProjects(
   dataSourceId: DataSourceId,
   producerId: string,
   adapter: BmaDiscoveryAdapter,
-  budgetYear: number,
+  budgetYears: number[],
   keywords: string[],
   signal: AbortSignal,
 ): Promise<SyncTotals> {
   const totals = emptyTotals()
 
   for (const keyword of keywords) {
-    try {
-      for (let pageNo = 1; !signal.aborted; pageNo += 1) {
-        const page = await adapter.listProjects({
-          budgetYear,
-          keyword,
-          pageNo,
-          pageSize: BMA_PAGE_SIZE,
-          signal,
-        })
-        const queueResult = await enqueueDiscoveredProjects(dataSourceId, page.projects, 'bma_egp')
-        totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
+    for (const budgetYear of budgetYears) {
+      try {
+        for (let pageNo = 1; !signal.aborted; pageNo += 1) {
+          const page = await adapter.listProjects({
+            budgetYear,
+            keyword,
+            pageNo,
+            pageSize: BMA_PAGE_SIZE,
+            signal,
+          })
+          const queueResult = await enqueueDiscoveredProjects(
+            dataSourceId,
+            page.projects,
+            'bma_egp',
+          )
+          totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
 
-        totals.pages += 1
-        totals.discovered += page.projects.length
-        totals.queued += queueResult.queued
-        totals.existing += queueResult.existing
+          totals.pages += 1
+          totals.discovered += page.projects.length
+          totals.queued += queueResult.queued
+          totals.existing += queueResult.existing
 
-        if (!(await renewProducerLease(dataSourceId, producerId))) {
-          throw new ProducerLeaseLostError('Queue producer lost the BMA lease')
+          if (!(await renewProducerLease(dataSourceId, producerId))) {
+            throw new ProducerLeaseLostError('Queue producer lost the BMA lease')
+          }
+
+          if (!page.hasNextPage || page.projects.length + page.skipped === 0) {
+            break
+          }
+        }
+      } catch (error) {
+        if (error instanceof ProducerLeaseLostError || signal.aborted) {
+          throw error
         }
 
-        if (!page.hasNextPage || page.projects.length + page.skipped === 0) {
-          break
+        if (!totals.failedKeywords.includes(keyword)) {
+          totals.failedKeywords.push(keyword)
         }
+        console.error('BMA keyword sync failed', { keyword, budgetYear, error })
       }
-    } catch (error) {
-      if (error instanceof ProducerLeaseLostError || signal.aborted) {
-        throw error
-      }
-
-      totals.failedKeywords.push(keyword)
-      console.error('BMA keyword sync failed', { keyword, budgetYear, error })
     }
   }
 
