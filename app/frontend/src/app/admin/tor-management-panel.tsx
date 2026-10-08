@@ -333,14 +333,14 @@ export function TorManagementPanel({
             >
               <ArrowPathIcon className="size-4" />
             </button>
-            <button
+            {/* <button
               onClick={() => void handleSync()}
               disabled={isRunning || syncStarting || syncBlockedReason !== null}
               title={syncBlockedReason ?? undefined}
               className="rounded-xl bg-[#4a7c59] px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#3b6647] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isRunning || syncStarting ? "กำลังดึงข้อมูล..." : "สั่งดึงข้อมูลทันที"}
-            </button>
+            </button> */}
           </div>
         </div>
 

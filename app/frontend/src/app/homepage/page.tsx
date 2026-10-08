@@ -496,7 +496,7 @@ export default function HomePage() {
 
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                    สถานะการดำเนินการ
+                    ประเภทการประกาศ
                   </label>
                   <select
                     value={status}
