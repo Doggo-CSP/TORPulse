@@ -11,6 +11,7 @@ import { BookmarkIcon as BookmarkOutlineIcon } from "@heroicons/react/24/outline
 import { formatThaiDate, getDeadlineInfo } from "@/api/tor.api";
 import { DeadlineBadge } from "@/app/components/deadline_badge";
 import { SimilarProjects } from "./similar-projects";
+import { QualificationMatchCard } from "./qualification-match";
 
 const formatBaht = (amount: number | null) =>
     amount === null
@@ -327,6 +328,8 @@ export default function TorDetailPage({
                                 )}
                             </div>
                         )}
+
+                        <QualificationMatchCard torId={tor.id} isLoggedIn={!!user} />
 
                         {tor.contactInformation.length > 0 && (
                             <div className="panel p-5">
