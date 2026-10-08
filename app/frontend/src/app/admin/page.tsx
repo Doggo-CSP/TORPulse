@@ -1429,9 +1429,10 @@ export default function AdminPage() {
                   </div>
                 ) : !settings ? (
                   <p className="text-sm text-[#8a8070]">กำลังโหลดการตั้งค่า...</p>
-                ) : (
+                ) 
+				: (
                   <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm space-y-5">
-                    <div className="flex items-center justify-between gap-4 border-b border-[#f0e8dc] pb-4">
+                    {/* <div className="flex items-center justify-between gap-4 border-b border-[#f0e8dc] pb-4">
                       <div>
                         <p className="font-semibold text-sm text-[#2d2d2d]">
                           การดึงข้อมูลอัตโนมัติ (Automated Ingestion)
@@ -1459,11 +1460,12 @@ export default function AdminPage() {
                           }`}
                         />
                       </button>
-                    </div>
+                    </div> */}
 
                     <IngestionSourcesSection onToast={showToast} onChanged={refreshAfterChange} />
                   </div>
-                )}
+                )
+				}
 
                 {settings && !settingsError && (
                   <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm">
