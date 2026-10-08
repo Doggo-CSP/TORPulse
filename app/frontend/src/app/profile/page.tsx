@@ -8,6 +8,11 @@ import { useTorRecommendations } from "@/hooks/use-tors";
 import { useCategories } from "@/hooks/use-categories";
 import { useAuth } from "@/hooks/use-auth";
 import {
+  CompanyForm,
+  getCompanyFormError,
+  type CompanyFormData,
+} from "./forms/company-form";
+import {
   GlobeAltIcon,
   ChartBarIcon,
   DevicePhoneMobileIcon,
@@ -66,6 +71,9 @@ const labelCls = "block text-xs font-semibold text-[#5c5446] mb-1.5";
 
 type TabType = "profile" | "interests" | "bookmarks" | "recommended";
 
+// ฟอร์มรวมฟิลด์โปรไฟล์เดิม + ฟิลด์คุณสมบัติบริษัท
+type FormState = Partial<UserProfileData> & Partial<CompanyFormData>;
+
 export default function ProfilePage() {
   const { user: authUser, loading: authLoading } = useAuth();
   const {
@@ -115,7 +123,8 @@ export default function ProfilePage() {
   }, [savedInterests, categoryOptions.length, categoryNameByKey]);
 
   const [activeTab, setActiveTab] = useState<TabType>("profile");
-  const [formData, setFormData] = useState<Partial<UserProfileData>>({});
+  const [formData, setFormData] = useState<FormState>({});
+  const [formError, setFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAvatarClick = () => {
@@ -158,6 +167,9 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (profile) {
+      // ฟิลด์บริษัทยังไม่อยู่ใน UserProfileData → อ่านผ่าน record ชั่วคราว
+      // (ลบ cast นี้ได้เมื่อเพิ่มฟิลด์ใน type แล้ว)
+      const p = profile as unknown as Record<string, any>;
       setFormData({
         accountType: profile.accountType || "personal",
         displayName: profile.displayName || profile.name || "",
@@ -169,13 +181,24 @@ export default function ProfilePage() {
         image: profile.image || "",
         address: profile.address || "",
         about: profile.about || "",
-        companyName: (profile as any).companyName || "",
-        registrationNumber: (profile as any).registrationNumber || "",
-        businessType: (profile as any).businessType || "",
-        agencyName: (profile as any).agencyName || "",
-        agencyType: (profile as any).agencyType || "",
+        agencyName: p.agencyName || "",
+        agencyType: p.agencyType || "",
         website: profile.website || "",
-      });
+        // ── company ──
+        companyName: p.companyName || "",
+        registrationNumber: p.registrationNumber || "",
+        businessType: p.businessType || "",
+        registeredDate: p.registeredDate || "",
+        registeredCapital: p.registeredCapital ?? null,
+        yearsExperience: p.yearsExperience ?? null,
+        teamSize: p.teamSize ?? null,
+        budgetMin: p.budgetMin ?? null,
+        budgetMax: p.budgetMax ?? null,
+        businessObjectives: p.businessObjectives || "",
+        certifications: p.certifications ?? [],
+        isEgpRegistered: p.isEgpRegistered ?? false,
+        pastProjects: p.pastProjects ?? [],
+      } as FormState);
     }
   }, [profile]);
 
@@ -222,26 +245,62 @@ export default function ProfilePage() {
       ? "หน่วยงาน"
       : "บุคคล / ผู้ใช้งาน";
 
+  // นับเฉพาะฟิลด์ที่เกี่ยวกับประเภทบัญชีที่เลือก
   const liveCompletionPercentage = (() => {
-    const fields = [
-      Boolean(formData.displayName?.trim()),
-      Boolean(formData.firstName?.trim()),
-      Boolean(formData.lastName?.trim()),
-      Boolean(formData.jobTitle?.trim()),
-      Boolean(formData.contactEmail?.trim()),
-      Boolean(formData.phone?.trim()),
-      Boolean(formData.image?.trim()),
-      Boolean(formData.address?.trim()),
-      Boolean(formData.about?.trim()),
+    const filled = (v?: string | null) => Boolean(v?.trim());
+    const common = [
+      filled(formData.displayName),
+      filled(formData.contactEmail),
+      filled(formData.phone),
+      filled(formData.image),
+      filled(formData.address),
+      filled(formData.about),
       selectedInterests.length > 0,
     ];
+
+    let specific: boolean[];
+    if (formData.accountType === "company") {
+      specific = [
+        filled(formData.companyName),
+        filled(formData.registrationNumber),
+        filled(formData.businessType),
+        formData.registeredCapital != null,
+        formData.yearsExperience != null,
+        (formData.certifications?.length ?? 0) > 0,
+        (formData.pastProjects?.length ?? 0) > 0,
+      ];
+    } else if (formData.accountType === "agency") {
+      specific = [
+        filled((formData as any).agencyName),
+        filled((formData as any).agencyType),
+        filled(formData.website),
+      ];
+    } else {
+      specific = [
+        filled(formData.firstName),
+        filled(formData.lastName),
+        filled(formData.jobTitle),
+      ];
+    }
+
+    const fields = [...common, ...specific];
     const completed = fields.filter(Boolean).length;
     return Math.round((completed / fields.length) * 100);
   })();
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    void updateProfile(formData);
+
+    if (formData.accountType === "company") {
+      const error = getCompanyFormError(formData);
+      if (error) {
+        setFormError(error);
+        return;
+      }
+    }
+
+    setFormError(null);
+    void updateProfile(formData as Partial<UserProfileData>);
   };
 
   const tabClass = (tab: TabType) =>
@@ -502,93 +561,12 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              {/* ── COMPANY ── */}
+              {/* ── COMPANY (แยกไปที่ forms/company-form.tsx) ── */}
               {formData.accountType === "company" && (
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 pt-2">
-                  <div>
-                    <label className={labelCls}>ชื่อที่แสดง</label>
-                    <input
-                      type="text"
-                      value={formData.displayName || ""}
-                      onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                      placeholder="เช่น Kantapon Hemmadhun"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>ชื่อบริษัท</label>
-                    <input
-                      type="text"
-                      value={(formData as any).companyName || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, companyName: e.target.value } as any)
-                      }
-                      placeholder="เช่น บริษัท เทคโนโลยีไทย จำกัด"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>เลขทะเบียนนิติบุคคล</label>
-                    <input
-                      type="text"
-                      value={(formData as any).registrationNumber || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, registrationNumber: e.target.value } as any)
-                      }
-                      placeholder="เช่น 0105567012345"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>ประเภทธุรกิจ</label>
-                    <input
-                      type="text"
-                      value={(formData as any).businessType || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, businessType: e.target.value } as any)
-                      }
-                      placeholder="เช่น ผู้พัฒนาซอฟต์แวร์"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>อีเมลติดต่อ</label>
-                    <input
-                      type="email"
-                      value={formData.contactEmail || ""}
-                      onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>เบอร์โทรศัพท์</label>
-                    <input
-                      type="tel"
-                      value={formData.phone || ""}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={labelCls}>ที่อยู่สำนักงาน</label>
-                    <textarea
-                      rows={2}
-                      value={formData.address || ""}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={labelCls}>เกี่ยวกับบริษัท</label>
-                    <textarea
-                      rows={3}
-                      value={formData.about || ""}
-                      onChange={(e) => setFormData({ ...formData, about: e.target.value })}
-                      placeholder="แนะนำบริษัทสั้น ๆ ผลงาน หรือความเชี่ยวชาญ"
-                      className={inputCls}
-                    />
-                  </div>
-                </div>
+                <CompanyForm
+                  value={formData}
+                  onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+                />
               )}
 
               {/* ── AGENCY ── */}
@@ -679,17 +657,24 @@ export default function ProfilePage() {
               )}
 
               {/* Form Footer */}
-              <div className="flex flex-col sm:flex-row items-center gap-4 border-t border-[#f0e8dc] pt-6">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-full bg-[#4a7c59] px-8 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#3b6647] disabled:opacity-50"
-                >
-                  {saving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
-                </button>
-                <span className="text-xs text-[#998f80]">
-                  ข้อมูลส่วนบุคคลของคุณเป็นความลับ ผู้ใช้อื่นมองไม่เห็น
-                </span>
+              <div className="border-t border-[#f0e8dc] pt-6">
+                {formError && (
+                  <p role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {formError}
+                  </p>
+                )}
+                <div className="flex flex-col items-center gap-4 sm:flex-row">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="rounded-full bg-[#4a7c59] px-8 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#3b6647] disabled:opacity-50"
+                  >
+                    {saving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
+                  </button>
+                  <span className="text-xs text-[#998f80]">
+                    ข้อมูลส่วนบุคคลของคุณเป็นความลับ ผู้ใช้อื่นมองไม่เห็น
+                  </span>
+                </div>
               </div>
             </form>
           </div>
