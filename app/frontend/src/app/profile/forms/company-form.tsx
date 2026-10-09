@@ -136,20 +136,20 @@ function NumberField({
   onChange,
   placeholder,
   suffix,
-  allowDecimal = false,
+  grouping = true,
 }: {
   value: number | null | undefined;
   onChange: (n: number | null) => void;
   placeholder?: string;
   suffix?: string;
-  allowDecimal?: boolean;
+  grouping?: boolean;
 }) {
   return (
     <div className="relative">
       <input
         type="text"
-        inputMode={allowDecimal ? "decimal" : "numeric"}
-        value={value == null ? "" : value.toLocaleString("en-US")}
+        inputMode="numeric"
+        value={value == null ? "" : grouping ? value.toLocaleString("en-US") : String(value)}
         placeholder={placeholder}
         onChange={(e) => {
           const digits = e.target.value.replace(/[^\d]/g, "");
@@ -581,6 +581,7 @@ export function CompanyForm({ value, onChange }: Props) {
                   value={p.year}
                   onChange={(n) => updateProject(i, { year: n })}
                   placeholder="2567"
+                  grouping={false}
                 />
               </div>
               <button

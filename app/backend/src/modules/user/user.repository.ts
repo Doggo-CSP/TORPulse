@@ -13,11 +13,14 @@ export async function updateUserProfile(
   userId: Types.ObjectId | string,
   fields: UpdateProfileInput,
 ) {
-  return User.findByIdAndUpdate(userId, { $set: fields }, { new: true, runValidators: true })
+  return User.findByIdAndUpdate(
+    userId,
+    { $set: fields },
+    { returnDocument: 'after', runValidators: true },)
 }
 
 export async function updateUserInterests(userId: Types.ObjectId | string, interests: string[]) {
-  return User.findByIdAndUpdate(userId, { $set: { interests } }, { new: true })
+  return User.findByIdAndUpdate(userId, { $set: { interests } }, { returnDocument: 'after' })
 }
 
 export async function isBookmarked(userId: Types.ObjectId | string, torId: string) {
@@ -29,7 +32,7 @@ export async function addBookmark(userId: Types.ObjectId | string, torId: string
   return UserBookmarkModel.findOneAndUpdate(
     { userId, torId },
     {},
-    { upsert: true, new: true, setDefaultsOnInsert: true },
+    { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true },
   )
 }
 
