@@ -13,22 +13,41 @@ import {
 } from './user.repository.js'
 import { updateInterestsSchema, updateProfileSchema } from './user.validation.js'
 
+const has = (v?: string | null) => Boolean(v?.trim())
+
 export const calculateProfileCompletion = (user: any): number => {
-  const fields = [
-    Boolean(user.displayName && user.displayName.trim()),
-    Boolean(user.firstName && user.firstName.trim()),
-    Boolean(user.lastName && user.lastName.trim()),
-    Boolean(user.jobTitle && user.jobTitle.trim()),
-    Boolean(user.contactEmail && user.contactEmail.trim()),
-    Boolean(user.phone && user.phone.trim()),
-    Boolean(user.image && user.image.trim()),
-    Boolean(user.address && user.address.trim()),
-    Boolean(user.about && user.about.trim()),
+  const personal = [
+    has(user.displayName),
+    has(user.firstName),
+    has(user.lastName),
+    has(user.jobTitle),
+    has(user.contactEmail),
+    has(user.phone),
+    has(user.image),
+    has(user.address),
+    has(user.about),
     Boolean(user.interests && user.interests.length > 0),
   ]
 
-  const completed = fields.filter(Boolean).length
-  return Math.round((completed / fields.length) * 100)
+  const company =
+    user.accountType === 'company'
+      ? [
+          has(user.companyName),
+          has(user.registrationNumber),
+          has(user.registeredDate),
+          has(user.businessType),
+          has(user.businessObjectives),
+          user.registeredCapital != null,
+          user.yearsExperience != null,
+          user.teamSize != null,
+          user.budgetMin != null || user.budgetMax != null,
+          (user.certifications?.length ?? 0) > 0,
+          (user.pastProjects?.length ?? 0) > 0,
+        ]
+      : []
+
+  const all = [...personal, ...company]
+  return Math.round((all.filter(Boolean).length / all.length) * 100)
 }
 
 const toProfileResponse = (user: any, bookmarkedCount: number) => ({
@@ -50,6 +69,16 @@ const toProfileResponse = (user: any, bookmarkedCount: number) => ({
   companyName: user.companyName || '',
   registrationNumber: user.registrationNumber || '',
   businessType: user.businessType || '',
+  registeredDate: user.registeredDate || '',
+  registeredCapital: user.registeredCapital ?? null,
+  yearsExperience: user.yearsExperience ?? null,
+  teamSize: user.teamSize ?? null,
+  budgetMin: user.budgetMin ?? null,
+  budgetMax: user.budgetMax ?? null,
+  businessObjectives: user.businessObjectives || '',
+  certifications: user.certifications || [],
+  isEgpRegistered: Boolean(user.isEgpRegistered),
+  pastProjects: user.pastProjects || [],
   agencyName: user.agencyName || '',
   agencyType: user.agencyType || '',
   bookmarkedCount,
