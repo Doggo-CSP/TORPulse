@@ -68,7 +68,9 @@ flowchart TB
       llm[DeepSeek / Gemini extractor]
       deadline[egp-submit-deadline<br/>+ thai-date]
     end
-    notif["apps/notification-worker<br/>(placeholder, not implemented)"]
+    subgraph notifApp[apps/notification-worker]
+      notifW[notification.worker<br/>batch per user → SMTP]
+    end
   end
 
   apiClient --> auth
@@ -80,6 +82,9 @@ flowchart TB
   svc --> llm
   egpA --> deadline --> odl
   svc --> torM
+  workerApp -->|enqueueForTor| notifM[notification<br/>tor_notifications]
+  userM -->|enqueueForUser| notifM
+  notifApp --> notifM
 ```
 
 ## 3. Ingestion pipeline

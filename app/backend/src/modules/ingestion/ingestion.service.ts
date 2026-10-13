@@ -149,6 +149,7 @@ export async function processIngestionJob(
     objectives: extractedTor.objectives,
     requirements: extractedTor.requirements,
     bidderQualifications: extractedTor.bidderQualifications,
+    eligibility: extractedTor.eligibility,
     technologies: extractedTor.technologies,
     category,
     categories,

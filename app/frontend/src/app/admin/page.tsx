@@ -1484,7 +1484,7 @@ export default function AdminPage() {
                           อีเมลผู้ส่ง (Sender Email)
                         </label>
                         <p className="text-xs text-[#7a8b6f]">
-                          ยังไม่ได้ใช้ส่งอีเมล (เตรียมไว้สำหรับระบบแจ้งเตือน)
+                          ใช้เป็นผู้ส่งอีเมลแจ้งเตือน TOR ที่ผู้ใช้มีคุณสมบัติครบ
                         </p>
                         <input
                           id="admin-sender-email"

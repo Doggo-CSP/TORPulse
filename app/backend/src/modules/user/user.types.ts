@@ -1,3 +1,5 @@
+import type { CompanyQualification } from '../notification/qualification.js'
+
 export interface UpdateProfileInput {
   accountType?: 'personal' | 'company' | 'agency'
   displayName?: string
@@ -15,6 +17,8 @@ export interface UpdateProfileInput {
   agencyName?: string
   agencyType?: string
   website?: string
+  qualification?: CompanyQualification
+  notificationPrefs?: { emailEnabled: boolean }
 }
 
 export interface UpdateInterestsInput {

@@ -1,6 +1,12 @@
 import type { Request, Response } from 'express'
 
 import { getActiveCategoryKeys } from '../category/category.repository.js'
+import { missingNotificationFields } from '../notification/eligibility.js'
+import {
+  enqueueForUser,
+  enqueueInBackground,
+} from '../notification/notification.service.js'
+import { EMPTY_QUALIFICATION } from '../notification/qualification.js'
 import {
   addBookmark,
   countBookmarksByUser,
@@ -31,6 +37,15 @@ export const calculateProfileCompletion = (user: any): number => {
   return Math.round((completed / fields.length) * 100)
 }
 
+// Profile fields that can change which TORs the user fully qualifies for
+const QUALIFYING_PROFILE_FIELDS = [
+  'accountType',
+  'companyName',
+  'registrationNumber',
+  'qualification',
+  'notificationPrefs',
+] as const
+
 const toProfileResponse = (user: any, bookmarkedCount: number) => ({
   id: user._id.toString(),
   name: user.name,
@@ -52,6 +67,9 @@ const toProfileResponse = (user: any, bookmarkedCount: number) => ({
   businessType: user.businessType || '',
   agencyName: user.agencyName || '',
   agencyType: user.agencyType || '',
+  qualification: { ...EMPTY_QUALIFICATION, ...(user.qualification?.toObject?.() ?? user.qualification) },
+  notificationPrefs: { emailEnabled: user.notificationPrefs?.emailEnabled !== false },
+  notificationMissingFields: missingNotificationFields(user),
   bookmarkedCount,
   completionPercentage: calculateProfileCompletion(user),
 })
@@ -91,6 +109,11 @@ export const updateProfileHandler = async (req: Request, res: Response): Promise
     return
   }
 
+  if (QUALIFYING_PROFILE_FIELDS.some((field) => parsed.data[field] !== undefined)) {
+    const userId = req.user._id
+    enqueueInBackground(`user ${userId}`, () => enqueueForUser(userId))
+  }
+
   const bookmarkedCount = await countBookmarksByUser(req.user._id)
 
   res.json({ user: toProfileResponse(updatedUser, bookmarkedCount) })
@@ -127,6 +150,9 @@ export const updateInterestsHandler = async (req: Request, res: Response): Promi
     res.status(404).json({ error: 'User not found' })
     return
   }
+
+  const userId = req.user._id
+  enqueueInBackground(`user ${userId}`, () => enqueueForUser(userId))
 
   res.json({
     interests: updatedUser.interests || [],

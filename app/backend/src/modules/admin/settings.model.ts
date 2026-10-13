@@ -17,7 +17,7 @@ const settingsSchema = new Schema(
       required: true,
       default: true,
     },
-    // Stored for future email sending; there is no UI and nothing sends email yet.
+    // From address for qualifying-TOR notification emails; falls back to NOTIFICATION_FROM.
     senderEmail: {
       type: String,
       trim: true,

@@ -1,3 +1,12 @@
+export interface CompanyQualification {
+  registeredCapitalBaht: number | null;
+  yearsInBusiness: number | null;
+  maxPastContractValueBaht: number | null;
+  certifications: string[];
+  isThaiJuristicPerson: boolean | null;
+  isSme: boolean | null;
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -25,6 +34,11 @@ export interface UserProfile {
   // Agency
   agencyName?: string;
   agencyType?: string;
+
+  // Qualifying-TOR email notifications
+  qualification?: CompanyQualification;
+  notificationPrefs?: { emailEnabled: boolean };
+  notificationMissingFields?: string[];
 }
 
 export interface TorItem {

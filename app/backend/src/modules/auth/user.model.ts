@@ -1,5 +1,7 @@
 import mongoose, { Schema, model, type HydratedDocument, type Model } from 'mongoose'
 
+import type { CompanyQualification } from '../notification/qualification.js'
+
 export interface UserRecord {
   googleId: string
   name: string
@@ -23,9 +25,23 @@ export interface UserRecord {
   agencyType?: string
   role?: 'admin' | 'user'
   status?: 'active' | 'suspended'
+  qualification?: CompanyQualification
+  notificationPrefs?: { emailEnabled: boolean }
   createdAt: Date
   updatedAt: Date
 }
+
+const qualificationSchema = new Schema<CompanyQualification>(
+  {
+    registeredCapitalBaht: { type: Number, min: 0, default: null },
+    yearsInBusiness: { type: Number, min: 0, default: null },
+    maxPastContractValueBaht: { type: Number, min: 0, default: null },
+    certifications: { type: [String], default: [] },
+    isThaiJuristicPerson: { type: Boolean, default: null },
+    isSme: { type: Boolean, default: null },
+  },
+  { _id: false },
+)
 
 const userSchema = new Schema<UserRecord>(
   {
@@ -52,6 +68,12 @@ const userSchema = new Schema<UserRecord>(
     businessType: { type: String, default: '' },
     agencyName: { type: String, default: '' },
     agencyType: { type: String, default: '' },
+    // Matched against TOR eligibility for qualifying-TOR email notifications
+    qualification: { type: qualificationSchema, default: () => ({}) },
+    notificationPrefs: {
+      type: new Schema({ emailEnabled: { type: Boolean, default: true } }, { _id: false }),
+      default: () => ({}),
+    },
   },
   { timestamps: true },
 )

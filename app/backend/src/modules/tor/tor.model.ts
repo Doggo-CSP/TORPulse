@@ -29,6 +29,21 @@ const sourceDocumentSchema = new Schema(
   { _id: false },
 )
 
+// Structured bidder qualifications, used to decide whether a company fully qualifies.
+// null on TORs analyzed before eligibility extraction existed.
+const eligibilitySchema = new Schema(
+  {
+    minRegisteredCapitalBaht: { type: Number, min: 0, default: null },
+    minYearsInBusiness: { type: Number, min: 0, default: null },
+    minPastContractValueBaht: { type: Number, min: 0, default: null },
+    requiredCertifications: { type: [String], default: [] },
+    requiresThaiJuristicPerson: { type: Boolean, default: null },
+    smeOnly: { type: Boolean, default: null },
+    unmappedQualifications: { type: [String], default: [] },
+  },
+  { _id: false },
+)
+
 const torSchema = new Schema(
   {
     dataSourceId: {
@@ -129,6 +144,10 @@ const torSchema = new Schema(
       type: [String],
       required: true,
       default: [],
+    },
+    eligibility: {
+      type: eligibilitySchema,
+      default: null,
     },
     // Keys of the categories collection, set by the AI classifier or an admin override. Checked
     // by the admin API, not by an enum, because admins can add categories.
