@@ -16,6 +16,7 @@ import {
   TOR_ANALYSIS_VERSION,
 } from './extraction/deepseek-tor-extractor.js'
 import { analyzeTorWithGemini } from './extraction/gemini-tor-extractor.js'
+import { mapEligibility } from './extraction/eligibility-mapper.js'
 import {
   extractDocumentsToMarkdown,
   OcrRequiredError,
@@ -121,6 +122,8 @@ export async function processIngestionJob(
         date: parseThaiDate(extractedTor.submissionDeadline),
       }
 
+  const eligibility = await mapEligibility(extractedTor.bidderQualifications)
+
   await updateStage('storing')
   const sourceMetadata = job.sourceMetadata ?? null
   const tor = await upsertTor({
@@ -149,7 +152,7 @@ export async function processIngestionJob(
     objectives: extractedTor.objectives,
     requirements: extractedTor.requirements,
     bidderQualifications: extractedTor.bidderQualifications,
-    eligibility: extractedTor.eligibility,
+    eligibility,
     technologies: extractedTor.technologies,
     category,
     categories,

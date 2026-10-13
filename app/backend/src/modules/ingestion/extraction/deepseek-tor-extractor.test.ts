@@ -76,65 +76,6 @@ test('defaults missing category fields to null and an empty list', () => {
   assert.deepEqual(analysis.categories, [])
 })
 
-test('parses structured eligibility and moves unknown certifications to unmapped', () => {
-  const analysis = parseTorAnalysis(
-    JSON.stringify({
-      isSoftwareRelated: true,
-      classificationReason: 'Software.',
-      projectTitle: null,
-      agencyName: null,
-      summary: null,
-      objectives: [],
-      requirements: [],
-      bidderQualifications: ['ทุนจดทะเบียนไม่น้อยกว่า 5 ล้านบาท'],
-      eligibility: {
-        minRegisteredCapitalBaht: 5_000_000,
-        minYearsInBusiness: null,
-        requiredCertifications: ['iso27001', 'made_up_cert'],
-        requiresThaiJuristicPerson: true,
-        unmappedQualifications: null,
-      },
-      technologies: [],
-      budgetBaht: null,
-      submissionDeadline: null,
-      contactInformation: [],
-      confidence: 0.8,
-    }),
-  )
-
-  assert.deepEqual(analysis.eligibility, {
-    minRegisteredCapitalBaht: 5_000_000,
-    minYearsInBusiness: null,
-    minPastContractValueBaht: null,
-    requiredCertifications: ['iso27001'],
-    requiresThaiJuristicPerson: true,
-    smeOnly: null,
-    unmappedQualifications: ['certification: made_up_cert'],
-  })
-})
-
-test('defaults missing eligibility to null', () => {
-  const analysis = parseTorAnalysis(
-    JSON.stringify({
-      isSoftwareRelated: true,
-      classificationReason: 'Software.',
-      projectTitle: null,
-      agencyName: null,
-      summary: null,
-      objectives: [],
-      requirements: [],
-      bidderQualifications: [],
-      technologies: [],
-      budgetBaht: null,
-      submissionDeadline: null,
-      contactInformation: [],
-      confidence: 0.8,
-    }),
-  )
-
-  assert.equal(analysis.eligibility, null)
-})
-
 test('lists every category from the database in the system prompt', () => {
   const prompt = buildSystemPrompt([
     ...CATEGORY_SEED,

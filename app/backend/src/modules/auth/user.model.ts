@@ -39,6 +39,10 @@ const qualificationSchema = new Schema<CompanyQualification>(
     certifications: { type: [String], default: [] },
     isThaiJuristicPerson: { type: Boolean, default: null },
     isSme: { type: Boolean, default: null },
+    hasPositiveNetWorth: { type: Boolean, default: null },
+    pastContractAgeYears: { type: Number, min: 0, default: null },
+    hasBangkokOffice: { type: Boolean, default: null },
+    staffRoles: { type: [String], default: [] },
   },
   { _id: false },
 )

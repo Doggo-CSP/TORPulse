@@ -5,6 +5,10 @@ export interface CompanyQualification {
   certifications: string[];
   isThaiJuristicPerson: boolean | null;
   isSme: boolean | null;
+  hasPositiveNetWorth: boolean | null;
+  pastContractAgeYears: number | null;
+  hasBangkokOffice: boolean | null;
+  staffRoles: string[];
 }
 
 export interface UserProfile {

@@ -16,6 +16,20 @@ const CERTIFICATIONS: { key: string; label: string }[] = [
   { key: "egp_registered", label: "ลงทะเบียนผู้ค้าในระบบ e-GP" },
 ];
 
+// Keys must match STAFF_ROLE_KEYS in the backend (modules/notification/qualification.ts)
+const STAFF_ROLES: { key: string; label: string }[] = [
+  { key: "project_manager", label: "Project Manager" },
+  { key: "system_analyst", label: "System Analyst" },
+  { key: "developer", label: "Developer / Programmer" },
+  { key: "database_admin", label: "Database Administrator" },
+  { key: "system_engineer", label: "System Engineer" },
+  { key: "ux_ui_designer", label: "UX/UI Designer" },
+  { key: "it_support", label: "IT Support" },
+  { key: "coordinator", label: "Coordinator" },
+  { key: "network_engineer", label: "Network Engineer" },
+  { key: "security_specialist", label: "Security Specialist" },
+];
+
 const MISSING_FIELD_LABELS: Record<string, string> = {
   accountType: "ประเภทบัญชีเป็น \"บริษัท\"",
   companyName: "ชื่อบริษัท",
@@ -26,6 +40,8 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
   "qualification.maxPastContractValueBaht": "มูลค่าผลงานสูงสุดต่อสัญญา",
   "qualification.isThaiJuristicPerson": "สถานะนิติบุคคลไทย",
   "qualification.isSme": "สถานะ SME",
+  "qualification.hasPositiveNetWorth": "มูลค่าสุทธิของกิจการเป็นบวกหรือไม่",
+  "qualification.hasBangkokOffice": "มีสำนักงานในกรุงเทพฯ/ปริมณฑลหรือไม่",
 };
 
 const EMPTY_QUALIFICATION: CompanyQualification = {
@@ -35,6 +51,10 @@ const EMPTY_QUALIFICATION: CompanyQualification = {
   certifications: [],
   isThaiJuristicPerson: null,
   isSme: null,
+  hasPositiveNetWorth: null,
+  pastContractAgeYears: null,
+  hasBangkokOffice: null,
+  staffRoles: [],
 };
 
 const inputCls =
@@ -89,21 +109,22 @@ export function NotificationSettings({
   onSave: (changes: Partial<UserProfile>) => Promise<unknown>;
 }) {
   const [emailEnabled, setEmailEnabled] = useState(profile.notificationPrefs?.emailEnabled ?? true);
-  const [qualification, setQualification] = useState<CompanyQualification>(
-    profile.qualification ?? EMPTY_QUALIFICATION,
-  );
+  const [qualification, setQualification] = useState<CompanyQualification>({
+    ...EMPTY_QUALIFICATION,
+    ...profile.qualification,
+  });
 
   const missing = profile.notificationMissingFields ?? [];
 
   const update = <K extends keyof CompanyQualification>(key: K, value: CompanyQualification[K]) =>
     setQualification((prev) => ({ ...prev, [key]: value }));
 
-  const toggleCertification = (key: string) =>
+  const toggleIn = (field: "certifications" | "staffRoles", key: string) =>
     update(
-      "certifications",
-      qualification.certifications.includes(key)
-        ? qualification.certifications.filter((k) => k !== key)
-        : [...qualification.certifications, key],
+      field,
+      qualification[field].includes(key)
+        ? qualification[field].filter((k) => k !== key)
+        : [...qualification[field], key],
     );
 
   const toggleEmail = () => {
@@ -182,7 +203,7 @@ export function NotificationSettings({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <div>
             <label className={labelCls} htmlFor="registeredCapitalBaht">
               ทุนจดทะเบียน (บาท)
@@ -225,6 +246,20 @@ export function NotificationSettings({
               onChange={(e) => update("maxPastContractValueBaht", toNumber(e.target.value))}
             />
           </div>
+          <div>
+            <label className={labelCls} htmlFor="pastContractAgeYears">
+              ผลงานนั้นส่งมอบมาแล้ว (ปี)
+            </label>
+            <input
+              id="pastContractAgeYears"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              className={inputCls}
+              value={qualification.pastContractAgeYears ?? ""}
+              onChange={(e) => update("pastContractAgeYears", toNumber(e.target.value))}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
@@ -239,6 +274,20 @@ export function NotificationSettings({
             <span className={labelCls}>เป็นวิสาหกิจขนาดกลางและขนาดย่อม (SME)</span>
             <YesNo value={qualification.isSme} onChange={(v) => update("isSme", v)} />
           </div>
+          <div>
+            <span className={labelCls}>มูลค่าสุทธิของกิจการเป็นบวกในปีล่าสุด</span>
+            <YesNo
+              value={qualification.hasPositiveNetWorth}
+              onChange={(v) => update("hasPositiveNetWorth", v)}
+            />
+          </div>
+          <div>
+            <span className={labelCls}>มีสำนักงาน สาขา หรือศูนย์บริการในกรุงเทพฯ/ปริมณฑล</span>
+            <YesNo
+              value={qualification.hasBangkokOffice}
+              onChange={(v) => update("hasBangkokOffice", v)}
+            />
+          </div>
         </div>
 
         <div>
@@ -251,7 +300,7 @@ export function NotificationSettings({
                   key={cert.key}
                   type="button"
                   aria-pressed={selected}
-                  onClick={() => toggleCertification(cert.key)}
+                  onClick={() => toggleIn("certifications", cert.key)}
                   className={`rounded-full border px-4 py-2 text-sm font-medium transition-all ${
                     selected
                       ? "border-[#4a7c59] bg-[#4a7c59] text-white"
@@ -259,6 +308,30 @@ export function NotificationSettings({
                   }`}
                 >
                   {cert.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <span className={labelCls}>บุคลากรประจำที่มี</span>
+          <div className="flex flex-wrap gap-2">
+            {STAFF_ROLES.map((role) => {
+              const selected = qualification.staffRoles.includes(role.key);
+              return (
+                <button
+                  key={role.key}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => toggleIn("staffRoles", role.key)}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition-all ${
+                    selected
+                      ? "border-[#4a7c59] bg-[#4a7c59] text-white"
+                      : "border-[#ddd5c8] bg-white text-[#5c5446] hover:bg-[#faf7f2]"
+                  }`}
+                >
+                  {role.label}
                 </button>
               );
             })}
