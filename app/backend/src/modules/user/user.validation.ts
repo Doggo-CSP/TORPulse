@@ -1,6 +1,18 @@
 import { z } from 'zod'
 
 import { LEGACY_INTEREST_IDS } from '../category/category.constants.js'
+import { CERTIFICATION_KEYS } from '../notification/qualification.js'
+
+const nullableAmount = z.number().nonnegative().nullable()
+
+export const qualificationSchema = z.object({
+  registeredCapitalBaht: nullableAmount,
+  yearsInBusiness: nullableAmount,
+  maxPastContractValueBaht: nullableAmount,
+  certifications: z.array(z.enum(CERTIFICATION_KEYS)).transform((keys) => [...new Set(keys)]),
+  isThaiJuristicPerson: z.boolean().nullable(),
+  isSme: z.boolean().nullable(),
+})
 
 export const updateProfileSchema = z.object({
   accountType: z.enum(['personal', 'company', 'agency']).optional(),
@@ -19,6 +31,8 @@ export const updateProfileSchema = z.object({
   agencyName: z.string().trim().optional(),
   agencyType: z.string().trim().optional(),
   website: z.string().trim().optional(),
+  qualification: qualificationSchema.optional(),
+  notificationPrefs: z.object({ emailEnabled: z.boolean() }).optional(),
 })
 
 // TODO(LEGACY-INTEREST-IDS): also accepts the profile page's old ids ("web", "ai", ...) and

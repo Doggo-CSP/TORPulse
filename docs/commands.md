@@ -11,12 +11,14 @@ Before running backend commands, copy `app/backend/.env.example` to `.env` and f
 | `npm run dev` | Starts the REST API (`src/apps/api/server.ts`) on `PORT` (default 8000) with hot reload. Serves `/auth/*` (Google OAuth) and `/api/v1/*`. |
 | `npm run dev:producer` | Starts the queue producer with hot reload. It runs BMA discovery (unless `BMA_SYNC_ENABLED=false`), enqueues ingestion jobs, then sleeps for `DISCOVERY_SYNC_INTERVAL_MS`. |
 | `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with the AI provider (`AI_PROVIDER`), reads the submission deadline from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
+| `npm run dev:notification` | Starts the notification worker with hot reload. It claims queued qualifying-TOR notifications, groups them per user and sends one email per user over SMTP (`SMTP_*`). Failed sends retry with backoff up to 3 attempts. |
 | `npm run build` | Compiles TypeScript to `dist/`. |
 | `npm start` | Runs the compiled API (`dist/apps/api/server.js`). |
 | `npm run start:producer` | Runs the compiled queue producer. |
 | `npm run start:ingestion` | Runs the compiled ingestion worker. |
+| `npm run start:notification` | Runs the compiled notification worker. |
 
-A full local pipeline needs three terminals: `dev`, `dev:producer` and `dev:ingestion`. More than one producer or worker can run at once. Producers share a lease per data source, and workers lease jobs, so no work is done twice.
+A full local pipeline needs three terminals: `dev`, `dev:producer` and `dev:ingestion`, plus `dev:notification` to send qualifying-TOR emails. More than one producer or worker can run at once. Producers share a lease per data source, and workers lease jobs, so no work is done twice.
 
 ## Backend: tests and code quality
 

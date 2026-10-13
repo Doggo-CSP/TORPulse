@@ -23,6 +23,7 @@ import {
   CameraIcon,
 } from "@heroicons/react/24/outline";
 import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
+import { NotificationSettings } from "./notification-settings";
 
 // ไอคอนตาม key (ชื่อ/ลำดับ/การซ่อนมาจาก backend)
 const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -64,7 +65,8 @@ const inputCls =
   "w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]";
 const labelCls = "block text-xs font-semibold text-[#5c5446] mb-1.5";
 
-type TabType = "profile" | "interests" | "bookmarks" | "recommended";
+type TabType = "profile" | "interests" | "bookmarks" | "recommended" | "notifications";
+const TABS: TabType[] = ["profile", "interests", "bookmarks", "recommended", "notifications"];
 
 export default function ProfilePage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -114,7 +116,13 @@ export default function ProfilePage() {
     return savedInterests.filter((k) => categoryNameByKey.has(k));
   }, [savedInterests, categoryOptions.length, categoryNameByKey]);
 
-  const [activeTab, setActiveTab] = useState<TabType>("profile");
+  // Notification emails link to /profile?tab=notifications. The first render is the loading
+  // spinner on both server and client, so reading the URL here causes no visible mismatch.
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (typeof window === "undefined") return "profile";
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    return tab && (TABS as string[]).includes(tab) ? (tab as TabType) : "profile";
+  });
   const [formData, setFormData] = useState<Partial<UserProfileData>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -304,6 +312,12 @@ export default function ProfilePage() {
             </button>
             <button onClick={() => setActiveTab("recommended")} className={tabClass("recommended")}>
               TOR ที่แนะนำ
+            </button>
+            <button
+              onClick={() => setActiveTab("notifications")}
+              className={tabClass("notifications")}
+            >
+              การแจ้งเตือน
             </button>
           </div>
         </div>
@@ -960,6 +974,16 @@ export default function ProfilePage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* ── TAB 5: Qualifying-TOR email notifications ── */}
+        {activeTab === "notifications" && profile && (
+          <NotificationSettings
+            key={JSON.stringify([profile.qualification, profile.notificationPrefs])}
+            profile={profile}
+            saving={saving}
+            onSave={updateProfile}
+          />
         )}
       </main>
     </div>

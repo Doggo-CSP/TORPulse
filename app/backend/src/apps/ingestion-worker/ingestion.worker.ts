@@ -10,6 +10,10 @@ import {
 } from '../../modules/ingestion/ingestion-job.repository.js'
 
 import { processIngestionJob } from '../../modules/ingestion/ingestion.service.js'
+import {
+  enqueueForTor,
+  enqueueInBackground,
+} from '../../modules/notification/notification.service.js'
 import { TorModel } from '../../modules/tor/tor.model.js'
 import { seedCategoriesIfEmpty } from '../../scripts/seed-categories.js'
 
@@ -49,6 +53,7 @@ export async function startIngestionWorker(signal: AbortSignal): Promise<void> {
       if (result.type === 'completed') {
         await completeJob(job._id, workerId, result.torId)
         console.log(`Completed job ${job._id}`)
+        enqueueInBackground(`tor ${result.torId}`, () => enqueueForTor(result.torId))
         continue
       }
 

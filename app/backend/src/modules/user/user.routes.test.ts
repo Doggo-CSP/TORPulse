@@ -88,6 +88,45 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
     assert.equal(response.body.user.companyName, 'Acme')
   })
 
+  await t.test('PUT /user/profile saves qualification and notification preferences', async () => {
+    const qualification = {
+      registeredCapitalBaht: 5_000_000,
+      yearsInBusiness: 4,
+      maxPastContractValueBaht: 2_000_000,
+      certifications: ['iso27001', 'iso27001'],
+      isThaiJuristicPerson: true,
+      isSme: false,
+    }
+    const response = await request(app)
+      .put('/user/profile')
+      .send({ qualification, notificationPrefs: { emailEnabled: false } })
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(response.body.user.qualification, {
+      ...qualification,
+      certifications: ['iso27001'],
+    })
+    assert.deepEqual(response.body.user.notificationPrefs, { emailEnabled: false })
+    assert.ok(response.body.user.notificationMissingFields.includes('accountType'))
+  })
+
+  await t.test('PUT /user/profile rejects an unknown certification', async () => {
+    const response = await request(app)
+      .put('/user/profile')
+      .send({
+        qualification: {
+          registeredCapitalBaht: null,
+          yearsInBusiness: null,
+          maxPastContractValueBaht: null,
+          certifications: ['made_up'],
+          isThaiJuristicPerson: null,
+          isSme: null,
+        },
+      })
+
+    assert.equal(response.status, 400)
+  })
+
   await t.test('PUT /user/interests rejects a non-array payload', async () => {
     const response = await request(app).put('/user/interests').send({ interests: 'web' })
 
