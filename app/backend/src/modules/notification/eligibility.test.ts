@@ -23,6 +23,10 @@ const readyUser: NotificationUser = {
     certifications: ['iso27001'],
     isThaiJuristicPerson: true,
     isSme: true,
+    hasPositiveNetWorth: true,
+    pastContractAgeYears: 2,
+    hasBangkokOffice: true,
+    staffRoles: ['project_manager', 'developer'],
   },
   notificationPrefs: { emailEnabled: true },
 }
@@ -38,6 +42,10 @@ const qualifyingTor: NotificationTor = {
     requiredCertifications: ['iso27001'],
     requiresThaiJuristicPerson: true,
     smeOnly: null,
+    requiresPositiveNetWorth: true,
+    maxPastWorkAgeYears: 3,
+    requiresBangkokOffice: true,
+    requiredStaffRoles: ['project_manager'],
     unmappedQualifications: [],
   },
 }
@@ -91,6 +99,19 @@ test('treats a missing profile value as not meeting a stated minimum', () => {
   }
 
   assert.equal(isFullyQualified(user, qualifyingTor).qualified, false)
+})
+
+test('checks net worth, Bangkok office, past work age and staff roles', () => {
+  const failing = (qualification: Record<string, unknown>) =>
+    isFullyQualified({ ...readyUser, qualification: { ...readyUser.qualification, ...qualification } }, qualifyingTor)
+
+  assert.deepEqual(failing({ hasPositiveNetWorth: false }).reasons, ['net worth not positive'])
+  assert.deepEqual(failing({ hasBangkokOffice: false }).reasons, ['no Bangkok office'])
+  assert.deepEqual(failing({ pastContractAgeYears: 4 }).reasons, ['past work older than 3 years'])
+  assert.deepEqual(failing({ pastContractAgeYears: null }).reasons, ['past work older than 3 years'])
+  assert.deepEqual(failing({ staffRoles: ['developer'] }).reasons, [
+    'missing staff role project_manager',
+  ])
 })
 
 test('excludes incomplete profiles and users who turned notifications off', () => {

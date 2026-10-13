@@ -105,6 +105,10 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
     assert.deepEqual(response.body.user.qualification, {
       ...qualification,
       certifications: ['iso27001'],
+      hasPositiveNetWorth: null,
+      pastContractAgeYears: null,
+      hasBangkokOffice: null,
+      staffRoles: [],
     })
     assert.deepEqual(response.body.user.notificationPrefs, { emailEnabled: false })
     assert.ok(response.body.user.notificationMissingFields.includes('accountType'))

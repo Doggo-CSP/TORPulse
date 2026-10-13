@@ -26,6 +26,8 @@ const SCALAR_QUALIFICATION_FIELDS = [
   'maxPastContractValueBaht',
   'isThaiJuristicPerson',
   'isSme',
+  'hasPositiveNetWorth',
+  'hasBangkokOffice',
 ] as const
 
 // Profile fields still missing before the user can receive qualifying-TOR emails.
@@ -114,6 +116,25 @@ export function isFullyQualified(user: NotificationUser, tor: NotificationTor): 
   }
   if (eligibility.smeOnly && profile.isSme !== true) {
     reasons.push('not an SME')
+  }
+  if (eligibility.requiresPositiveNetWorth && profile.hasPositiveNetWorth !== true) {
+    reasons.push('net worth not positive')
+  }
+  if (eligibility.requiresBangkokOffice && profile.hasBangkokOffice !== true) {
+    reasons.push('no Bangkok office')
+  }
+
+  const maxAge = eligibility.maxPastWorkAgeYears
+  if (maxAge !== null && maxAge !== undefined) {
+    const age = profile.pastContractAgeYears
+    if (age === null || age === undefined || age > maxAge) {
+      reasons.push(`past work older than ${maxAge} years`)
+    }
+  }
+
+  const staffRoles = new Set(profile.staffRoles ?? [])
+  for (const role of eligibility.requiredStaffRoles ?? []) {
+    if (!staffRoles.has(role)) reasons.push(`missing staff role ${role}`)
   }
 
   return { qualified: reasons.length === 0, reasons }

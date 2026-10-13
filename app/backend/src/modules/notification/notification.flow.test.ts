@@ -23,6 +23,10 @@ const qualification = {
   certifications: ['iso27001'],
   isThaiJuristicPerson: true,
   isSme: false,
+  hasPositiveNetWorth: true,
+  pastContractAgeYears: 2,
+  hasBangkokOffice: true,
+  staffRoles: ['project_manager', 'developer'],
 }
 
 const eligibility = {
@@ -32,6 +36,10 @@ const eligibility = {
   requiredCertifications: ['iso27001'],
   requiresThaiJuristicPerson: true,
   smeOnly: null,
+  requiresPositiveNetWorth: true,
+  maxPastWorkAgeYears: 3,
+  requiresBangkokOffice: null,
+  requiredStaffRoles: ['project_manager'],
   unmappedQualifications: [],
 }
 

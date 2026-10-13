@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { LEGACY_INTEREST_IDS } from '../category/category.constants.js'
-import { CERTIFICATION_KEYS } from '../notification/qualification.js'
+import { CERTIFICATION_KEYS, STAFF_ROLE_KEYS } from '../notification/qualification.js'
 
 const nullableAmount = z.number().nonnegative().nullable()
 
@@ -12,6 +12,13 @@ export const qualificationSchema = z.object({
   certifications: z.array(z.enum(CERTIFICATION_KEYS)).transform((keys) => [...new Set(keys)]),
   isThaiJuristicPerson: z.boolean().nullable(),
   isSme: z.boolean().nullable(),
+  hasPositiveNetWorth: z.boolean().nullable().default(null),
+  pastContractAgeYears: nullableAmount.default(null),
+  hasBangkokOffice: z.boolean().nullable().default(null),
+  staffRoles: z
+    .array(z.enum(STAFF_ROLE_KEYS))
+    .default([])
+    .transform((keys) => [...new Set(keys)]),
 })
 
 export const updateProfileSchema = z.object({
