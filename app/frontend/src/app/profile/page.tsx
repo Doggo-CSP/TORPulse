@@ -13,6 +13,11 @@ import {
   type CompanyFormData,
 } from "./forms/company-form";
 import {
+  AgencyForm,
+  getAgencyFormError,
+  type AgencyFormData,
+} from "./forms/agency-form";
+import {
   GlobeAltIcon,
   ChartBarIcon,
   DevicePhoneMobileIcon,
@@ -71,8 +76,8 @@ const labelCls = "block text-xs font-semibold text-[#5c5446] mb-1.5";
 
 type TabType = "profile" | "interests" | "bookmarks" | "recommended";
 
-// ฟอร์มรวมฟิลด์โปรไฟล์เดิม + ฟิลด์คุณสมบัติบริษัท
-type FormState = Partial<UserProfileData> & Partial<CompanyFormData>;
+// ฟอร์มรวมฟิลด์โปรไฟล์เดิม + ฟิลด์คุณสมบัติบริษัท + ฟิลด์หน่วยงาน
+type FormState = Partial<UserProfileData> & Partial<CompanyFormData> & Partial<AgencyFormData>;
 
 export default function ProfilePage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -198,6 +203,15 @@ export default function ProfilePage() {
         certifications: p.certifications ?? [],
         isEgpRegistered: p.isEgpRegistered ?? false,
         pastProjects: p.pastProjects ?? [],
+        // ── agency (CPD) ──
+        agencyCode: p.agencyCode || "",
+        ministry: p.ministry || "",
+        foundedYear: p.foundedYear ?? null,
+        staffCount: p.staffCount ?? null,
+        annualBudget: p.annualBudget ?? null,
+        procurementMethods: p.procurementMethods ?? [],
+        agencyProjects: p.agencyProjects ?? [],
+        fax: p.fax || "",
       } as FormState);
     }
   }, [profile]);
@@ -271,9 +285,14 @@ export default function ProfilePage() {
       ];
     } else if (formData.accountType === "agency") {
       specific = [
-        filled((formData as any).agencyName),
-        filled((formData as any).agencyType),
-        filled(formData.website),
+        filled(formData.agencyName),
+        filled(formData.agencyType),
+        filled(formData.ministry),
+        filled(formData.agencyCode),
+        formData.annualBudget != null,
+        formData.staffCount != null,
+        (formData.procurementMethods?.length ?? 0) > 0,
+        (formData.pastProjects?.length ?? 0) > 0,
       ];
     } else {
       specific = [
@@ -293,6 +312,14 @@ export default function ProfilePage() {
 
     if (formData.accountType === "company") {
       const error = getCompanyFormError(formData);
+      if (error) {
+        setFormError(error);
+        return;
+      }
+    }
+
+    if (formData.accountType === "agency") {
+      const error = getAgencyFormError(formData);
       if (error) {
         setFormError(error);
         return;
@@ -565,95 +592,16 @@ export default function ProfilePage() {
               {formData.accountType === "company" && (
                 <CompanyForm
                   value={formData}
-                  onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+                  onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch } as FormState))}
                 />
               )}
 
-              {/* ── AGENCY ── */}
+              {/* ── AGENCY (แยกไปที่ forms/agency-form.tsx) ── */}
               {formData.accountType === "agency" && (
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 pt-2">
-                  <div>
-                    <label className={labelCls}>ชื่อที่แสดง</label>
-                    <input
-                      type="text"
-                      value={formData.displayName || ""}
-                      onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                      placeholder="เช่น Kantapon Hemmadhun"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>ชื่อหน่วยงาน</label>
-                    <input
-                      type="text"
-                      value={(formData as any).agencyName || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, agencyName: e.target.value } as any)
-                      }
-                      placeholder="เช่น กรมพัฒนาธุรกิจการค้า"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>ประเภทหน่วยงาน</label>
-                    <input
-                      type="text"
-                      value={(formData as any).agencyType || ""}
-                      onChange={(e) =>
-                        setFormData({ ...formData, agencyType: e.target.value } as any)
-                      }
-                      placeholder="เช่น สำนัก / สำนักงานเขต / รัฐวิสาหกิจ"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>อีเมลติดต่อ</label>
-                    <input
-                      type="email"
-                      value={formData.contactEmail || ""}
-                      onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>เบอร์โทรศัพท์</label>
-                    <input
-                      type="tel"
-                      value={formData.phone || ""}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>เว็บไซต์</label>
-                    <input
-                      type="url"
-                      value={formData.website || ""}
-                      onChange={(e) => setFormData({ ...formData, website: e.target.value })}
-                      placeholder="เช่น https://agency.go.th"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={labelCls}>ที่อยู่หน่วยงาน</label>
-                    <textarea
-                      rows={2}
-                      value={formData.address || ""}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={labelCls}>เกี่ยวกับหน่วยงาน</label>
-                    <textarea
-                      rows={3}
-                      value={formData.about || ""}
-                      onChange={(e) => setFormData({ ...formData, about: e.target.value })}
-                      placeholder="แนะนำหน่วยงานสั้น ๆ ภารกิจ หรือขอบเขตงาน"
-                      className={inputCls}
-                    />
-                  </div>
-                </div>
+                <AgencyForm
+                  value={formData}
+                  onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch } as FormState))}
+                />
               )}
 
               {/* Form Footer */}

@@ -52,7 +52,7 @@ export default function TorDetailPage({
     const decodedId = decodeURIComponent(id);
     const { data: tor, isLoading, error } = useTor(decodedId);
     const { user } = useAuth();
-    const { bookmarkedTors, toggleBookmark } = useUserProfile(!!user);
+    const { profile, bookmarkedTors, toggleBookmark } = useUserProfile(!!user);
     const [savingBookmark, setSavingBookmark] = useState(false);
     const [bookmarkFeedback, setBookmarkFeedback] = useState<string | null>(null);
 
@@ -329,7 +329,7 @@ export default function TorDetailPage({
                             </div>
                         )}
 
-                        <QualificationMatchCard torId={tor.id} isLoggedIn={!!user} />
+                        <QualificationMatchCard tor={tor} profile={profile} isLoggedIn={!!user} />
 
                         {tor.contactInformation.length > 0 && (
                             <div className="panel p-5">
