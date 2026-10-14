@@ -1,69 +1,74 @@
 // hooks/use-qualification-match.ts
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { TorDetail } from "@/api/tor.api";
+import { UserProfile } from "@/api/user.api";
+import { useTor } from "./use-tors";
+import { useUserProfile } from "./use-user-profile";
+import {
+  evaluateQualificationMatch,
+  type MatchStatus,
+  type RequirementMatch,
+  type QualificationScoreSummary,
+} from "@/lib/qualification-matcher";
 
-export type MatchStatus = "matched" | "partial" | "missing";
-
-export interface RequirementMatch {
-    /** The requirement text extracted from the TOR (tor.bidderQualifications / tor.requirements) */
-    requirement: string;
-    status: MatchStatus;
-    /** Why it was judged this way, e.g. "บริษัทมีผลงาน 2 โครงการ ต้องการ 3 โครงการ" */
-    reason?: string;
-}
-
-export interface QualificationMatchResult {
-    /** 0–100 */
-    score: number;
-    items: RequirementMatch[];
-}
+export type { MatchStatus, RequirementMatch, QualificationScoreSummary };
 
 export type QualificationMatchState =
-    | { state: "idle" } // not logged in
-    | { state: "loading" }
-    | { state: "no-profile" } // user has no company profile yet
-    | { state: "error" }
-    | { state: "ready"; data: QualificationMatchResult };
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+  | { state: "idle" } // not logged in
+  | { state: "loading" }
+  | { state: "no-profile"; data?: QualificationScoreSummary } // user has no company profile yet
+  | { state: "error"; message?: string }
+  | { state: "ready"; data: QualificationScoreSummary };
 
 export function useQualificationMatch(
-    torId: string | undefined,
-    enabled: boolean,
+  torOrId: TorDetail | string | undefined,
+  isLoggedIn: boolean = true,
+  providedProfile?: UserProfile | null
 ): QualificationMatchState {
-    const [result, setResult] = useState<QualificationMatchState>({ state: "idle" });
+  const isTorObject = typeof torOrId === "object" && torOrId !== null;
+  const torId = isTorObject ? torOrId.id : typeof torOrId === "string" ? torOrId : "";
 
-    useEffect(() => {
-        if (!enabled || !torId) {
-            setResult({ state: "idle" });
-            return;
-        }
+  // Fetch TOR if only ID was passed and no TOR object
+  const { data: fetchedTor, isLoading: loadingTor } = useTor(
+    !isTorObject && torId ? torId : ""
+  );
 
-        const controller = new AbortController();
-        setResult({ state: "loading" });
+  // Fetch profile if not directly supplied
+  const { profile: fetchedProfile, loading: loadingProfile } = useUserProfile(
+    isLoggedIn && providedProfile === undefined
+  );
 
-        fetch(`${API_BASE}/tors/${encodeURIComponent(torId)}/qualification-match`, {
-            credentials: "include",
-            signal: controller.signal,
-        })
-            .then(async (res) => {
-                if (res.status === 404 || res.status === 422) {
-                    // Backend signals "no company profile" this way (adjust to your API)
-                    setResult({ state: "no-profile" });
-                    return;
-                }
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = (await res.json()) as QualificationMatchResult;
-                setResult({ state: "ready", data });
-            })
-            .catch((err) => {
-                if (err?.name === "AbortError") return;
-                setResult({ state: "error" });
-            });
+  const tor = isTorObject ? torOrId : fetchedTor;
+  const profile = providedProfile !== undefined ? providedProfile : fetchedProfile;
 
-        return () => controller.abort();
-    }, [torId, enabled]);
+  const result = useMemo<QualificationMatchState>(() => {
+    if (!isLoggedIn) {
+      return { state: "idle" };
+    }
 
-    return result;
+    if (!torOrId) {
+      return { state: "idle" };
+    }
+
+    if ((!isTorObject && loadingTor) || (providedProfile === undefined && loadingProfile)) {
+      return { state: "loading" };
+    }
+
+    if (!tor) {
+      return { state: "loading" };
+    }
+
+    // Evaluate qualification match against company profile on frontend
+    const summary = evaluateQualificationMatch(tor, profile);
+
+    if (!summary.hasCompanyProfile) {
+      return { state: "no-profile", data: summary };
+    }
+
+    return { state: "ready", data: summary };
+  }, [isLoggedIn, torOrId, isTorObject, loadingTor, providedProfile, loadingProfile, tor, profile]);
+
+  return result;
 }
