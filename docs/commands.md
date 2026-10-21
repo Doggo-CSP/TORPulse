@@ -29,7 +29,7 @@ A full local pipeline needs three terminals: `dev`, `dev:producer` and `dev:inge
 | `npm run test:producer` | Discovery adapters (eGP announcement search, BMA) and the Thai fiscal year helper. |
 | `npm run test:tor` | TOR model and repository, job queue repository, ingestion report, Thai date parsing, submit deadline extraction, repair and backfill helpers, and the DeepSeek and Gemini extractors. |
 | `npm run test:auth` | Auth routes and auth config. |
-| `npm run test:user` | Profile, interests and bookmarks: model, repository and routes. |
+| `npm run test:user` | Profile, interests, bookmarks and the bidder profile: model, repository, derived qualification and routes. |
 | `npm run test:homepage` | TOR controller, homepage routes and TOR routes. |
 | `npm run test:report` | Report maths and the mock awarded price rules (open TORs get none). Pure unit tests, no database. |
 | `npm run test:queue-upsert` | Manual check against the configured database. Upserts one test job twice and confirms the queue stays idempotent. |
