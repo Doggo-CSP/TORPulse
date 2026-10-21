@@ -2,11 +2,9 @@ import type { Request, Response } from 'express'
 
 import { getActiveCategoryKeys } from '../category/category.repository.js'
 import { missingNotificationFields } from '../notification/eligibility.js'
-import {
-  enqueueForUser,
-  enqueueInBackground,
-} from '../notification/notification.service.js'
+import { enqueueForUser, enqueueInBackground } from '../notification/notification.service.js'
 import { EMPTY_QUALIFICATION } from '../notification/qualification.js'
+import { findBidderProfile, syncDerivedQualification } from './bidder-profile.repository.js'
 import {
   addBookmark,
   countBookmarksByUser,
@@ -67,7 +65,10 @@ const toProfileResponse = (user: any, bookmarkedCount: number) => ({
   businessType: user.businessType || '',
   agencyName: user.agencyName || '',
   agencyType: user.agencyType || '',
-  qualification: { ...EMPTY_QUALIFICATION, ...(user.qualification?.toObject?.() ?? user.qualification) },
+  qualification: {
+    ...EMPTY_QUALIFICATION,
+    ...(user.qualification?.toObject?.() ?? user.qualification),
+  },
   notificationPrefs: { emailEnabled: user.notificationPrefs?.emailEnabled !== false },
   notificationMissingFields: missingNotificationFields(user),
   bookmarkedCount,
@@ -107,6 +108,14 @@ export const updateProfileHandler = async (req: Request, res: Response): Promise
   if (!updatedUser) {
     res.status(404).json({ error: 'User not found' })
     return
+  }
+
+  // The derived qualification depends on accountType (company vs personal)
+  if (parsed.data.accountType !== undefined) {
+    const bidderProfile = await findBidderProfile(req.user._id)
+    if (bidderProfile) {
+      updatedUser.qualification = await syncDerivedQualification(updatedUser, bidderProfile)
+    }
   }
 
   if (QUALIFYING_PROFILE_FIELDS.some((field) => parsed.data[field] !== undefined)) {
