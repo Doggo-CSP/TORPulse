@@ -11,6 +11,7 @@ import {
   updateSelfHandler,
   updateTeamMemberHandler,
 } from './bidder-profile.controller.js'
+import { listQualificationMatchesHandler } from '../qualification/qualification-match.controller.js'
 import {
   getBookmarksHandler,
   getProfileHandler,
@@ -38,5 +39,8 @@ router.delete('/bidder-profile/team/:memberId', removeTeamMemberHandler)
 router.post('/bidder-profile/projects', addProjectHandler)
 router.patch('/bidder-profile/projects/:projectId', updateProjectHandler)
 router.delete('/bidder-profile/projects/:projectId', removeProjectHandler)
+
+// Precomputed qualification scores for a page of TOR cards
+router.get('/qualification-matches', listQualificationMatchesHandler)
 
 export default router

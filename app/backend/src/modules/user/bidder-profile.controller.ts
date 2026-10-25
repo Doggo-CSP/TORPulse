@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 
 import { enqueueForUser, enqueueInBackground } from '../notification/notification.service.js'
+import { enqueueMatchesForUser } from '../qualification/qualification-precompute.service.js'
 import {
   EDUCATION_LEVELS,
   EMPLOYMENT_TYPES,
@@ -150,6 +151,9 @@ const saveAndRespond = async (
 
   const userId = user._id
   enqueueInBackground(`user ${userId}`, () => enqueueForUser(userId))
+  enqueueInBackground(`qualification matches for user ${userId}`, () =>
+    enqueueMatchesForUser(userId),
+  )
 
   res.status(status).json({ bidderProfile: toBidderProfileResponse(user, profile) })
 }

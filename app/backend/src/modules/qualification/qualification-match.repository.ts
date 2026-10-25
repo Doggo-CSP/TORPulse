@@ -10,6 +10,13 @@ export async function findQualificationMatch(
   return QualificationMatchModel.findOne({ userId, torId })
 }
 
+export async function findQualificationMatches(
+  userId: Types.ObjectId | string,
+  torIds: Types.ObjectId[],
+) {
+  return QualificationMatchModel.find({ userId, torId: { $in: torIds } }).lean()
+}
+
 // Keeps one result per (user, TOR): a new evaluation replaces the old one.
 export async function saveQualificationMatch(
   userId: Types.ObjectId | string,

@@ -1,12 +1,17 @@
 import type { Request, Response } from 'express'
-import { isObjectIdOrHexString } from 'mongoose'
+import { Types, isObjectIdOrHexString } from 'mongoose'
 
-import { HIDDEN_TOR_REVIEW_STATUSES, TorModel } from '../tor/tor.model.js'
+import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 import { findBidderProfile } from '../user/bidder-profile.repository.js'
 import { profileCompleteness } from '../user/bidder-profile.qualification.js'
 import { findUserById } from '../user/user.repository.js'
 import type { QualificationMatchDocument } from './qualification-match.model.js'
-import { findQualificationMatch, saveQualificationMatch } from './qualification-match.repository.js'
+import { findJobsForUser } from './qualification-job.repository.js'
+import {
+  findQualificationMatch,
+  findQualificationMatches,
+  saveQualificationMatch,
+} from './qualification-match.repository.js'
 import {
   currentAiModel,
   evaluateQualification,
@@ -14,6 +19,7 @@ import {
   isMatchStale,
   matchInputVersion,
 } from './qualification-match.service.js'
+import { isBidderReady } from './qualification-precompute.service.js'
 
 const toMatchResponse = (match: QualificationMatchDocument) => ({
   percentage: match.percentage,
@@ -127,4 +133,96 @@ export const evaluateQualificationMatchHandler = async (
   )
 
   res.json({ match: toMatchResponse(saved), isStale: false, completeness })
+}
+
+const MAX_CARD_TORS = 50
+
+// What a TOR card shows. stale keeps the previous score on screen while it is recomputed.
+export type CardMatchStatus =
+  | 'ready'
+  | 'stale'
+  | 'pending'
+  | 'failed'
+  | 'not_evaluated'
+  | 'profile_incomplete'
+  | 'no_requirements'
+
+export function cardMatchStatus(input: {
+  hasRequirements: boolean
+  bidderReady: boolean
+  match: { stale: boolean } | null
+  jobStatus: string | null
+}): CardMatchStatus {
+  if (!input.hasRequirements) return 'no_requirements'
+  if (!input.bidderReady) return 'profile_incomplete'
+  if (input.match) return input.match.stale ? 'stale' : 'ready'
+  if (input.jobStatus === 'queued' || input.jobStatus === 'processing') return 'pending'
+  if (input.jobStatus === 'failed') return 'failed'
+  // Closed TORs are not precomputed; the detail page can still run POST /tors/:id/qualification
+  return 'not_evaluated'
+}
+
+// GET /user/qualification-matches?torIds=a,b,c: the precomputed scores for the TOR cards on
+// one page, in one request. Never calls the AI.
+export const listQualificationMatchesHandler = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  const raw = typeof req.query.torIds === 'string' ? req.query.torIds : ''
+  const ids = [
+    ...new Set(
+      raw
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ]
+  if (ids.length === 0 || ids.length > MAX_CARD_TORS || !ids.every(isObjectIdOrHexString)) {
+    res.status(400).json({ error: `torIds must be 1 to ${MAX_CARD_TORS} comma-separated TOR ids` })
+    return
+  }
+  const torIds = ids.map((id) => new Types.ObjectId(id))
+
+  const [user, profile, tors, matches, jobs] = await Promise.all([
+    findUserById(req.user._id),
+    findBidderProfile(req.user._id),
+    TorModel.find({ _id: { $in: torIds }, ...PUBLIC_TOR_FILTER }).lean(),
+    findQualificationMatches(req.user._id, torIds),
+    findJobsForUser(req.user._id, ids),
+  ])
+  if (!user) {
+    res.status(404).json({ error: 'User not found' })
+    return
+  }
+
+  const bidderReady = isBidderReady(user, profile)
+  const matchesByTor = new Map(matches.map((match) => [match.torId.toString(), match]))
+  const jobsByTor = new Map(jobs.map((job) => [job.torId.toString(), job]))
+
+  const items = tors.map((tor) => {
+    const torId = tor._id.toString()
+    const match = matchesByTor.get(torId) ?? null
+    const stale = Boolean(match && (!profile || isMatchStale(match, user, profile, tor)))
+    const status = cardMatchStatus({
+      hasRequirements: hasRequirementText(tor),
+      bidderReady,
+      match: match && { stale },
+      jobStatus: jobsByTor.get(torId)?.status ?? null,
+    })
+    const showScore = match && (status === 'ready' || status === 'stale')
+    return {
+      torId,
+      status,
+      percentage: showScore ? match.percentage : null,
+      allMandatoryMet: showScore ? match.allMandatoryMet : null,
+      evaluatedAt: showScore ? match.evaluatedAt.toISOString() : null,
+    }
+  })
+
+  res.json({ completeness: profileCompleteness(user, profile), items })
 }
