@@ -4,9 +4,6 @@ import {
   EDUCATION_LEVELS,
   EMPLOYMENT_TYPES,
   JURISTIC_TYPES,
-  ORG_CERTIFICATION_KEYS,
-  OTHER_CERTIFICATION_KEY,
-  PERSON_CERTIFICATION_KEYS,
   PROJECT_CLIENT_TYPES,
   PROJECT_ROLES,
   STAFF_ROLE_KEYS,
@@ -31,19 +28,13 @@ const uniqueStrings = (schema: z.ZodType<string>, max: number) =>
 
 const tagList = uniqueStrings(z.string().trim().min(1).max(100), 50)
 
-const certificationSchema = (keys: readonly [string, ...string[]]) =>
-  z
-    .object({
-      key: z.enum([...keys, OTHER_CERTIFICATION_KEY]),
-      name: z.string().trim().max(200).default(''),
-      issuer: z.string().trim().max(200).default(''),
-      issuedAt: nullableDate.default(null),
-      expiresAt: nullableDate.default(null),
-    })
-    .refine((cert) => cert.key !== OTHER_CERTIFICATION_KEY || cert.name !== '', {
-      message: 'name is required when key is "other"',
-      path: ['name'],
-    })
+// Stored by name, e.g. "ISO/IEC 27001:2022" or "PMP"; the AI matcher reads the name
+const certificationSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  issuer: z.string().trim().max(200).default(''),
+  issuedAt: nullableDate.default(null),
+  expiresAt: nullableDate.default(null),
+})
 
 const educationSchema = z.object({
   level: z.enum(EDUCATION_LEVELS),
@@ -58,8 +49,9 @@ export const personSchema = z.object({
   roles: uniqueStrings(z.enum(STAFF_ROLE_KEYS), STAFF_ROLE_KEYS.length).optional(),
   yearsExperience: z.number().min(0).max(60).nullable().optional(),
   employmentType: z.enum(EMPLOYMENT_TYPES).nullable().optional(),
+  joinedAt: nullableDate.optional(),
   education: z.array(educationSchema).max(10).optional(),
-  certifications: z.array(certificationSchema(PERSON_CERTIFICATION_KEYS)).max(30).optional(),
+  certifications: z.array(certificationSchema).max(30).optional(),
   skills: tagList.optional(),
 })
 
@@ -70,7 +62,7 @@ export const organizationSchema = z.object({
   isSme: z.boolean().nullable().optional(),
   hasPositiveNetWorth: z.boolean().nullable().optional(),
   hasBangkokOffice: z.boolean().nullable().optional(),
-  certifications: z.array(certificationSchema(ORG_CERTIFICATION_KEYS)).max(30).optional(),
+  certifications: z.array(certificationSchema).max(30).optional(),
 })
 
 const objectIdString = z.string().regex(/^[0-9a-f]{24}$/i, 'must be an ObjectId')

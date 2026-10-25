@@ -3,7 +3,6 @@ import {
   STAFF_ROLE_KEYS,
   type CompanyQualification,
 } from '../notification/qualification.js'
-import { OTHER_CERTIFICATION_KEY } from './bidder-profile.constants.js'
 import type {
   BidderProfileRecord,
   CertificationRecord,
@@ -14,9 +13,13 @@ import type {
 // Only the fields these helpers read, so they work with lean documents and test fixtures.
 export interface BidderUser {
   accountType?: string | null
+  displayName?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  contactEmail?: string | null
+  phone?: string | null
   companyName?: string | null
-  registrationNumber?: string | null
-  interests?: string[] | null
+  businessType?: string | null
 }
 
 export type BidderProfileInput = Pick<
@@ -46,16 +49,13 @@ export function yearsBetween(from: Date, to: Date): number {
   return Math.floor((whole + fraction) * 100) / 100
 }
 
-function isValidOn(cert: CertificationRecord, now: Date): boolean {
+export function isCertificationValidOn(cert: CertificationRecord, now: Date): boolean {
   return !cert.expiresAt || cert.expiresAt.getTime() >= now.getTime()
 }
 
-// Certifications that count today: not expired, and from the known list (not "other").
-export function activeCertificationKeys(certs: CertificationRecord[], now: Date): string[] {
-  const keys = certs
-    .filter((cert) => cert.key !== OTHER_CERTIFICATION_KEY && isValidOn(cert, now))
-    .map((cert) => cert.key)
-  return [...new Set(keys)]
+// Names of the certifications that count today (not expired).
+export function activeCertificationNames(certs: CertificationRecord[], now: Date): string[] {
+  return [...new Set(certs.filter((cert) => isCertificationValidOn(cert, now)).map((c) => c.name))]
 }
 
 // The people who count for this bidder: the team of a company, or the individual themself.
@@ -100,7 +100,8 @@ export function deriveQualification(
         ? yearsBetween(largest.endDate, now)
         : 0
       : null,
-    certifications: isCompany ? activeCertificationKeys(organization.certifications, now) : [],
+    // Names, not the notification keys: the key matcher no longer recognizes them (see docs §9)
+    certifications: isCompany ? activeCertificationNames(organization.certifications, now) : [],
     isThaiJuristicPerson: isCompany ? true : user.accountType === 'personal' ? false : null,
     isSme: isCompany ? organization.isSme : null,
     hasPositiveNetWorth: isCompany ? organization.hasPositiveNetWorth : null,
@@ -115,39 +116,38 @@ export interface ProfileCompleteness {
   percentage: number
 }
 
+const filled = (value: string | null | undefined) => Boolean(value?.trim())
+
 // Fields still needed before qualification matching can give a full result (UC-07, UC-08).
-// The profile can always be saved; this only reports what is missing.
+// The profile can always be saved; this only reports what is missing. The required fields
+// follow the agreed profile spec; the team and everything else stay optional.
 export function profileCompleteness(
   user: BidderUser,
   profile: BidderProfileInput | null,
 ): ProfileCompleteness {
-  const checks: [string, boolean][] = [['interests', Boolean(user.interests?.length)]]
+  const checks: [string, boolean][] = []
 
   if (user.accountType === 'company') {
-    const organization = profile?.organization
     checks.push(
-      ['companyName', Boolean(user.companyName?.trim())],
-      ['registrationNumber', Boolean(user.registrationNumber?.trim())],
-      ['organization.juristicType', Boolean(organization?.juristicType)],
-      ['organization.registeredDate', Boolean(organization?.registeredDate)],
-      ['organization.registeredCapitalBaht', organization?.registeredCapitalBaht != null],
-      ['organization.isSme', organization?.isSme != null],
-      ['organization.hasPositiveNetWorth', organization?.hasPositiveNetWorth != null],
-      ['organization.hasBangkokOffice', organization?.hasBangkokOffice != null],
+      ['companyName', filled(user.companyName)],
+      ['businessType', filled(user.businessType)],
+      ['organization.registeredCapitalBaht', profile?.organization.registeredCapitalBaht != null],
     )
   } else if (user.accountType === 'personal') {
-    const self = profile?.self
     checks.push(
-      ['self.roles', Boolean(self?.roles.length)],
-      ['self.yearsExperience', self?.yearsExperience != null],
-      ['self.education', Boolean(self?.education.length)],
+      ['name', filled(user.displayName) || (filled(user.firstName) && filled(user.lastName))],
+      ['contact', filled(user.contactEmail) || filled(user.phone)],
     )
   } else {
     // Agencies publish TORs rather than bid on them
     checks.push(['accountType', false])
   }
 
-  checks.push(['projects', Boolean(profile?.projects.length)])
+  // Past work needs at least a name and a contract value to be compared with a TOR
+  checks.push([
+    'projects',
+    Boolean(profile?.projects.some((project) => project.contractValueBaht != null)),
+  ])
 
   const missing = checks.filter(([, done]) => !done).map(([field]) => field)
   const percentage = Math.round(((checks.length - missing.length) / checks.length) * 100)

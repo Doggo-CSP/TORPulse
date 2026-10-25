@@ -255,7 +255,7 @@ When ingestion starts storing real awarded prices, they replace the mock automat
 
 ## 9. Bidder profile and the derived qualification
 
-The bidder profile (`bidder_profiles`, one document per user, in `modules/user`) holds what qualification matching needs in detail: the organization (juristic type, registration date, capital, SME/net worth/Bangkok office, company certifications), the individual bidder's own record (`self`) or a company's `team`, and past `projects`. Each person has roles, years of experience, education and certifications. Users pick keys from fixed lists (`GET /user/bidder-profile/options`, defined in `bidder-profile.constants.ts`) instead of typing free text, so the keys can be compared directly with the keys the eligibility mapper writes on TORs.
+The bidder profile (`bidder_profiles`, one document per user, in `modules/user`) holds what qualification matching needs in detail: the organization (juristic type, registration date, capital, SME/net worth/Bangkok office, company certifications), the individual bidder's own record (`self`) or a company's `team`, and past `projects` (name, contract value, delivery date `endDate`, …). Each person has a position, roles, years of experience, the date they joined the company (`joinedAt`), education and certifications. Roles, education levels and other enums come from fixed lists (`GET /user/bidder-profile/options`, defined in `bidder-profile.constants.ts`). Certifications are stored by name (e.g. "ISO/IEC 27001:2022", "PMP") with issuer, issue date and expiry; responses add `yearsHeld` (since `issuedAt`) and `isExpired`, and team members get `yearsAtCompany`. Certification names are judged by the AI matcher, not by keys.
 
 `accountType` on the user picks the kind of bidder: `personal` is an individual (บุคคลธรรมดา) and edits `self`; `company` is a juristic person (นิติบุคคล) and edits `organization` and `team`. Both can add projects.
 
@@ -266,8 +266,8 @@ Every write to the bidder profile, and every `accountType` change, rewrites `use
 | `registeredCapitalBaht`, `isSme`, `hasPositiveNetWorth`, `hasBangkokOffice` | organization (company only) |
 | `yearsInBusiness` | calendar years since `organization.registeredDate` |
 | `maxPastContractValueBaht`, `pastContractAgeYears` | the project with the highest contract value; a project with no end date counts as current |
-| `certifications` | company certifications that have not expired (`other` is never counted) |
+| `certifications` | names of company certifications that have not expired. The key-based notification matcher no longer recognizes them, so a TOR with `requiredCertifications` does not notify until notifications move to the AI matcher |
 | `isThaiJuristicPerson` | `accountType === 'company'` |
 | `staffRoles` | roles of the team (company) or of `self` (individual) |
 
-So `notification/eligibility.ts` keeps reading the same flat `qualification`. Users who have no bidder profile keep the qualification they entered by hand through `PUT /user/profile`. `GET /user/bidder-profile` also returns `completeness` (UC-07): the fields still missing before matching can give a full result. Saving is never blocked by it.
+So `notification/eligibility.ts` keeps reading the same flat `qualification`. Users who have no bidder profile keep the qualification they entered by hand through `PUT /user/profile`. `GET /user/bidder-profile` also returns `completeness` (UC-07): the fields still missing before matching can give a full result. Saving is never blocked by it. Required fields follow the agreed profile spec: a company needs `companyName`, `businessType`, `organization.registeredCapitalBaht` and at least one project with a contract value; an individual needs a name (`displayName`, or `firstName` and `lastName`), a contact (`contactEmail` or `phone`) and the same project. The team is optional.

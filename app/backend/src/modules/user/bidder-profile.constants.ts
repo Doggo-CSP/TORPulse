@@ -1,35 +1,7 @@
-// Controlled vocabulary for the bidder profile. Users pick these keys instead of typing free
-// text, so qualification matching can compare them directly against keys mapped from TORs.
-// Company certifications and staff roles reuse the keys in notification/qualification.ts.
-export {
-  CERTIFICATION_KEYS as ORG_CERTIFICATION_KEYS,
-  STAFF_ROLE_KEYS,
-} from '../notification/qualification.js'
-
-export const PERSON_CERTIFICATION_KEYS = [
-  'pmp',
-  'prince2',
-  'itil',
-  'scrum_master',
-  'togaf',
-  'cissp',
-  'cisa',
-  'cism',
-  'ceh',
-  'oscp',
-  'comptia_security_plus',
-  'iso27001_lead_auditor',
-  'aws_certified',
-  'azure_certified',
-  'gcp_certified',
-  'ccna',
-  'ccnp',
-  'oracle_certified',
-] as const
-export type PersonCertificationKey = (typeof PERSON_CERTIFICATION_KEYS)[number]
-
-// A certification outside the lists above; its name is then required.
-export const OTHER_CERTIFICATION_KEY = 'other'
+// Controlled vocabulary for the bidder profile. Certifications are not listed here: they are
+// stored by name and judged by the AI matcher (modules/qualification), so any name works.
+// Staff roles reuse the keys in notification/qualification.ts.
+export { STAFF_ROLE_KEYS } from '../notification/qualification.js'
 
 // Ordered lowest to highest, so "at least a bachelor's degree" is an index comparison.
 export const EDUCATION_LEVELS = [

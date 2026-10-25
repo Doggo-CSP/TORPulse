@@ -6,7 +6,7 @@ import { Types } from 'mongoose'
 import { isFullyQualified } from '../notification/eligibility.js'
 import type { PastProjectRecord, PersonRecord } from './bidder-profile.model.js'
 import {
-  activeCertificationKeys,
+  activeCertificationNames,
   deriveQualification,
   profileCompleteness,
   yearsBetween,
@@ -22,6 +22,7 @@ const person = (overrides: Partial<PersonRecord> = {}): PersonRecord => ({
   roles: [],
   yearsExperience: null,
   employmentType: null,
+  joinedAt: null,
   education: [],
   certifications: [],
   skills: [],
@@ -70,9 +71,9 @@ const companyProfile = (): BidderProfileInput => ({
     hasPositiveNetWorth: true,
     hasBangkokOffice: false,
     certifications: [
-      { key: 'iso27001', name: '', issuer: '', issuedAt: null, expiresAt: new Date('2027-01-01') },
-      { key: 'iso9001', name: '', issuer: '', issuedAt: null, expiresAt: new Date('2025-01-01') },
-      { key: 'other', name: 'Local award', issuer: '', issuedAt: null, expiresAt: null },
+      { name: 'ISO/IEC 27001', issuer: '', issuedAt: null, expiresAt: new Date('2027-01-01') },
+      { name: 'ISO 9001', issuer: '', issuedAt: null, expiresAt: new Date('2025-01-01') },
+      { name: 'Local award', issuer: '', issuedAt: null, expiresAt: null },
     ],
   },
   team: [
@@ -94,9 +95,12 @@ test('yearsBetween counts calendar years, rounds down and never goes negative', 
   assert.equal(yearsBetween(new Date('2027-01-01'), NOW), 0)
 })
 
-test('activeCertificationKeys drops expired, "other" and duplicate certifications', () => {
+test('activeCertificationNames drops expired and duplicate certifications', () => {
   const certs = companyProfile().organization.certifications
-  assert.deepEqual(activeCertificationKeys([...certs, ...certs], NOW), ['iso27001'])
+  assert.deepEqual(activeCertificationNames([...certs, ...certs], NOW), [
+    'ISO/IEC 27001',
+    'Local award',
+  ])
 })
 
 test('deriveQualification summarizes a company profile', () => {
@@ -107,7 +111,7 @@ test('deriveQualification summarizes a company profile', () => {
     yearsInBusiness: 6,
     maxPastContractValueBaht: 3_000_000,
     pastContractAgeYears: 2,
-    certifications: ['iso27001'],
+    certifications: ['ISO/IEC 27001', 'Local award'],
     isThaiJuristicPerson: true,
     isSme: true,
     hasPositiveNetWorth: true,
@@ -155,7 +159,8 @@ test('the derived qualification plugs straight into isFullyQualified', () => {
       minRegisteredCapitalBaht: 1_000_000,
       minYearsInBusiness: 3,
       minPastContractValueBaht: 2_000_000,
-      requiredCertifications: ['iso27001'],
+      // Certifications are names now, so the key matcher cannot check them (the AI matcher does)
+      requiredCertifications: [],
       requiresThaiJuristicPerson: true,
       maxPastWorkAgeYears: 3,
       requiredStaffRoles: ['project_manager'],
@@ -171,42 +176,41 @@ test('profileCompleteness lists what a company still has to fill in', () => {
 
   assert.equal(result.isComplete, false)
   assert.deepEqual(result.missing, [
-    'interests',
-    'registrationNumber',
-    'organization.juristicType',
-    'organization.registeredDate',
+    'businessType',
     'organization.registeredCapitalBaht',
-    'organization.isSme',
-    'organization.hasPositiveNetWorth',
-    'organization.hasBangkokOffice',
     'projects',
   ])
-  assert.equal(result.percentage, 10)
+  assert.equal(result.percentage, 25)
 })
 
-test('profileCompleteness is complete for a fully filled company, team optional', () => {
-  const user = {
-    accountType: 'company',
-    companyName: 'Acme',
-    registrationNumber: '0105560000000',
-    interests: ['web_application'],
-  }
+test('profileCompleteness is complete for a company with capital, business type and priced work', () => {
+  const user = { accountType: 'company', companyName: 'Acme', businessType: 'Software house' }
   const result = profileCompleteness(user, { ...companyProfile(), team: [] })
 
   assert.deepEqual(result, { isComplete: true, missing: [], percentage: 100 })
 })
 
-test('profileCompleteness checks an individual on their own person fields', () => {
-  const result = profileCompleteness(
-    { accountType: 'personal', interests: ['ai_ml'] },
-    { ...emptyProfile(), self: person({ roles: ['developer'] }) },
-  )
+test('profileCompleteness needs a priced project, not just any project', () => {
+  const user = { accountType: 'company', companyName: 'Acme', businessType: 'Software house' }
+  const profile = { ...companyProfile(), projects: [project({ contractValueBaht: null })] }
 
-  assert.deepEqual(result.missing, ['self.yearsExperience', 'self.education', 'projects'])
+  assert.deepEqual(profileCompleteness(user, profile).missing, ['projects'])
+})
+
+test('profileCompleteness checks an individual on name and contact', () => {
+  assert.deepEqual(profileCompleteness({ accountType: 'personal', firstName: 'A' }, null).missing, [
+    'name',
+    'contact',
+    'projects',
+  ])
+
+  const filled = { accountType: 'personal', firstName: 'A', lastName: 'B', phone: '0812345678' }
+  const profile = { ...emptyProfile(), projects: [project({ contractValueBaht: 100_000 })] }
+  assert.deepEqual(profileCompleteness(filled, profile).missing, [])
 })
 
 test('profileCompleteness flags an agency account as not a bidder', () => {
-  assert.deepEqual(profileCompleteness({ accountType: 'agency', interests: ['x'] }, null).missing, [
+  assert.deepEqual(profileCompleteness({ accountType: 'agency' }, null).missing, [
     'accountType',
     'projects',
   ])

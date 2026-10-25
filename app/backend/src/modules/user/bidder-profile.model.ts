@@ -14,12 +14,12 @@ import {
   type ProjectRole,
 } from './bidder-profile.constants.js'
 
-// Shared by company and person certifications; key is checked against the right list by zod.
+// Shared by company and person certifications. The name says what the certificate is
+// (e.g. "ISO/IEC 27001:2022", "PMP"); the AI matcher compares it with TOR requirements.
 export interface CertificationRecord {
-  key: string
   name: string
   issuer: string
-  issuedAt: Date | null
+  issuedAt: Date | null // how long it has been held is counted from here
   expiresAt: Date | null
 }
 
@@ -38,6 +38,7 @@ export interface PersonRecord {
   roles: string[]
   yearsExperience: number | null
   employmentType: EmploymentType | null
+  joinedAt: Date | null // date joined the company; TORs often require tenure of 1 year or more
   education: EducationRecord[]
   certifications: CertificationRecord[]
   skills: string[]
@@ -60,7 +61,7 @@ export interface PastProjectRecord {
   clientType: ProjectClientType | null
   contractValueBaht: number | null
   startDate: Date | null
-  endDate: Date | null // null while the project is still running
+  endDate: Date | null // delivery date (วันที่ส่งมอบงาน); null while still running
   role: ProjectRole | null
   categories: string[]
   technologies: string[]
@@ -81,8 +82,7 @@ export interface BidderProfileRecord {
 
 const certificationSchema = new Schema<CertificationRecord>(
   {
-    key: { type: String, required: true, trim: true },
-    name: { type: String, default: '', trim: true },
+    name: { type: String, required: true, trim: true },
     issuer: { type: String, default: '', trim: true },
     issuedAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },
@@ -106,6 +106,7 @@ const personSchema = new Schema<PersonRecord>({
   roles: { type: [String], enum: STAFF_ROLE_KEYS, default: [] },
   yearsExperience: { type: Number, min: 0, default: null },
   employmentType: { type: String, enum: [...EMPLOYMENT_TYPES, null], default: null },
+  joinedAt: { type: Date, default: null },
   education: { type: [educationSchema], default: [] },
   certifications: { type: [certificationSchema], default: [] },
   skills: { type: [String], default: [] },

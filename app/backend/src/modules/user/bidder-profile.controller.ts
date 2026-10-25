@@ -7,9 +7,6 @@ import {
   JURISTIC_TYPES,
   MAX_PROJECTS,
   MAX_TEAM_MEMBERS,
-  ORG_CERTIFICATION_KEYS,
-  OTHER_CERTIFICATION_KEY,
-  PERSON_CERTIFICATION_KEYS,
   PROJECT_CLIENT_TYPES,
   PROJECT_ROLES,
   STAFF_ROLE_KEYS,
@@ -20,7 +17,12 @@ import type {
   PastProjectRecord,
   PersonRecord,
 } from './bidder-profile.model.js'
-import { deriveQualification, profileCompleteness } from './bidder-profile.qualification.js'
+import {
+  deriveQualification,
+  isCertificationValidOn,
+  profileCompleteness,
+  yearsBetween,
+} from './bidder-profile.qualification.js'
 import {
   findBidderProfile,
   findOrCreateBidderProfile,
@@ -42,12 +44,15 @@ type AccountType = 'personal' | 'company'
 const toDateString = (date: Date | null | undefined) =>
   date ? date.toISOString().slice(0, 10) : null
 
+const yearsSince = (date: Date | null) => (date ? yearsBetween(date, new Date()) : null)
+
 const toCertificationResponse = (cert: CertificationRecord) => ({
-  key: cert.key,
   name: cert.name,
   issuer: cert.issuer,
   issuedAt: toDateString(cert.issuedAt),
   expiresAt: toDateString(cert.expiresAt),
+  yearsHeld: yearsSince(cert.issuedAt),
+  isExpired: !isCertificationValidOn(cert, new Date()),
 })
 
 const toPersonResponse = (person: PersonRecord) => ({
@@ -57,6 +62,8 @@ const toPersonResponse = (person: PersonRecord) => ({
   roles: person.roles,
   yearsExperience: person.yearsExperience,
   employmentType: person.employmentType,
+  joinedAt: toDateString(person.joinedAt),
+  yearsAtCompany: yearsSince(person.joinedAt),
   education: person.education.map((item) => ({
     level: item.level,
     field: item.field,
@@ -164,8 +171,6 @@ export const getBidderProfileOptionsHandler = (_req: Request, res: Response): vo
     accountTypes: ['personal', 'company'],
     juristicTypes: JURISTIC_TYPES,
     staffRoles: STAFF_ROLE_KEYS,
-    orgCertifications: [...ORG_CERTIFICATION_KEYS, OTHER_CERTIFICATION_KEY],
-    personCertifications: [...PERSON_CERTIFICATION_KEYS, OTHER_CERTIFICATION_KEY],
     educationLevels: EDUCATION_LEVELS,
     employmentTypes: EMPLOYMENT_TYPES,
     projectClientTypes: PROJECT_CLIENT_TYPES,
