@@ -230,7 +230,7 @@ Every source ends up as an 11-digit Central e-GP project id. That's why one work
 |---|---|---|
 | `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar`, `GET/POST /:id/qualification` | TOR list and detail pages (`/:id/similar` = similar TORs whose bidding has closed, UC-05; `/:id/qualification` = AI qualification match for the logged-in user, UC-08, see §10) |
 | `/homepage` | `GET /summary`, `GET /analytics` | Homepage dashboard |
-| `/user` | `GET/PUT /profile`, `PUT /interests`, `GET /bookmarks`, `POST /bookmarks/:torId` · `GET /bidder-profile`, `GET /bidder-profile/options`, `PUT /bidder-profile/organization`, `PUT /bidder-profile/self`, `POST /bidder-profile/team`, `PATCH/DELETE /bidder-profile/team/:memberId`, `POST /bidder-profile/projects`, `PATCH/DELETE /bidder-profile/projects/:projectId` | Profile and saved pages (bidder profile not called by the frontend yet, see §9) |
+| `/user` | `GET/PUT /profile`, `PUT /interests`, `GET /bookmarks`, `POST /bookmarks/:torId` · `GET /qualification-matches?torIds=` (precomputed scores for TOR cards, §11) · `GET /bidder-profile`, `GET /bidder-profile/options`, `PUT /bidder-profile/organization`, `PUT /bidder-profile/self`, `POST /bidder-profile/team`, `PATCH/DELETE /bidder-profile/team/:memberId`, `POST /bidder-profile/projects`, `PATCH/DELETE /bidder-profile/projects/:projectId` | Profile and saved pages (bidder profile not called by the frontend yet, see §9) |
 | `/reports` | `GET /price-overview`, `/savings-distribution`, `/category-comparison`, `/timeline`, `/procurement-list`, `/filters/departments` | Reports page (mock awarded price, see §8) |
 | `/admin` | `GET /stats` · `GET /users`, `GET/PATCH /users/:userId`, `PATCH /users/:userId/role`, `PATCH /users/:userId/status` · `GET /activity` · `GET/PATCH /settings` · `GET /tors`, `GET/PATCH/DELETE /tors/:torId`, `POST /tors/:torId/verify`, `POST /tors/:torId/archive` · `GET /ingestion/status`, `POST /ingestion/sync` · `GET/POST /categories`, `PATCH/DELETE /categories/:categoryId`, `PATCH /categories/:categoryId/status` | Admin page (admin role only) |
 | `/ingestion` | `GET /report` | Not called by the frontend yet (ops, job status report) |
@@ -291,4 +291,35 @@ So `notification/eligibility.ts` keeps reading the same flat `qualification`. Us
 | `409` | agency account, or no bidder profile yet (`completeness` says what to fill in) |
 | `422` | the TOR has no extracted requirement text |
 | `502` | the AI call failed; the previous result is kept |
+
+## 11. Precomputed qualification scores for TOR cards
+
+So a user sees on every TOR card whether they qualify, the qualification worker (`apps/qualification-worker`, `npm run dev:qualification`) computes matches ahead of time. To limit AI calls it only works on **candidate TORs**: public, still open for bids (`submissionDeadlineAt` empty or in the future) and with requirement text. It only works for **ready bidders**: a `personal` or `company` account whose bidder profile is complete (§9).
+
+```mermaid
+flowchart LR
+  edit[Profile saved<br/>PUT /user/profile, /user/bidder-profile/*] -->|"enqueue, run after 5 min"| jobs[(qualification_match_jobs)]
+  sweep[Sweep every 10 min<br/>missing or stale pairs] -->|enqueue, run now| jobs
+  jobs --> worker[qualification worker<br/>one job at a time]
+  worker -->|"input unchanged: no AI call"| matches[(qualification_matches)]
+  worker -->|"AI call (§10)"| matches
+  cards[TOR list page] -->|"GET /user/qualification-matches?torIds=…"| matches
+```
+
+- **Jobs** (`qualification_match_jobs`): one row per user and TOR, `queued → processing → done | skipped | failed`. Queueing a pair again moves its row back to queued and pushes `runAfter` later, so a user editing a form field by field causes one AI call per TOR once they stop (`QUALIFICATION_PROFILE_DELAY_MS`, default 5 minutes).
+- **Sweep** (`QUALIFICATION_SWEEP_INTERVAL_MS`, default 10 minutes): queues every ready bidder and candidate TOR pair whose result is missing or stale and that has no waiting job. This is how newly ingested TORs get scored; ingestion itself is not changed.
+- **Worker**: skips a job whose bidder is no longer ready or whose TOR closed; finishes without an AI call when the stored result is still current (same input hash, §10); otherwise calls the AI and stores the result. Failures retry after 1 and 10 minutes, then the job is `failed`. When `QUALIFICATION_DAILY_CALL_LIMIT` (default 200) results were computed in the last 24 hours, jobs wait an hour without using an attempt. The count is approximate: a pair recomputed twice in a day counts once.
+- **Cards** (`GET /user/qualification-matches?torIds=a,b,c`, up to 50 ids, never calls the AI): returns `completeness` and, per TOR, `status` with `percentage`, `allMandatoryMet` and `evaluatedAt`.
+
+| `status` | Card shows |
+|---|---|
+| `ready` | the score |
+| `stale` | the previous score while a new one is computed |
+| `pending` | queued or running, no score yet |
+| `failed` | the AI failed three times |
+| `not_evaluated` | no score, for example a closed TOR; the detail page can still `POST /tors/:id/qualification` |
+| `profile_incomplete` | a prompt to finish the profile |
+| `no_requirements` | the TOR has no extracted requirements |
+
+For testing on a database whose TORs have all closed, set `QUALIFICATION_TEST_LATEST_TORS=N` to treat the N latest TORs as open. Leave it empty in production.
 

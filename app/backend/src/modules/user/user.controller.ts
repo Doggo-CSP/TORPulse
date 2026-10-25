@@ -4,6 +4,7 @@ import { getActiveCategoryKeys } from '../category/category.repository.js'
 import { missingNotificationFields } from '../notification/eligibility.js'
 import { enqueueForUser, enqueueInBackground } from '../notification/notification.service.js'
 import { EMPTY_QUALIFICATION } from '../notification/qualification.js'
+import { enqueueMatchesForUser } from '../qualification/qualification-precompute.service.js'
 import { findBidderProfile, syncDerivedQualification } from './bidder-profile.repository.js'
 import {
   addBookmark,
@@ -122,6 +123,12 @@ export const updateProfileHandler = async (req: Request, res: Response): Promise
     const userId = req.user._id
     enqueueInBackground(`user ${userId}`, () => enqueueForUser(userId))
   }
+
+  // Name, contact, business type and accountType are part of the profile the AI matcher reads
+  const matchUserId = req.user._id
+  enqueueInBackground(`qualification matches for user ${matchUserId}`, () =>
+    enqueueMatchesForUser(matchUserId),
+  )
 
   const bookmarkedCount = await countBookmarksByUser(req.user._id)
 

@@ -35,6 +35,18 @@ const smtpPass = process.env.SMTP_PASS || undefined
 // Used when the admin has not set a sender email in system settings.
 const notificationFromFallback = process.env.NOTIFICATION_FROM?.trim() || undefined
 const notificationPollIntervalMs = Number(process.env.NOTIFICATION_POLL_INTERVAL_MS ?? 60_000)
+const qualificationPollIntervalMs = Number(process.env.QUALIFICATION_POLL_INTERVAL_MS ?? 10_000)
+const qualificationSweepIntervalMs = Number(
+  process.env.QUALIFICATION_SWEEP_INTERVAL_MS ?? 10 * 60_000,
+)
+// Wait after a profile edit, so filling in a form field by field costs one AI call per TOR
+const qualificationProfileDelayMs = Number(process.env.QUALIFICATION_PROFILE_DELAY_MS ?? 5 * 60_000)
+// AI calls the precompute worker may make in any 24 hours
+const qualificationDailyCallLimit = Number(process.env.QUALIFICATION_DAILY_CALL_LIMIT ?? 200)
+// Testing only: treat the N latest TORs as open for bids, so closed TORs can be precomputed
+const qualificationTestLatestTors = process.env.QUALIFICATION_TEST_LATEST_TORS?.trim()
+  ? Number(process.env.QUALIFICATION_TEST_LATEST_TORS)
+  : undefined
 
 if (Number.isNaN(port)) {
   throw new Error('PORT must be a valid number')
@@ -64,6 +76,30 @@ if (!Number.isInteger(smtpPort) || smtpPort <= 0) {
 
 if (!Number.isFinite(notificationPollIntervalMs) || notificationPollIntervalMs <= 0) {
   throw new Error('NOTIFICATION_POLL_INTERVAL_MS must be a positive number')
+}
+
+for (const [name, value] of [
+  ['QUALIFICATION_POLL_INTERVAL_MS', qualificationPollIntervalMs],
+  ['QUALIFICATION_SWEEP_INTERVAL_MS', qualificationSweepIntervalMs],
+] as const) {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive number`)
+  }
+}
+
+if (!Number.isFinite(qualificationProfileDelayMs) || qualificationProfileDelayMs < 0) {
+  throw new Error('QUALIFICATION_PROFILE_DELAY_MS must be zero or a positive number')
+}
+
+if (!Number.isInteger(qualificationDailyCallLimit) || qualificationDailyCallLimit < 0) {
+  throw new Error('QUALIFICATION_DAILY_CALL_LIMIT must be zero or a positive integer')
+}
+
+if (
+  qualificationTestLatestTors !== undefined &&
+  (!Number.isInteger(qualificationTestLatestTors) || qualificationTestLatestTors <= 0)
+) {
+  throw new Error('QUALIFICATION_TEST_LATEST_TORS must be a positive integer when set')
 }
 
 if (
@@ -98,4 +134,9 @@ export const env = {
   SMTP_PASS: smtpPass,
   NOTIFICATION_FROM: notificationFromFallback,
   NOTIFICATION_POLL_INTERVAL_MS: notificationPollIntervalMs,
+  QUALIFICATION_POLL_INTERVAL_MS: qualificationPollIntervalMs,
+  QUALIFICATION_SWEEP_INTERVAL_MS: qualificationSweepIntervalMs,
+  QUALIFICATION_PROFILE_DELAY_MS: qualificationProfileDelayMs,
+  QUALIFICATION_DAILY_CALL_LIMIT: qualificationDailyCallLimit,
+  QUALIFICATION_TEST_LATEST_TORS: qualificationTestLatestTors,
 }
