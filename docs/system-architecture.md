@@ -228,7 +228,7 @@ Every source ends up as an 11-digit Central e-GP project id. That's why one work
 
 | Prefix | Endpoints | Used by |
 |---|---|---|
-| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar` | TOR list and detail pages (`/:id/similar` = similar TORs whose bidding has closed, UC-05) |
+| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar`, `GET/POST /:id/qualification` | TOR list and detail pages (`/:id/similar` = similar TORs whose bidding has closed, UC-05; `/:id/qualification` = AI qualification match for the logged-in user, UC-08, see §10) |
 | `/homepage` | `GET /summary`, `GET /analytics` | Homepage dashboard |
 | `/user` | `GET/PUT /profile`, `PUT /interests`, `GET /bookmarks`, `POST /bookmarks/:torId` · `GET /bidder-profile`, `GET /bidder-profile/options`, `PUT /bidder-profile/organization`, `PUT /bidder-profile/self`, `POST /bidder-profile/team`, `PATCH/DELETE /bidder-profile/team/:memberId`, `POST /bidder-profile/projects`, `PATCH/DELETE /bidder-profile/projects/:projectId` | Profile and saved pages (bidder profile not called by the frontend yet, see §9) |
 | `/reports` | `GET /price-overview`, `/savings-distribution`, `/category-comparison`, `/timeline`, `/procurement-list`, `/filters/departments` | Reports page (mock awarded price, see §8) |
@@ -271,3 +271,24 @@ Every write to the bidder profile, and every `accountType` change, rewrites `use
 | `staffRoles` | roles of the team (company) or of `self` (individual) |
 
 So `notification/eligibility.ts` keeps reading the same flat `qualification`. Users who have no bidder profile keep the qualification they entered by hand through `PUT /user/profile`. `GET /user/bidder-profile` also returns `completeness` (UC-07): the fields still missing before matching can give a full result. Saving is never blocked by it. Required fields follow the agreed profile spec: a company needs `companyName`, `businessType`, `organization.registeredCapitalBaht` and at least one project with a contract value; an individual needs a name (`displayName`, or `firstName` and `lastName`), a contact (`contactEmail` or `phone`) and the same project. The team is optional.
+
+## 10. AI qualification match (UC-08)
+
+`modules/qualification` compares the logged-in user's bidder profile (§9) with one TOR and gives a percentage plus a per-requirement breakdown.
+
+1. `POST /api/v1/tors/:id/qualification` builds two JSON snapshots and sends them to the AI provider (`AI_PROVIDER`, the same DeepSeek or Gemini settings as ingestion) in one call:
+   - the TOR: title, budget, scope, `bidderQualifications`, `requirements`, `evaluationCriteria`, technologies (long text truncated);
+   - the bidder: company data with years in business, every person by label (`คนที่ 1`, never by name) with position, roles, experience, years at the company, education and certifications with years held and expiry, and past projects with value, delivery date and the people who worked on them.
+2. The AI lists the TOR's requirements on the bidder (skipping standard legal declarations, conditions for the other kind of bidder, bid bonds and documents to submit) and judges each one `met`, `partial`, `not_met` or `unknown`, with a Thai reason and suggestion, and whether it is a condition to bid (`mandatory`).
+3. The score is computed in code, not by the AI, so the same judgments always give the same number: met = 1, partial = 0.5, not_met and unknown = 0, percentage = points / requirements × 100. `allMandatoryMet` is true when every mandatory requirement is met.
+4. The result is stored in `qualification_matches` (one per user and TOR). Its `inputVersion` joins the prompt version (`MATCH_PROMPT_VERSION`) with the `updatedAt` of the user, the bidder profile and the TOR. `GET` returns the stored result and `isStale: true` when any of them changed since; `POST` reuses the stored result unless it is stale or `?force=true` is passed, so viewing a TOR again costs no AI call.
+
+| Response | When |
+|---|---|
+| `200 { match, isStale, completeness }` | `match` is null on `GET` until the first `POST` |
+| `401` | not logged in |
+| `400` / `404` | invalid or unknown (or hidden) TOR id |
+| `409` | agency account, or no bidder profile yet (`completeness` says what to fill in) |
+| `422` | the TOR has no extracted requirement text |
+| `502` | the AI call failed; the previous result is kept |
+
