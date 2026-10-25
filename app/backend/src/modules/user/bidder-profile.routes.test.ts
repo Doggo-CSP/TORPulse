@@ -60,8 +60,7 @@ test('bidder profile routes: organization, team, projects and derived qualificat
 
     assert.equal(response.status, 200)
     assert.ok(response.body.staffRoles.includes('project_manager'))
-    assert.ok(response.body.personCertifications.includes('pmp'))
-    assert.ok(response.body.orgCertifications.includes('other'))
+    assert.ok(response.body.educationLevels.includes('bachelor'))
   })
 
   await t.test('PUT /user/bidder-profile/self saves an individual bidder', async () => {
@@ -72,13 +71,15 @@ test('bidder profile routes: organization, team, projects and derived qualificat
         roles: ['developer', 'developer'],
         yearsExperience: 4,
         education: [{ level: 'bachelor', field: 'Computer Engineering' }],
-        certifications: [{ key: 'aws_certified', expiresAt: '2099-01-01' }],
+        certifications: [{ name: 'AWS Certified Solutions Architect', expiresAt: '2099-01-01' }],
       })
 
     assert.equal(response.status, 200)
     const profile = response.body.bidderProfile
     assert.deepEqual(profile.self.roles, ['developer'])
+    assert.equal(profile.self.certifications[0].name, 'AWS Certified Solutions Architect')
     assert.equal(profile.self.certifications[0].expiresAt, '2099-01-01')
+    assert.equal(profile.self.certifications[0].isExpired, false)
     assert.equal(profile.derivedQualification.isThaiJuristicPerson, false)
     assert.deepEqual(profile.derivedQualification.staffRoles, ['developer'])
   })
@@ -110,7 +111,7 @@ test('bidder profile routes: organization, team, projects and derived qualificat
       .send({
         registeredDate: '2020-01-15',
         isSme: true,
-        certifications: [{ key: 'iso27001' }],
+        certifications: [{ name: 'ISO/IEC 27001:2022', issuedAt: '2024-03-01' }],
       })
 
     assert.equal(response.status, 200)
@@ -119,20 +120,16 @@ test('bidder profile routes: organization, team, projects and derived qualificat
     assert.equal(organization.registeredCapitalBaht, 5_000_000)
     assert.equal(organization.registeredDate, '2020-01-15')
     assert.equal(derivedQualification.registeredCapitalBaht, 5_000_000)
-    assert.deepEqual(derivedQualification.certifications, ['iso27001'])
+    assert.deepEqual(derivedQualification.certifications, ['ISO/IEC 27001:2022'])
+    assert.ok(organization.certifications[0].yearsHeld >= 2)
     assert.ok(derivedQualification.yearsInBusiness >= 6)
   })
 
   await t.test('PUT /user/bidder-profile/organization rejects bad input', async () => {
-    const otherWithoutName = await request(app)
+    const certWithoutName = await request(app)
       .put('/user/bidder-profile/organization')
-      .send({ certifications: [{ key: 'other' }] })
-    assert.equal(otherWithoutName.status, 400)
-
-    const personCertOnCompany = await request(app)
-      .put('/user/bidder-profile/organization')
-      .send({ certifications: [{ key: 'pmp' }] })
-    assert.equal(personCertOnCompany.status, 400)
+      .send({ certifications: [{ name: '  ', issuer: 'BSI' }] })
+    assert.equal(certWithoutName.status, 400)
 
     const badDate = await request(app)
       .put('/user/bidder-profile/organization')
@@ -151,10 +148,16 @@ test('bidder profile routes: organization, team, projects and derived qualificat
         positionTitle: 'Project Manager',
         roles: ['project_manager'],
         yearsExperience: 8,
-        certifications: [{ key: 'pmp', issuer: 'PMI' }],
+        joinedAt: '2022-05-01',
+        education: [{ level: 'master', field: 'Computer Science' }],
+        certifications: [{ name: 'PMP', issuer: 'PMI', issuedAt: '2019-06-01' }],
       })
     assert.equal(added.status, 201)
-    memberId = added.body.bidderProfile.team[0].id
+    const member = added.body.bidderProfile.team[0]
+    memberId = member.id
+    assert.equal(member.joinedAt, '2022-05-01')
+    assert.ok(member.yearsAtCompany >= 4)
+    assert.ok(member.certifications[0].yearsHeld >= 7)
 
     const updated = await request(app)
       .patch(`/user/bidder-profile/team/${memberId}`)
