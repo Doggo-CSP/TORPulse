@@ -31,6 +31,7 @@ A full local pipeline needs three terminals: `dev`, `dev:producer` and `dev:inge
 | `npm run test:auth` | Auth routes and auth config. |
 | `npm run test:user` | Profile, interests, bookmarks and the bidder profile: model, repository, derived qualification and routes. |
 | `npm run test:homepage` | TOR controller, homepage routes and TOR routes. |
+| `npm run test:qualification` | AI qualification match: bidder and TOR snapshots, prompt, parsing, scoring, caching and routes. The AI call is mocked, so no API key is used. Route tests need MongoDB. |
 | `npm run test:report` | Report maths and the mock awarded price rules (open TORs get none). Pure unit tests, no database. |
 | `npm run test:queue-upsert` | Manual check against the configured database. Upserts one test job twice and confirms the queue stays idempotent. |
 | `npm run type-check` | `tsc --noEmit`. CI runs it. |
