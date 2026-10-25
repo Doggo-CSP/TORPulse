@@ -11,6 +11,7 @@ import {
   currentAiModel,
   evaluateQualification,
   hasRequirementText,
+  isMatchStale,
   matchInputVersion,
 } from './qualification-match.service.js'
 
@@ -65,9 +66,7 @@ const loadMatchContext = async (req: Request, res: Response) => {
     return null
   }
 
-  const isStale = Boolean(
-    match && (!profile || match.inputVersion !== matchInputVersion(user, profile, tor)),
-  )
+  const isStale = Boolean(match && (!profile || isMatchStale(match, user, profile, tor)))
 
   return { user, tor, profile, match, isStale, completeness: profileCompleteness(user, profile) }
 }

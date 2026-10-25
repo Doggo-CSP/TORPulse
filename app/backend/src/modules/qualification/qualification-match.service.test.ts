@@ -12,6 +12,7 @@ import {
   buildTorSnapshot,
   evaluateQualification,
   hasRequirementText,
+  isMatchStale,
   matchAi,
   matchInputVersion,
   parseMatchResponse,
@@ -242,15 +243,35 @@ test('scoreRequirements returns null when there is nothing to judge', () => {
   assert.equal(scoreRequirements([]).percentage, null)
 })
 
-test('matchInputVersion changes when the profile, user or TOR changes', () => {
+test('matchInputVersion follows the data the AI sees, not edit times', () => {
   const base = matchInputVersion(user, profile, tor)
-  assert.equal(matchInputVersion(user, profile, tor), base)
+  assert.match(base, /^v1:[0-9a-f]{32}$/)
+
+  // Saving without a real change, or changing data the AI never sees, keeps it
+  assert.equal(matchInputVersion({ ...user, updatedAt: new Date() }, profile, tor), base)
+  assert.equal(matchInputVersion({ ...user, phone: '0812345678' }, profile, tor), base)
+  assert.equal(matchInputVersion(user, { ...profile, team: [{ ...pm, fullName: 'X' }] }, tor), base)
+
+  // Changing what the AI judges changes it
+  const richer = { ...profile.organization, registeredCapitalBaht: 9_000_000 }
+  assert.notEqual(matchInputVersion(user, { ...profile, organization: richer }, tor), base)
+  assert.notEqual(matchInputVersion({ ...user, businessType: 'Consulting' }, profile, tor), base)
   assert.notEqual(
-    matchInputVersion(user, { ...profile, updatedAt: new Date('2026-10-21') }, tor),
+    matchInputVersion(user, profile, { ...tor, bidderQualifications: ['ใหม่'] }),
     base,
   )
-  assert.notEqual(matchInputVersion({ ...user, updatedAt: new Date() }, profile, tor), base)
-  assert.notEqual(matchInputVersion(user, profile, { ...tor, updatedAt: new Date() }), base)
+})
+
+test('isMatchStale on a changed input or a result older than 30 days', () => {
+  const inputVersion = matchInputVersion(user, profile, tor)
+  const fresh = { inputVersion, evaluatedAt: new Date('2026-10-20') }
+
+  assert.equal(isMatchStale(fresh, user, profile, tor, NOW), false)
+  assert.equal(isMatchStale({ ...fresh, inputVersion: 'v0:old' }, user, profile, tor, NOW), true)
+  assert.equal(
+    isMatchStale({ ...fresh, evaluatedAt: new Date('2026-09-01') }, user, profile, tor, NOW),
+    true,
+  )
 })
 
 test('evaluateQualification sends the prompt to the AI and scores the answer', async (context) => {

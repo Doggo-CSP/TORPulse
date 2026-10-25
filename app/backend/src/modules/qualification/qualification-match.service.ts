@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import { z } from 'zod'
 
 import { env } from '../../config/env.js'
@@ -279,16 +281,37 @@ export function scoreRequirements(
   return { percentage, allMandatoryMet, counts }
 }
 
-// Identifies what a result was computed from. Any edit to the profile, the user record or the
-// TOR, or a new prompt version, changes it and marks the cached result stale.
+// Durations in the hashed snapshot are measured to this fixed date, so the hash depends on the
+// stored dates and not on the day it is computed.
+const HASH_REFERENCE_DATE = new Date('2100-01-01T00:00:00Z')
+
+// Identifies what a result was computed from: a hash of the exact data the AI is shown, plus
+// the prompt version. Edits that the AI never sees (phone, interests, …) keep it unchanged.
 export function matchInputVersion(user: MatchUser, profile: MatchProfile, tor: MatchTor): string {
-  const time = (date: Date | null | undefined) => date?.toISOString() ?? '-'
-  return [
-    MATCH_PROMPT_VERSION,
-    time(user.updatedAt),
-    time(profile.updatedAt),
-    time(tor.updatedAt),
-  ].join('|')
+  const content = JSON.stringify({
+    bidder: buildBidderSnapshot(user, profile, HASH_REFERENCE_DATE),
+    tor: buildTorSnapshot(tor),
+  })
+  const hash = createHash('sha256').update(content).digest('hex').slice(0, 32)
+  return `${MATCH_PROMPT_VERSION}:${hash}`
+}
+
+// Durations move with time (a certificate expires, a company passes 3 years in business), so
+// a result is also redone once it is this old.
+export const MAX_MATCH_AGE_DAYS = 30
+
+export function isMatchStale(
+  match: { inputVersion: string; evaluatedAt: Date },
+  user: MatchUser,
+  profile: MatchProfile,
+  tor: MatchTor,
+  now = new Date(),
+): boolean {
+  const ageMs = now.getTime() - match.evaluatedAt.getTime()
+  return (
+    match.inputVersion !== matchInputVersion(user, profile, tor) ||
+    ageMs > MAX_MATCH_AGE_DAYS * 24 * 60 * 60 * 1000
+  )
 }
 
 export function currentAiModel(): string {
