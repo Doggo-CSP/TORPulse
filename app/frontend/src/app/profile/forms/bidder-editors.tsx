@@ -324,8 +324,11 @@ export function TeamEditor({ profile, bare = false }: { profile: BidderProfile; 
   const bidder = useBidderProfile();
   const { data: options } = useBidderProfileOptions();
   const [open, setOpen] = useState(true);
-  // null: no editor open; "new": adding; otherwise the id of the member being edited
-  const [editing, setEditing] = useState<string | null>(null);
+  // null: no editor open; "new": adding; otherwise the id of the member being edited.
+  // Embedded in onboarding with nobody yet, the first form is open straight away.
+  const [editing, setEditing] = useState<string | null>(
+    bare && profile.team.length === 0 ? "new" : null,
+  );
   const [draft, setDraft] = useState<PersonDraft>(toPersonDraft(null));
   const [error, setError] = useState<string | null>(null);
 
@@ -431,10 +434,9 @@ export function TeamEditor({ profile, bare = false }: { profile: BidderProfile; 
       {error && <p className={errorCls}>{error}</p>}
 
       {editing === null && profile.team.length < limit && (
-        <button type="button" onClick={() => startEdit(null)} className={secondaryButtonCls}>
-          <PlusIcon className="size-4" />
-          เพิ่มบุคลากร
-        </button>
+        <AddButton onClick={() => startEdit(null)} prominent={bare}>
+          {profile.team.length > 0 ? "เพิ่มบุคลากรอีกคน" : "เพิ่มบุคลากร"}
+        </AddButton>
       )}
     </Frame>
   );
@@ -727,7 +729,9 @@ export function ProjectsEditor({ profile, bare = false }: { profile: BidderProfi
   const bidder = useBidderProfile();
   const { data: options } = useBidderProfileOptions();
   const [open, setOpen] = useState(true);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(
+    bare && profile.projects.length === 0 ? "new" : null,
+  );
   const [draft, setDraft] = useState<ProjectDraft>(toProjectDraft(null));
   const [error, setError] = useState<string | null>(null);
 
@@ -838,16 +842,41 @@ export function ProjectsEditor({ profile, bare = false }: { profile: BidderProfi
       {error && <p className={errorCls}>{error}</p>}
 
       {editing === null && profile.projects.length < limit && (
-        <button type="button" onClick={() => startEdit(null)} className={secondaryButtonCls}>
-          <PlusIcon className="size-4" />
-          เพิ่มผลงาน
-        </button>
+        <AddButton onClick={() => startEdit(null)} prominent={bare}>
+          {profile.projects.length > 0 ? "เพิ่มผลงานอีกโครงการ" : "เพิ่มผลงาน"}
+        </AddButton>
       )}
     </Frame>
   );
 }
 
 /* ───────────── Shared row controls ───────────── */
+
+/** Adds another item; in onboarding it is a full-width dashed tile so adding more is obvious. */
+function AddButton({
+  onClick,
+  prominent,
+  children,
+}: {
+  onClick: () => void;
+  prominent: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        prominent
+          ? "flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#c4d9c9] bg-[#f4f9f5] py-4 text-sm font-semibold text-[#4a7c59] transition-colors hover:border-[#4a7c59] hover:bg-[#eaf3ec]"
+          : secondaryButtonCls
+      }
+    >
+      <PlusIcon className="size-4" />
+      {children}
+    </button>
+  );
+}
 
 function EditorActions({
   saving,

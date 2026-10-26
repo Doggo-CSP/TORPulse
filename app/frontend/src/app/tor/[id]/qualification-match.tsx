@@ -84,6 +84,8 @@ const STATUS_CONFIG: Record<
 };
 
 const STATUS_ORDER: RequirementStatus[] = ["met", "partial", "not_met", "unknown"];
+// Order of the requirement list: what still needs work first
+const LIST_ORDER: RequirementStatus[] = ["not_met", "partial", "unknown", "met"];
 
 const countOf = (match: QualificationMatch, status: RequirementStatus) =>
   status === "not_met" ? match.counts.notMet : match.counts[status];
@@ -225,7 +227,15 @@ export function QualificationMatchCard({
   const match = result.data;
   const verdict = verdictFor(match.percentage, match.allMandatoryMet);
   const score = match.percentage ?? 0;
-  const items = match.requirements.map((item, index) => ({ ...item, index }));
+  // What still needs work comes first: not met, partial, unknown, then met; mandatory first
+  const items = match.requirements
+    .map((item, index) => ({ ...item, index }))
+    .sort(
+      (a, b) =>
+        LIST_ORDER.indexOf(a.status) - LIST_ORDER.indexOf(b.status) ||
+        Number(b.mandatory) - Number(a.mandatory) ||
+        a.index - b.index,
+    );
   const filteredItems = filter === "all" ? items : items.filter((item) => item.status === filter);
 
   return (
