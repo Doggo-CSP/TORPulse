@@ -23,11 +23,11 @@ import {
   Cog8ToothIcon,
   UserIcon,
 } from "@heroicons/react/16/solid";
-import { MagnifyingGlassIcon } from "@heroicons/react/20/solid";
 import { useAuth } from "@/hooks/use-auth";
 
 export function SiteNav() {
   const { user, loading, signOut } = useAuth();
+  const isAdmin = !loading && user?.role === "admin";
 
   return (
     <Navbar>
@@ -45,18 +45,14 @@ export function SiteNav() {
       <NavbarSection className="max-lg:hidden">
         <NavbarItem href="/">หน้าแรก</NavbarItem>
         <NavbarItem href="/saved">TOR ที่บันทึกไว้</NavbarItem>
-        <NavbarItem href="/profile">โปรไฟล์</NavbarItem>
-        <NavbarItem href="/admin">ผู้ดูแลระบบ</NavbarItem>
+        <NavbarItem href="/reports">รายงาน</NavbarItem>
+        {isAdmin && <NavbarItem href="/admin">ผู้ดูแลระบบ</NavbarItem>}
       </NavbarSection>
 
       <NavbarSpacer />
 
       {/* Right-side actions */}
       <NavbarSection>
-        <NavbarItem href="/search" aria-label="ค้นหา">
-          <MagnifyingGlassIcon className="size-5" />
-        </NavbarItem>
-
         {loading ? null : user ? (
           /* ── Logged-in user dropdown ── */
           <Dropdown>

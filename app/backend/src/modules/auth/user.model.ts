@@ -1,5 +1,7 @@
 import mongoose, { Schema, model, type HydratedDocument, type Model } from 'mongoose'
 
+import type { CompanyQualification } from '../notification/qualification.js'
+
 export interface UserRecord {
   googleId: string
   name: string
@@ -21,9 +23,29 @@ export interface UserRecord {
   businessType?: string
   agencyName?: string
   agencyType?: string
+  role?: 'admin' | 'user'
+  status?: 'active' | 'suspended'
+  qualification?: CompanyQualification
+  notificationPrefs?: { emailEnabled: boolean }
   createdAt: Date
   updatedAt: Date
 }
+
+const qualificationSchema = new Schema<CompanyQualification>(
+  {
+    registeredCapitalBaht: { type: Number, min: 0, default: null },
+    yearsInBusiness: { type: Number, min: 0, default: null },
+    maxPastContractValueBaht: { type: Number, min: 0, default: null },
+    certifications: { type: [String], default: [] },
+    isThaiJuristicPerson: { type: Boolean, default: null },
+    isSme: { type: Boolean, default: null },
+    hasPositiveNetWorth: { type: Boolean, default: null },
+    pastContractAgeYears: { type: Number, min: 0, default: null },
+    hasBangkokOffice: { type: Boolean, default: null },
+    staffRoles: { type: [String], default: [] },
+  },
+  { _id: false },
+)
 
 const userSchema = new Schema<UserRecord>(
   {
@@ -31,6 +53,8 @@ const userSchema = new Schema<UserRecord>(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     image: { type: String, default: null },
+    role: { type: String, enum: ['admin', 'user'], default: 'user' },
+    status: { type: String, enum: ['active', 'suspended'], default: 'active' },
     accountType: { type: String, enum: ['personal', 'company', 'agency'], default: 'personal' },
     displayName: { type: String, default: '' },
     firstName: { type: String, default: '' },
@@ -40,6 +64,7 @@ const userSchema = new Schema<UserRecord>(
     phone: { type: String, default: '' },
     address: { type: String, default: '' },
     about: { type: String, default: '' },
+    // Category keys; validated against the categories collection by PUT /user/interests
     interests: { type: [String], default: [] },
     website: { type: String, default: null },
     companyName: { type: String, default: '' },
@@ -47,6 +72,12 @@ const userSchema = new Schema<UserRecord>(
     businessType: { type: String, default: '' },
     agencyName: { type: String, default: '' },
     agencyType: { type: String, default: '' },
+    // Matched against TOR eligibility for qualifying-TOR email notifications
+    qualification: { type: qualificationSchema, default: () => ({}) },
+    notificationPrefs: {
+      type: new Schema({ emailEnabled: { type: Boolean, default: true } }, { _id: false }),
+      default: () => ({}),
+    },
   },
   { timestamps: true },
 )
@@ -55,4 +86,3 @@ export type UserDocument = HydratedDocument<UserRecord>
 
 export const User =
   (mongoose.models.User as Model<UserRecord> | undefined) ?? model<UserRecord>('User', userSchema)
-

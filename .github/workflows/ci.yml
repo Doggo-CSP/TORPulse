@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (type-check, format, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://localhost:27017
+      MONGODB_DATABASE: doggo_test
+      AI_PROVIDER: gemini
+      GOOGLE_CLIENT_ID: ci-client-id
+      GOOGLE_CLIENT_SECRET: ci-client-secret
+      GOOGLE_CALLBACK_URL: http://localhost:8000/auth/google/callback
+      SESSION_SECRET: ec44591040cd7d08216f0a30f77189b047fd9ae00e1fa86157cd02d9f2a6396e
+      FRONTEND_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/backend/package-lock.json
+      - run: npm ci
+      - run: npm run type-check
+      - run: npm run format:check
+      - run: npm test
+
+  frontend:
+    name: Frontend (lint, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/frontend
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

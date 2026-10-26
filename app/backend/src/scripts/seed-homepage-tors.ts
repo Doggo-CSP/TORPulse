@@ -4,6 +4,7 @@ import { database } from '../config/mongoose.js'
 import { getBangkokWeekRange } from '../modules/homepage/homepage.controller.js'
 import { DataSourceModel } from '../modules/ingestion/data-source.model.js'
 import { IngestionJobModel } from '../modules/ingestion/ingestion-job.model.js'
+import { deriveCategory } from '../modules/tor/tor.controller.js'
 import { TorModel } from '../modules/tor/tor.model.js'
 import { upsertTor } from '../modules/tor/tor.repository.js'
 import type { UpsertTorInput } from '../modules/tor/tor.types.js'
@@ -26,8 +27,14 @@ interface TorFixtureSpec {
   sourceAdapter: 'gov_spending' | 'central_egp' | 'bma_egp'
   agencyName: string | null
   budgetBaht: number | null
+  midPriceBaht: number | null
+  awardedPriceBaht: number | null
   technologies: string[]
   recency: 'this_week' | 'last_week'
+  // Procurement metadata, only on 004, for the /tors filter tests.
+  fiscalYear?: number
+  departmentName?: string
+  projectStatus?: string
 }
 
 // Hand-authored, fixed dataset (not random) so tests can assert exact numbers:
@@ -35,9 +42,19 @@ interface TorFixtureSpec {
 // - budgetBaht sum of the non-null values = 2,000,000 exactly
 // - agencyName has 4 distinct real values plus one null and one empty string (both excluded
 //   from departments)
-// - technologies chosen to hit every deriveCategory() branch: web_application x4, data_bi x1,
-//   mobile_app x2, enterprise_system x3 (10 total)
+// - technologies chosen to hit every deriveCategory() branch: web x4, data x1,
+//   mobile x2, enterprise x3 (10 total; consulting has no fixtures)
 // - 6 fixtures land "this week" and 4 "last week" (Asia/Bangkok) -> new_this_week = 6
+//
+// midPriceBaht / awardedPriceBaht are set so every fixture that has BOTH values has
+// awardedPriceBaht = exactly 90% of midPriceBaht. That keeps every per-category average
+// (web, data, mobile, enterprise) an exact integer, and keeps the
+// overall paired discount at exactly 10.00% regardless of how many fixtures are paired in a
+// given category. Some fixtures deliberately have only one of the two prices set (004 has
+// neither, 005 has mid only, 006 has awarded only) to exercise the "not both present" branch
+// of the aggregation, which must exclude them from the overall (cross-category) average but
+// still let them contribute to their category's individual mid/awarded averages where
+// applicable.
 export const TOR_FIXTURES: TorFixtureSpec[] = [
   {
     externalId: `${SEED_PREFIX}001`,
@@ -45,6 +62,8 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'gov_spending',
     agencyName: 'Ministry of Education',
     budgetBaht: 100_000,
+    midPriceBaht: 1_000_000,
+    awardedPriceBaht: 900_000,
     technologies: ['React', 'Node.js'],
     recency: 'this_week',
   },
@@ -54,6 +73,8 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'gov_spending',
     agencyName: 'Ministry of Education',
     budgetBaht: 200_000,
+    midPriceBaht: 2_000_000,
+    awardedPriceBaht: 1_800_000,
     technologies: ['Vue', 'Express'],
     recency: 'this_week',
   },
@@ -63,6 +84,8 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'central_egp',
     agencyName: 'Ministry of Finance',
     budgetBaht: null,
+    midPriceBaht: 3_000_000,
+    awardedPriceBaht: 2_700_000,
     technologies: ['Python', 'Power BI'],
     recency: 'this_week',
   },
@@ -72,8 +95,14 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'central_egp',
     agencyName: 'Ministry of Finance',
     budgetBaht: 300_000,
+    midPriceBaht: null,
+    awardedPriceBaht: null,
     technologies: ['Flutter'],
     recency: 'this_week',
+    fiscalYear: 2568,
+    departmentName: 'กรมบัญชีกลาง',
+    // Trailing space mirrors messy source data; filters must still match it.
+    projectStatus: 'ระหว่างดำเนินการ ',
   },
   {
     externalId: `${SEED_PREFIX}005`,
@@ -81,6 +110,8 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'bma_egp',
     agencyName: null,
     budgetBaht: 400_000,
+    midPriceBaht: 4_000_000,
+    awardedPriceBaht: null,
     technologies: ['.NET', 'SAP'],
     recency: 'this_week',
   },
@@ -90,6 +121,8 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'bma_egp',
     agencyName: '',
     budgetBaht: 500_000,
+    midPriceBaht: null,
+    awardedPriceBaht: 1_000_000,
     technologies: [],
     recency: 'this_week',
   },
@@ -99,6 +132,8 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'gov_spending',
     agencyName: 'Ministry of Health',
     budgetBaht: null,
+    midPriceBaht: 5_000_000,
+    awardedPriceBaht: 4_500_000,
     technologies: ['Android', 'Kotlin'],
     recency: 'last_week',
   },
@@ -108,6 +143,8 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'central_egp',
     agencyName: 'Ministry of Health',
     budgetBaht: 100_000,
+    midPriceBaht: 6_000_000,
+    awardedPriceBaht: 5_400_000,
     technologies: ['React', 'Python'],
     recency: 'last_week',
   },
@@ -117,6 +154,8 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'gov_spending',
     agencyName: 'Ministry of Interior',
     budgetBaht: 250_000,
+    midPriceBaht: 7_000_000,
+    awardedPriceBaht: 6_300_000,
     technologies: ['Java', 'Oracle'],
     recency: 'last_week',
   },
@@ -126,6 +165,8 @@ export const TOR_FIXTURES: TorFixtureSpec[] = [
     sourceAdapter: 'central_egp',
     agencyName: 'Ministry of Interior',
     budgetBaht: 150_000,
+    midPriceBaht: 8_000_000,
+    awardedPriceBaht: 7_200_000,
     technologies: ['Angular'],
     recency: 'last_week',
   },
@@ -137,7 +178,9 @@ export async function seedHomepageTors(): Promise<void> {
   await DataSourceModel.deleteMany({ key: { $regex: `^${SEED_PREFIX}` } })
 
   const dataSources = await Promise.all(
-    SEED_DATA_SOURCES.map((source) => DataSourceModel.create({ key: source.key, name: source.name })),
+    SEED_DATA_SOURCES.map((source) =>
+      DataSourceModel.create({ key: source.key, name: source.name }),
+    ),
   )
 
   const { start } = getBangkokWeekRange(new Date())
@@ -162,12 +205,18 @@ export async function seedHomepageTors(): Promise<void> {
       detailUrl: `https://example.com/${fixture.externalId}`,
       projectTitle: `Seed project ${fixture.externalId}`,
       agencyName: fixture.agencyName,
+      departmentName: fixture.departmentName ?? null,
+      projectStatus: fixture.projectStatus ?? null,
+      fiscalYear: fixture.fiscalYear ?? null,
       summary: null,
       objectives: [],
       requirements: [],
       bidderQualifications: [],
       technologies: fixture.technologies,
+      category: deriveCategory(fixture.technologies),
       budgetBaht: fixture.budgetBaht,
+      midPriceBaht: fixture.midPriceBaht,
+      awardedPriceBaht: fixture.awardedPriceBaht,
       submissionDeadline: null,
       contactInformation: [],
       classificationReason: 'Seed fixture for homepage API tests',
@@ -183,8 +232,12 @@ export async function seedHomepageTors(): Promise<void> {
       throw new Error(`Failed to seed TOR ${fixture.externalId}`)
     }
 
-    const updatedAt = fixture.recency === 'this_week' ? thisWeekTimestamp : lastWeekTimestamp
-    await TorModel.collection.updateOne({ _id: tor._id }, { $set: { updatedAt } })
+    // "New this week" counts createdAt, so move both timestamps
+    const timestamp = fixture.recency === 'this_week' ? thisWeekTimestamp : lastWeekTimestamp
+    await TorModel.collection.updateOne(
+      { _id: tor._id },
+      { $set: { createdAt: timestamp, updatedAt: timestamp } },
+    )
   }
 }
 
@@ -198,7 +251,8 @@ async function main(): Promise<void> {
   }
 }
 
-const isMainModule = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
+const isMainModule =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href
 if (isMainModule) {
   main().catch((error: unknown) => {
     console.error('Homepage TOR seed failed:', error)

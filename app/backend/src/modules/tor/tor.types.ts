@@ -1,5 +1,7 @@
 import { Types } from 'mongoose'
 
+import type { TorEligibility } from '../notification/qualification.js'
+
 export interface TorSourceDocumentInput {
   fileName: string
   mimeType: string
@@ -15,13 +17,27 @@ export interface UpsertTorInput {
   detailUrl: string
   projectTitle: string
   agencyName: string | null
+  departmentName?: string | null
+  departmentSubName?: string | null
+  projectStatus?: string | null
+  sourceProjectId?: string | null
+  contractStatus?: string | null
+  contractStatusCode?: string | null
+  fiscalYear?: number | null
+  announceDate?: Date | null
   summary: string | null
   objectives: string[]
   requirements: string[]
   bidderQualifications: string[]
+  eligibility?: TorEligibility | null
   technologies: string[]
+  category?: string | null
+  categories?: string[]
   budgetBaht: number | null
+  midPriceBaht?: number | null
+  awardedPriceBaht?: number | null
   submissionDeadline: string | null
+  submissionDeadlineAt?: Date | null
   contactInformation: string[]
   classificationReason: string
   confidence: number

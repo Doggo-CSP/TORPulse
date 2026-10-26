@@ -5,6 +5,7 @@ import express from 'express'
 import request from 'supertest'
 
 import { database } from '../../config/mongoose.js'
+import { seedCategories } from '../../scripts/seed-categories.js'
 import { DataSourceModel } from '../ingestion/data-source.model.js'
 import { IngestionJobModel } from '../ingestion/ingestion-job.model.js'
 import { SEED_PREFIX, seedHomepageTors } from '../../scripts/seed-homepage-tors.js'
@@ -13,6 +14,7 @@ import router from './homepage.routes.js'
 
 test('homepage summary and analytics endpoints, against a deterministic seeded dataset', async (t) => {
   await database.connect()
+  await seedCategories()
   await seedHomepageTors()
 
   t.after(async () => {
@@ -21,6 +23,18 @@ test('homepage summary and analytics endpoints, against a deterministic seeded d
     await DataSourceModel.deleteMany({ key: { $regex: `^${SEED_PREFIX}` } })
     await database.disconnect()
   })
+
+  // The database is shared, so scope every TOR query to this test's own seeded records;
+  // otherwise unrelated TORs change the hand-computed totals below.
+  const seedScope = { externalId: { $regex: `^${SEED_PREFIX}` } }
+  const originalAggregate = TorModel.aggregate.bind(TorModel)
+  const originalFind = TorModel.find.bind(TorModel)
+  t.mock.method(TorModel, 'aggregate', (pipeline: object[]) =>
+    originalAggregate([{ $match: seedScope }, ...pipeline] as never),
+  )
+  t.mock.method(TorModel, 'find', (filter: object = {}, ...rest: unknown[]) =>
+    (originalFind as (...args: unknown[]) => unknown)({ $and: [filter, seedScope] }, ...rest),
+  )
 
   const app = express()
   app.use('/homepage', router)
@@ -32,31 +46,38 @@ test('homepage summary and analytics endpoints, against a deterministic seeded d
     assert.equal(response.body.total_tors, 10)
     assert.equal(response.body.total_sources, 2)
     assert.equal(response.body.total_budget, 2_000_000)
+    // 8 of the 10 fixtures state a budget
+    assert.equal(response.body.avg_budget, 250_000)
     assert.equal(response.body.new_this_week, 6)
     assert.notEqual(response.body.last_updated, null)
   })
 
-  await t.test('GET /homepage/analytics returns a category distribution summing to 100%', async () => {
-    const response = await request(app).get('/homepage/analytics')
+  await t.test(
+    'GET /homepage/analytics returns a category distribution summing to 100%',
+    async () => {
+      const response = await request(app).get('/homepage/analytics')
 
-    assert.equal(response.status, 200)
+      assert.equal(response.status, 200)
 
-    const byCategory: Record<string, number> = Object.fromEntries(
-      response.body.categoryDistribution.map((entry: { category: string; percentage: number }) => [
-        entry.category,
-        entry.percentage,
-      ]),
-    )
-    assert.equal(byCategory.web_application, 40)
-    assert.equal(byCategory.data_bi, 10)
-    assert.equal(byCategory.mobile_app, 20)
-    assert.equal(byCategory.enterprise_system, 30)
+      const byCategory: Record<string, number> = Object.fromEntries(
+        response.body.categoryDistribution.map(
+          (entry: { category: string; percentage: number }) => [entry.category, entry.percentage],
+        ),
+      )
+      assert.equal(byCategory.web_application, 40)
+      assert.equal(byCategory.data_bi, 10)
+      assert.equal(byCategory.mobile_app, 20)
+      assert.equal(byCategory.enterprise_system, 30)
 
-    const topReact = response.body.topTechnologies.find(
-      (entry: { _id: string }) => entry._id === 'React',
-    )
-    assert.ok(topReact, 'expected React to appear in topTechnologies')
-    assert.equal(topReact.count, 2)
-    assert.equal(topReact.percentage, 12.5)
-  })
+      const topReact = response.body.topTechnologies.find(
+        (entry: { _id: string }) => entry._id === 'React',
+      )
+      assert.ok(topReact, 'expected React to appear in topTechnologies')
+      assert.equal(topReact.count, 2)
+      assert.equal(topReact.percentage, 12.5)
+    },
+  )
+
+  // priceComparison and priceSummary now come from the finished-project snapshot (tors_bk_*),
+  // not from `tors`; their maths is unit tested in report.calculations.test.ts.
 })

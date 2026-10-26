@@ -18,6 +18,11 @@ const dataSourceSchema = new Schema(
       required: true,
       default: true,
     },
+    // When an admin last switched the source on or off (null for the original default)
+    enabledChangedAt: {
+      type: Date,
+      default: null,
+    },
     lockedBy: {
       type: String,
       default: null,

@@ -6,6 +6,8 @@ import {
   fetchTorFilterOptions,
   fetchTors,
   fetchTorRecommendations,
+  fetchSimilarProjects,
+  type SimilarProjectsResult,
   type FetchTorsParams,
   type TorFilterOptions,
   type FetchTorsResponse,
@@ -37,12 +39,25 @@ export function useTors(params: FetchTorsParams) {
       params.year ?? "all",
       params.budget_min ?? 0,
       params.budget_max ?? 0,
-      params.technologies ?? "all",
+      params.department ?? "all",
+      params.status ?? "all",
+      params.categories ?? "all",
       params.page ?? 1,
       params.limit ?? 4,
+      params.sort ?? "newest",
     ],
     queryFn: () => fetchTors(params),
     staleTime: 30 * 1000, // 30 seconds
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useSimilarProjects(id: string) {
+  return useQuery<SimilarProjectsResult>({
+    queryKey: ["torSimilar", id],
+    queryFn: () => fetchSimilarProjects(id),
+    enabled: id !== "",
+    staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
   });
 }

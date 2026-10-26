@@ -3,20 +3,62 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
+import { useDebounce } from "use-debounce";
 import { SiteNav } from "@/app/components/site_nav";
 import { useAuth } from "@/hooks/use-auth";
 import { useUserProfile } from "@/hooks/use-user-profile";
 import { useHomepage } from "@/hooks/use-homepage";
 import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
 import { useTorFilterOptions, useTorRecommendations, useTors } from "@/hooks/use-tors";
-import {
-  categorySplit,
-  homeStats,
-  priceComparisonData,
-  priceChartSeries,
-  totalBudgetAmount,
-  totalProjectCount,
-} from "./mockData";
+import { useCategories } from "@/hooks/use-categories";
+import { DeadlineBadge } from "@/app/components/deadline_badge";
+import { formatThaiDate } from "@/api/reports.api";
+
+// Category labels on the price chart's y axis
+const CATEGORY_AXIS_WIDTH = 150;
+// Counts characters including Thai vowel and tone marks, which take no width of their own
+const CATEGORY_LABEL_MAX_CHARS = 20;
+
+// Splits a Thai label into lines of at most maxChars, breaking between words (Thai has no
+// spaces, so Intl.Segmenter finds the word boundaries). A single word longer than maxChars
+// stays on its own line.
+function wrapLabel(label: string, maxChars: number): string[] {
+  const words =
+    typeof Intl !== "undefined" && "Segmenter" in Intl
+      ? Array.from(new Intl.Segmenter("th", { granularity: "word" }).segment(label), (s) => s.segment)
+      : label.split(/(\s+)/);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (current && (current + word).length > maxChars) {
+      lines.push(current.trim());
+      current = word.trimStart();
+    } else {
+      current += word;
+    }
+  }
+  if (current.trim()) lines.push(current.trim());
+  return lines;
+}
+
+// Right-aligned, vertically centred multi-line tick so long category names are not cut off
+function WrappedCategoryTick({ x, y, label }: { x: number; y: number; label: string }) {
+  const lines = wrapLabel(label, CATEGORY_LABEL_MAX_CHARS);
+  return (
+    <text x={x - 4} y={y} textAnchor="end" fontSize={11} fill="var(--muted-foreground)">
+      {lines.map((line, index) => (
+        <tspan
+          key={index}
+          x={x - 4}
+          dy={index === 0 ? `${0.35 - (lines.length - 1) * 0.6}em` : "1.2em"}
+        >
+          {line}
+        </tspan>
+      ))}
+      <title>{label}</title>
+    </text>
+  );
+}
 
 const PriceComparisonChart = dynamic(
   () =>
@@ -34,51 +76,76 @@ const PriceComparisonChart = dynamic(
         data,
         series,
       }: {
-        data: Array<{ category: string; [key: string]: string | number }>;
+        data: Array<{
+          category: string;
+          projectCount: number;
+          [key: string]: string | number | null;
+        }>;
         series: Array<{ key: string; label: string; color: string }>;
       }) {
+        // Horizontal bars: the eight Thai category names are too long for an x axis
         return (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={data}
-              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              layout="vertical"
+              margin={{ top: 5, right: 16, left: 0, bottom: 0 }}
+              barGap={2}
             >
               <CartesianGrid
                 strokeDasharray="3 3"
-                vertical={false}
+                horizontal={false}
                 stroke="var(--border)"
                 opacity={0.3}
               />
               <XAxis
-                dataKey="category"
+                type="number"
                 tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 tickLine={false}
                 axisLine={false}
+                tickFormatter={(v: number) => `฿${v}M`}
               />
               <YAxis
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                type="category"
+                dataKey="category"
+                width={CATEGORY_AXIS_WIDTH}
+                tick={(props) => (
+                  <WrappedCategoryTick
+                    x={Number(props.x)}
+                    y={Number(props.y)}
+                    label={String(props.payload?.value ?? "")}
+                  />
+                )}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(v: number) => `฿${v}`}
               />
               <Tooltip
                 content={({ active, payload, label }) => {
                   if (!active || !payload || !payload.length) return null;
+                  const row = payload[0]?.payload as { projectCount?: number } | undefined;
                   return (
                     <div className="rounded-xl border border-border bg-background px-4 py-3 shadow-lg">
                       <p className="text-sm font-medium">{label}</p>
-                      <div className="mt-1.5 space-y-0.5">
-                        {payload.map((entry, i) => (
-                          <p
-                            key={entry.name ?? i}
-                            className="text-xs font-medium"
-                            style={{ color: entry.color }}
-                          >
-                            {entry.name} : ฿{Number(entry.value).toFixed(1)}{" "}
-                            ล้านบาท
+                      {!row?.projectCount ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          ยังไม่มี TOR ที่ปิดรับแล้วในหมวดนี้
+                        </p>
+                      ) : (
+                        <div className="mt-1.5 space-y-0.5">
+                          <p className="text-xs text-muted-foreground">
+                            เฉลี่ยจาก {row.projectCount} โครงการ
                           </p>
-                        ))}
-                      </div>
+                          {payload.map((entry, i) => (
+                            <p
+                              key={entry.name ?? i}
+                              className="text-xs font-medium"
+                              style={{ color: entry.color }}
+                            >
+                              {entry.name} : ฿{Number(entry.value).toFixed(2)} ล้านบาท
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 }}
@@ -89,7 +156,7 @@ const PriceComparisonChart = dynamic(
                   dataKey={s.key}
                   name={s.label}
                   fill={s.color}
-                  radius={[4, 4, 0, 0]}
+                  radius={[0, 4, 4, 0]}
                 />
               ))}
             </BarChart>
@@ -104,36 +171,66 @@ const PriceComparisonChart = dynamic(
 
 const baht = (n: number) => "฿" + (n / 1_000_000).toFixed(1) + " ล้าน";
 const toMillion = (n: number) => (n / 1_000_000).toFixed(1);
-
-const statuses = ["ทั้งหมด", "เปิดรับสมัคร", "ใกล้ปิดรับ", "ปิดรับสมัครแล้ว"];
+const toMillionOrNull = (n: number | null) =>
+  n === null ? null : Math.round((n / 1_000_000) * 100) / 100;
 
 const ITEMS_PER_PAGE = 4;
+
+const priceChartSeries = [
+  { key: "midPrice", label: "ราคากลาง", color: "#d18f5dff" },
+  { key: "awardedPrice", label: "ราคาที่ชนะ", color: "#4a7c59" },
+];
 
 export default function HomePage() {
   const { user, loading: authLoading } = useAuth();
   const { profile, loading: profileLoading } = useUserProfile(!!user);
   const { summary, analytics, loadingSummary } = useHomepage();
 
-  // filter metadata (years + technologies) comes from the backend now
+  // filter options (fiscal years, departments, statuses) come from the TORs in the database
   const { data: filterOptions } = useTorFilterOptions();
+  // Category chips list every active category, even one no TOR uses yet (filtering on it
+  // then simply finds nothing). /tors/filter-options would drop such categories.
+  const { data: activeCategories } = useCategories();
   const budgetYears = useMemo(
     () => ["ทั้งหมด", ...(filterOptions?.years.map(String) ?? [])],
     [filterOptions],
   );
-  const techOptions = useMemo(
-    () => ["ทั้งหมด", ...(filterOptions?.technologies ?? [])],
+  const departments = useMemo(
+    () => ["ทั้งหมด", ...(filterOptions?.departments ?? [])],
     [filterOptions],
   );
+  const statuses = useMemo(
+    () => ["ทั้งหมด", ...(filterOptions?.statuses ?? [])],
+    [filterOptions],
+  );
+  const categoryOptions = activeCategories ?? [];
 
-  const displayedCategorySplit = useMemo(() => {
-    if (analytics?.categoryDistribution && analytics.categoryDistribution.length > 0) {
-      return analytics.categoryDistribution.map((item) => ({
+  // Share of open TORs (`tors`) per category
+  const displayedCategorySplit = useMemo(
+    () =>
+      (analytics?.categoryDistribution ?? []).map((item) => ({
         label: item.label,
         pct: item.percentage,
-      }));
-    }
-    return categorySplit;
-  }, [analytics]);
+      })),
+    [analytics],
+  );
+
+  // Average mid vs awarded price per category, over TORs whose bidding has closed (mock awarded).
+  // Every active category is listed; a category with no finished project has no bars.
+  const displayedPriceComparison = useMemo(
+    () =>
+      (analytics?.priceComparison ?? []).map((p) => ({
+        category: p.label,
+        projectCount: p.projectCount,
+        midPrice: toMillionOrNull(p.avgMidPriceBaht),
+        awardedPrice: toMillionOrNull(p.avgAwardedPriceBaht),
+      })),
+    [analytics],
+  );
+
+  // Overall averages over the same finished projects
+  const priceSummary = analytics?.priceSummary;
+  const priceSource = analytics?.priceSource ?? null;
 
   const currentUser = user || (profile ? {
     id: profile.id,
@@ -149,30 +246,23 @@ export default function HomePage() {
 
   const [filtersOpen, setFiltersOpen] = useState(true);
 
-  const [name, setName] = useState("");
+  // Immediate (UI-bound) states
+  const [nameInput, setNameInput] = useState("");
+  const [budgetMinInput, setBudgetMinInput] = useState("");
+  const [budgetMaxInput, setBudgetMaxInput] = useState("");
+
+  // Debounced values — these drive the API request (400 ms delay)
+  const [debouncedName] = useDebounce(nameInput, 800);
+  const [debouncedBudgetMin] = useDebounce(budgetMinInput, 800);
+  const [debouncedBudgetMax] = useDebounce(budgetMaxInput, 800);
+
   const [budgetYear, setBudgetYear] = useState("ทั้งหมด");
-  const [budgetMin, setBudgetMin] = useState("");
-  const [budgetMax, setBudgetMax] = useState("");
-  const [agency, setAgency] = useState("ทั้งหมด"); // not sent to API yet — see note below
-  const [status, setStatus] = useState("ทั้งหมด"); // not sent to API yet — see note below
-  const [egpOnly, setEgpOnly] = useState(false); // not sent to API yet — see note below
-  const [techs, setTechs] = useState<string[]>([]);
-  const [techSearch, setTechSearch] = useState("");
-  const [techExpanded, setTechExpanded] = useState(false);
+  const [department, setDepartment] = useState("ทั้งหมด");
+  const [status, setStatus] = useState("ทั้งหมด");
+  const [categories, setCategories] = useState<string[]>([]); // selected category keys
 
-  const TECH_COLLAPSED_COUNT = 24;
-
-  const filteredTechOptions = useMemo(() => {
-    if (!techSearch.trim()) return techOptions.filter((t) => t !== "ทั้งหมด");
-    const q = techSearch.trim().toLowerCase();
-    return techOptions.filter((t) => t !== "ทั้งหมด" && t.toLowerCase().includes(q));
-  },  [techOptions, techSearch]);
-
-  const visibleTechOptions =
-    techExpanded || techSearch.trim() ? filteredTechOptions : filteredTechOptions.slice(0, TECH_COLLAPSED_COUNT);
-
-  const toggleTech = (t: string) => {
-    setTechs((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  const toggleCategory = (key: string) => {
+    setCategories((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]));
     setCurrentPage(1);
   };
 
@@ -186,22 +276,27 @@ export default function HomePage() {
       agency: item.agencyName || "หน่วยงานรัฐ",
       budget: item.budgetBaht || 0,
       interestScore: item.score,
-      reason: `ตรงกับหมวดหมู่ ${item.category}`,
+      // Category display name; empty when the TOR's primary category is hidden
+      reason: item.categoryName ? `ตรงกับหมวดหมู่ ${item.categoryName}` : "",
     }));
   }, [isLoggedIn, recommendedTors]);
 
-  // live search + filter against the real API
+  // live search + filter against the real API — uses debounced text values to avoid
+  // firing a request on every keystroke in the name / budget inputs
   const requestParams = useMemo(
     () => ({
-      q: name || undefined,
+      q: debouncedName || undefined,
       year: budgetYear === "ทั้งหมด" ? undefined : Number(budgetYear),
-      budget_min: budgetMin ? Number(budgetMin) * 1_000_000 : undefined,
-      budget_max: budgetMax ? Number(budgetMax) * 1_000_000 : undefined,
-      technologies: techs.length > 0 ? techs.join(",") : undefined, // needs backend $in support — see below
+      budget_min: debouncedBudgetMin ? Number(debouncedBudgetMin) * 1_000_000 : undefined,
+      budget_max: debouncedBudgetMax ? Number(debouncedBudgetMax) * 1_000_000 : undefined,
+      department,
+      status,
+      categories: categories.length > 0 ? categories.join(",") : undefined,
       page: currentPage,
       limit: ITEMS_PER_PAGE,
+      sort: "deadline" as const,
     }),
-    [name, budgetYear, budgetMin, budgetMax, techs, currentPage],
+    [debouncedName, budgetYear, debouncedBudgetMin, debouncedBudgetMax, department, status, categories, currentPage],
   );
 
   const { data, isLoading: searching, error: searchError } = useTors(requestParams);
@@ -210,15 +305,13 @@ export default function HomePage() {
   const visiblePage = Math.min(currentPage, totalPages);
 
   const clearFilters = () => {
-    setName("");
+    setNameInput("");
+    setBudgetMinInput("");
+    setBudgetMaxInput("");
     setBudgetYear("ทั้งหมด");
-    setBudgetMin("");
-    setBudgetMax("");
-    setAgency("ทั้งหมด");
+    setDepartment("ทั้งหมด");
     setStatus("ทั้งหมด");
-    setEgpOnly(false);
-    setTechs([]);
-    setTechSearch("");
+    setCategories([]);
     setCurrentPage(1);
   };
 
@@ -234,9 +327,9 @@ export default function HomePage() {
               TOR · แพลตฟอร์มค้นหางานประมูลซอฟต์แวร์
             </p>
             <h1 className="mt-4 text-4xl leading-[1.18] font-semibold md:text-[3rem]">
-              เว็บไซต์รวบรวมทุก TOR งานซอฟต์แวร์ของ กทม.
+              เว็บไซต์รวบรวมทุก TOR ที่เกี่ยวข้องกับงานซอฟต์แวร์
               <br />
-              <span className="text-primary">รวมไว้ในเรดาร์เดียว</span>
+              <span className="text-primary">รวมไว้ในที่เดียว</span>
             </h1>
             <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
               ไม่ต้องเสียเวลาตามหา TOR จากหลายเว็บไซต์ TOR Pulse รวบรวม TOR
@@ -271,7 +364,7 @@ export default function HomePage() {
                     ? summary.total_tors.toLocaleString("th-TH")
                     : loadingSummary
                     ? "..."
-                    : "1,284",
+                    : "—",
                 },
                 {
                   k: "แหล่งข้อมูล",
@@ -279,7 +372,7 @@ export default function HomePage() {
                     ? summary.total_sources.toLocaleString("th-TH")
                     : loadingSummary
                     ? "..."
-                    : "6",
+                    : "—",
                 },
                 {
                   k: "งบประมาณรวมที่ติดตาม",
@@ -287,18 +380,14 @@ export default function HomePage() {
                     ? formatBudgetSummary(summary.total_budget)
                     : loadingSummary
                     ? "..."
-                    : "฿3.4 พันล้าน",
+                    : "—",
+                  // Third card fills the row on its own
+                  wide: true,
                 },
-                {
-                  k: "ประกาศใหม่สัปดาห์นี้",
-                  v: summary
-                    ? summary.new_this_week.toLocaleString("th-TH")
-                    : loadingSummary
-                    ? "..."
-                    : "37",
-                },
+                // "TOR เข้าระบบสัปดาห์นี้" (summary.new_this_week) is hidden until its wording
+                // is agreed: it counts the date a TOR entered the system, not the announcement.
               ].map((s) => (
-                <div key={s.k}>
+                <div key={s.k} className={"wide" in s ? "col-span-2" : undefined}>
                   <p className="font-display text-2xl font-semibold text-primary">
                     {s.v}
                   </p>
@@ -339,8 +428,8 @@ export default function HomePage() {
                     ชื่อรายการ
                   </label>
                   <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
                     placeholder="ระบุชื่อรายการ"
                     className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
                   />
@@ -352,7 +441,10 @@ export default function HomePage() {
                   </label>
                   <select
                     value={budgetYear}
-                    onChange={(e) => setBudgetYear(e.target.value)}
+                    onChange={(e) => {
+                      setBudgetYear(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
                   >
                     {budgetYears.map((y) => (
@@ -367,16 +459,16 @@ export default function HomePage() {
                   </label>
                   <div className="flex items-center gap-2">
                     <input
-                      value={budgetMin}
-                      onChange={(e) => setBudgetMin(e.target.value)}
+                      value={budgetMinInput}
+                      onChange={(e) => setBudgetMinInput(e.target.value)}
                       placeholder="Min"
                       type="number"
                       className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
                     />
                     <span className="text-muted-foreground">-</span>
                     <input
-                      value={budgetMax}
-                      onChange={(e) => setBudgetMax(e.target.value)}
+                      value={budgetMaxInput}
+                      onChange={(e) => setBudgetMaxInput(e.target.value)}
                       placeholder="Max"
                       type="number"
                       className="w-full rounded-md border border-input bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
@@ -384,29 +476,34 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* NOTE: agency / status / EGP-only have no backend query param yet.
-                    They're kept as UI-only state for now — not applied to results.
-                    Confirm with backend whether these should be added to /api/v1/tors. */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
                     หน่วยงาน
                   </label>
                   <select
-                    value={agency}
-                    onChange={(e) => setAgency(e.target.value)}
+                    value={department}
+                    onChange={(e) => {
+                      setDepartment(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
                   >
-                    <option>ทั้งหมด</option>
+                    {departments.map((d) => (
+                      <option key={d}>{d}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                    สถานะการดำเนินการ
+                    ประเภทการประกาศ
                   </label>
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value)}
+                    onChange={(e) => {
+                      setStatus(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm text-muted-foreground"
                   >
                     {statuses.map((s) => (
@@ -414,78 +511,56 @@ export default function HomePage() {
                     ))}
                   </select>
                 </div>
-
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={egpOnly}
-                      onChange={(e) => setEgpOnly(e.target.checked)}
-                      className="h-4 w-4 rounded border-input"
-                    />
-                    เฉพาะรายการที่มีใน EGP
-                  </label>
-                </div>
               </div>
 
               <div className="mt-5 border-t border-border pt-5">
                 <div className="flex items-center justify-between">
                   <p className="label-eyebrow">
-                    เทคโนโลยี{techs.length > 0 && <span className="text-primary"> ({techs.length} เลือก)</span>}
+                    หมวดหมู่{categories.length > 0 && <span className="text-primary"> ({categories.length} เลือก)</span>}
                   </p>
-                  {techs.length > 0 && (
+                  {categories.length > 0 && (
                     <button
-                      onClick={() => setTechs([])}
+                      onClick={() => {
+                        setCategories([]);
+                        setCurrentPage(1);
+                      }}
                       className="text-xs text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      ล้างเทคโนโลยี
+                      ล้างหมวดหมู่
                     </button>
                   )}
                 </div>
 
-                <input
-                  value={techSearch}
-                  onChange={(e) => setTechSearch(e.target.value)}
-                  placeholder="ค้นหาเทคโนโลยี..."
-                  className="mt-2 w-full max-w-xs rounded-md border border-input bg-background px-3 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-ring"
-                />
-
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
-                    onClick={() => setTechs([])}
+                    onClick={() => {
+                      setCategories([]);
+                      setCurrentPage(1);
+                    }}
                     className={
                       "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
-                      (techs.length === 0
+                      (categories.length === 0
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border text-muted-foreground hover:text-foreground")
                     }
                   >
                     ทั้งหมด
                   </button>
-                  {visibleTechOptions.map((f) => (
+                  {categoryOptions.map((c) => (
                     <button
-                      key={f}
-                      onClick={() => toggleTech(f)}
+                      key={c.key}
+                      onClick={() => toggleCategory(c.key)}
                       className={
                         "rounded-full border px-3.5 py-1.5 text-xs transition-colors " +
-                        (techs.includes(f)
+                        (categories.includes(c.key)
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border text-muted-foreground hover:text-foreground")
                       }
                     >
-                      {f}
+                      {c.name}
                     </button>
                   ))}
                 </div>
-
-                {!techSearch.trim() && filteredTechOptions.length > TECH_COLLAPSED_COUNT && (
-                  <button
-                    onClick={() => setTechExpanded((v) => !v)}
-                    className="mt-3 text-xs font-medium text-primary hover:underline"
-                  >
-                    {techExpanded ? "แสดงน้อยลง ▲" : `แสดงทั้งหมด (${filteredTechOptions.length}) ▼`}
-                  </button>
-                )}
               </div>
 
               <div className="mt-6 flex items-center justify-end gap-3">
@@ -494,12 +569,6 @@ export default function HomePage() {
                   className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                 >
                   ล้างค่า
-                </button>
-                <button
-                  onClick={() => setCurrentPage(1)}
-                  className="rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground"
-                >
-                  ค้นหา
                 </button>
               </div>
             </div>
@@ -540,6 +609,14 @@ export default function HomePage() {
                       <h3 className="mt-2 text-[15px] leading-snug font-medium">
                         {t.projectTitle}
                       </h3>
+                      <div className="mt-1.5">
+                        <DeadlineBadge
+                          deadline={t.submissionDeadline ?? t.submissionDeadlineText}
+                          since={t.announcementDate ?? t.createdAt}
+                          projectStatus={t.projectStatus}
+                          openOnly
+                        />
+                      </div>
                       <p className="mt-1 text-sm text-muted-foreground">
                         {t.agencyName ?? "หน่วยงานรัฐ"}
                       </p>
@@ -757,7 +834,8 @@ export default function HomePage() {
                       {t.title}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {t.agency} · {t.reason}
+                      {t.agency}
+                      {t.reason && ` · ${t.reason}`}
                     </p>
                     <p className="mt-3 font-display text-lg font-semibold">
                       {baht(t.budget)}
@@ -777,15 +855,23 @@ export default function HomePage() {
               ข้อมูลสำหรับวิเคราะห์ราคาย้อนหลัง
             </h2>
             <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-              ดูแนวโน้มราคาจัดซื้อจัดจ้างโครงการซอฟต์แวร์จากข้อมูลโครงการที่ผ่านมา
+              ราคากลางเทียบกับราคาที่ชนะของ TOR ที่ผ่านวันปิดรับข้อเสนอแล้ว
               เพื่อช่วยประเมินราคาและเปรียบเทียบกับโครงการปัจจุบัน
             </p>
+            {priceSource && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                จาก {priceSource.project_count.toLocaleString("th-TH")} โครงการ · ข้อมูล ณ{" "}
+                {formatThaiDate(priceSource.as_of)}
+              </p>
+            )}
 
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl bg-surface-2 p-4">
                 <p className="text-xs text-muted-foreground">ราคากลางเฉลี่ย</p>
                 <p className="mt-1 font-display text-xl font-semibold">
-                  ฿{toMillion(homeStats.avgMid)} ล้าน
+                  {priceSummary?.avgMidPriceBaht != null
+                    ? `฿${toMillion(priceSummary.avgMidPriceBaht)} ล้าน`
+                    : "—"}
                 </p>
               </div>
               <div className="rounded-xl bg-surface-2 p-4">
@@ -793,22 +879,32 @@ export default function HomePage() {
                   ราคาที่ชนะเฉลี่ย
                 </p>
                 <p className="mt-1 font-display text-xl font-semibold">
-                  ฿{toMillion(homeStats.avgAwarded)} ล้าน
+                  {priceSummary?.avgAwardedPriceBaht != null
+                    ? `฿${toMillion(priceSummary.avgAwardedPriceBaht)} ล้าน`
+                    : "—"}
                 </p>
               </div>
               <div className="rounded-xl bg-surface-2 p-4">
-                <p className="text-xs text-muted-foreground">ส่วนต่างเฉลี่ย</p>
+                <p className="text-xs text-muted-foreground">ส่วนต่างรวม</p>
                 <p className="mt-1 font-display text-xl font-semibold text-primary">
-                  {homeStats.avgDiscountPct.toFixed(1)}%
+                  {priceSummary?.avgDiscountPct != null
+                    ? `${priceSummary.avgDiscountPct.toFixed(1)}%`
+                    : "—"}
                 </p>
               </div>
             </div>
 
-            <div className="mt-5" style={{ height: 280 }}>
-              <PriceComparisonChart
-                data={priceComparisonData}
-                series={priceChartSeries}
-              />
+            <div className="mt-5" style={{ height: 360 }}>
+              {displayedPriceComparison.length > 0 ? (
+                <PriceComparisonChart
+                  data={displayedPriceComparison}
+                  series={priceChartSeries}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  {analytics ? "ยังไม่มี TOR ที่มีทั้งราคากลางและราคาที่ชนะ" : "กำลังโหลด..."}
+                </div>
+              )}
             </div>
 
             <div className="mt-3 flex items-center justify-center gap-6">
@@ -865,7 +961,23 @@ export default function HomePage() {
                   <p className="font-display text-2xl font-semibold text-primary">
                     {summary
                       ? summary.total_budget.toLocaleString("th-TH", { maximumFractionDigits: 0 })
-                      : totalBudgetAmount.toLocaleString("th-TH")}
+                      : "—"}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">บาท</p>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-xl border border-border">
+                <div className="bg-primary px-4 py-2.5">
+                  <p className="text-xs font-medium text-primary-foreground">
+                    วงเงินเฉลี่ยต่อโครงการ
+                  </p>
+                </div>
+                <div className="px-4 py-4">
+                  <p className="font-display text-2xl font-semibold text-primary">
+                    {summary?.avg_budget != null
+                      ? summary.avg_budget.toLocaleString("th-TH", { maximumFractionDigits: 0 })
+                      : "—"}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">บาท</p>
                 </div>
@@ -879,9 +991,7 @@ export default function HomePage() {
                 </div>
                 <div className="px-4 py-4">
                   <p className="font-display text-2xl font-semibold text-primary">
-                    {summary
-                      ? summary.total_tors.toLocaleString("th-TH")
-                      : totalProjectCount.toLocaleString("th-TH")}
+                    {summary ? summary.total_tors.toLocaleString("th-TH") : "—"}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     โครงการ

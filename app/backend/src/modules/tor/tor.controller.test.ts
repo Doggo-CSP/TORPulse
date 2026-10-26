@@ -5,7 +5,16 @@ import express from 'express'
 import { Types } from 'mongoose'
 import request from 'supertest'
 
-import { calculateInterestScore, deriveCategory, getRecommendationsHandler } from './tor.controller.js'
+import {
+  calculateInterestScore,
+  compareByDeadline,
+  deriveCategory,
+  getRecommendationsHandler,
+  getTorByIdHandler,
+  resolveTorCategory,
+  toTorListItem,
+} from './tor.controller.js'
+import { CategoryModel } from '../category/category.model.js'
 import { TorModel } from './tor.model.js'
 
 // --- deriveCategory (pure) -------------------------------------------------
@@ -32,6 +41,16 @@ const categoryCases: Array<{ name: string; technologies: string[]; expected: str
     expected: 'enterprise_system',
   },
   {
+    name: 'consulting/architecture keyword',
+    technologies: ['IT Consulting'],
+    expected: 'consulting_architecture',
+  },
+  {
+    name: 'web keyword takes priority over consulting/architecture keyword',
+    technologies: ['React', 'Consulting'],
+    expected: 'web_application',
+  },
+  {
     name: 'empty technologies falls back to enterprise_system',
     technologies: [],
     expected: 'enterprise_system',
@@ -41,7 +60,51 @@ const categoryCases: Array<{ name: string; technologies: string[]; expected: str
     technologies: ['COBOL'],
     expected: 'enterprise_system',
   },
+  { name: 'AI keyword', technologies: ['Machine Learning'], expected: 'ai_ml' },
+  { name: 'OCR maps to AI/ML', technologies: ['OCR'], expected: 'ai_ml' },
+  { name: 'short AI token must be the whole name', technologies: ['AI'], expected: 'ai_ml' },
+  {
+    name: 'short AI token inside another word does not match',
+    technologies: ['Email Gateway'],
+    expected: 'enterprise_system',
+  },
+  {
+    name: 'AI/ML takes priority over web',
+    technologies: ['React', 'LLM'],
+    expected: 'ai_ml',
+  },
+  {
+    name: 'cybersecurity keyword',
+    technologies: ['Penetration Testing'],
+    expected: 'cybersecurity',
+  },
+  { name: 'SOC as a whole name', technologies: ['SOC'], expected: 'cybersecurity' },
+  {
+    name: 'SOC inside another word does not match',
+    technologies: ['Social Listening'],
+    expected: 'enterprise_system',
+  },
+  { name: 'cloud keyword', technologies: ['AWS', 'Kubernetes'], expected: 'cloud_infrastructure' },
+  {
+    name: 'SQL Server stays data/BI even though it contains "server"',
+    technologies: ['SQL Server'],
+    expected: 'data_bi',
+  },
+  {
+    name: 'web takes priority over cloud',
+    technologies: ['React', 'Docker'],
+    expected: 'web_application',
+  },
 ]
+
+test('resolveTorCategory prefers a stored category over the keyword rules', () => {
+  assert.equal(
+    resolveTorCategory({ category: 'cybersecurity', technologies: ['React'] }),
+    'cybersecurity',
+  )
+  assert.equal(resolveTorCategory({ category: null, technologies: ['React'] }), 'web_application')
+  assert.equal(resolveTorCategory({ technologies: [] }), 'enterprise_system')
+})
 
 for (const { name, technologies, expected } of categoryCases) {
   test(`deriveCategory: ${name}`, () => {
@@ -73,6 +136,56 @@ test('calculateInterestScore typically differs across different tor ids', () => 
   )
 
   assert.ok(scores.size > 1, 'expected scores to vary across different tor ids')
+})
+
+test('GET /tors/:id returns authoritative e-GP details', async (context) => {
+  const id = new Types.ObjectId()
+  context.mock.method(TorModel, 'findById', () => ({
+    lean: async () => ({
+      _id: id,
+      externalId: '68089351005',
+      sourceAdapter: 'central_egp',
+      sourceVersion: 'initial',
+      detailUrl: 'https://example.com',
+      projectTitle: 'Project',
+      agencyName: 'AI agency',
+      departmentName: 'กรมชลประทาน',
+      departmentSubName: 'สำนักบริหารจัดการน้ำและอุทกวิทยา',
+      projectStatus: 'จัดทำสัญญา/บริหารสัญญา',
+      summary: null,
+      objectives: [],
+      requirements: [],
+      bidderQualifications: [],
+      technologies: [],
+      budgetBaht: 10_000_000,
+      midPriceBaht: 9_014_000,
+      awardedPriceBaht: 9_000_000,
+      submissionDeadline: null,
+      contactInformation: [],
+      classificationReason: 'Software project',
+      confidence: 0.9,
+      analyzedAt: new Date('2026-09-01T00:00:00Z'),
+      documents: [],
+      createdAt: new Date('2026-09-01T00:00:00Z'),
+      updatedAt: new Date('2026-09-02T00:00:00Z'),
+    }),
+  }))
+  const app = express()
+  app.get('/tors/:id', getTorByIdHandler)
+
+  const response = await request(app).get(`/tors/${id}`)
+
+  assert.equal(response.status, 200)
+  assert.equal(response.body.departmentName, 'กรมชลประทาน')
+  assert.equal(response.body.departmentSubName, 'สำนักบริหารจัดการน้ำและอุทกวิทยา')
+  assert.equal(response.body.projectStatus, 'จัดทำสัญญา/บริหารสัญญา')
+  assert.equal(response.body.midPriceBaht, 9_014_000)
+  assert.equal(response.body.awardedPriceBaht, 9_000_000)
+  // A TOR stored before scope/deliverables/timeline/evaluationCriteria existed gets safe defaults
+  assert.equal(response.body.scope, null)
+  assert.deepEqual(response.body.deliverables, [])
+  assert.deepEqual(response.body.timeline, [])
+  assert.deepEqual(response.body.evaluationCriteria, [])
 })
 
 // --- getRecommendationsHandler (mocked TorModel.find) -----------------------
@@ -112,6 +225,9 @@ test('GET /recommendations requires auth, then returns deterministic scored item
       }),
     }),
   }))
+  context.mock.method(CategoryModel, 'find', () => ({
+    lean: async () => [{ key: 'web_application', name: 'งานพัฒนาเว็บไซต์' }],
+  }))
 
   const guestApp = express()
   guestApp.get('/recommendations', getRecommendationsHandler)
@@ -141,4 +257,79 @@ test('GET /recommendations requires auth, then returns deterministic scored item
     assert.ok(item.score >= 50 && item.score <= 95, `score ${item.score} out of range`)
   }
   assert.deepEqual(firstResponse.body, secondResponse.body)
+  const reactItem = firstResponse.body.items.find(
+    (item: { projectTitle: string }) => item.projectTitle === 'Project A',
+  )
+  assert.equal(reactItem?.categoryName, 'งานพัฒนาเว็บไซต์')
+})
+
+test('list items expose an ISO deadline and the raw deadline text', () => {
+  const base = {
+    _id: 'id',
+    externalId: '69019037579',
+    sourceAdapter: 'central_egp',
+    projectTitle: 'Project',
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+  }
+
+  const stored = toTorListItem(
+    {
+      ...base,
+      submissionDeadline: '15 มกราคม 2569',
+      submissionDeadlineAt: new Date('2026-01-15T00:00:00Z'),
+    },
+    new Map(),
+  )
+  assert.equal(stored.submissionDeadline, '2026-01-15')
+  assert.equal(stored.submissionDeadlineText, '15 มกราคม 2569')
+
+  // Older TOR without submissionDeadlineAt is parsed on the fly.
+  assert.equal(
+    toTorListItem({ ...base, submissionDeadline: '2025-11-17T16:00:00' }, new Map())
+      .submissionDeadline,
+    '2025-11-17',
+  )
+
+  const monthOnly = toTorListItem({ ...base, submissionDeadline: 'มกราคม 2569' }, new Map())
+  assert.equal(monthOnly.submissionDeadline, null)
+  assert.equal(monthOnly.submissionDeadlineText, 'มกราคม 2569')
+
+  assert.equal(
+    toTorListItem({ ...base, submissionDeadline: 'null' }, new Map()).submissionDeadlineText,
+    null,
+  )
+})
+
+// --- compareByDeadline (pure) ----------------------------------------------
+
+test('compareByDeadline: open soonest first, then closed most recent first, then no deadline', () => {
+  const tors = [
+    { id: 'none', submissionDeadline: null },
+    { id: 'closed-old', submissionDeadline: '2026-01-01' },
+    { id: 'open-late', submissionDeadline: '2026-12-01' },
+    { id: 'closed-recent', submissionDeadline: '2026-10-01' },
+    { id: 'today', submissionDeadline: '2026-10-04' },
+    { id: 'open-soon', submissionDeadline: '2026-10-10' },
+  ]
+
+  const sorted = [...tors].sort((a, b) => compareByDeadline(a, b, '2026-10-04'))
+
+  assert.deepEqual(
+    sorted.map((t) => t.id),
+    ['today', 'open-soon', 'open-late', 'closed-recent', 'closed-old', 'none'],
+  )
+})
+
+test('compareByDeadline: in-progress projects count as closed even with a future deadline', () => {
+  const tors = [
+    { id: 'in-progress', submissionDeadline: '2026-10-05', projectStatus: ' ระหว่างดำเนินการ ' },
+    { id: 'open-late', submissionDeadline: '2026-12-01', projectStatus: null },
+  ]
+
+  const sorted = [...tors].sort((a, b) => compareByDeadline(a, b, '2026-10-04'))
+
+  assert.deepEqual(
+    sorted.map((t) => t.id),
+    ['open-late', 'in-progress'],
+  )
 })
