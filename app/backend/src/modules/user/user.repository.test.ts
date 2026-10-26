@@ -73,7 +73,11 @@ test('addBookmark upserts on the (userId, torId) pair', async (context) => {
 
   await addBookmark(userId, torId)
 
-  assert.deepEqual(capturedOptions, { upsert: true, new: true, setDefaultsOnInsert: true })
+  assert.deepEqual(capturedOptions, {
+    upsert: true,
+    returnDocument: 'after',
+    setDefaultsOnInsert: true,
+  })
 })
 
 test('removeBookmark deletes the matching (userId, torId) document', async (context) => {

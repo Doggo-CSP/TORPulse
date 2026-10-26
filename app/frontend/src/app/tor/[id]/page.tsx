@@ -11,6 +11,7 @@ import { BookmarkIcon as BookmarkOutlineIcon } from "@heroicons/react/24/outline
 import { formatThaiDate, getDeadlineInfo } from "@/api/tor.api";
 import { DeadlineBadge } from "@/app/components/deadline_badge";
 import { SimilarProjects } from "./similar-projects";
+import { QualificationMatchCard } from "./qualification-match";
 
 const formatBaht = (amount: number | null) =>
     amount === null
@@ -51,7 +52,7 @@ export default function TorDetailPage({
     const decodedId = decodeURIComponent(id);
     const { data: tor, isLoading, error } = useTor(decodedId);
     const { user } = useAuth();
-    const { bookmarkedTors, toggleBookmark } = useUserProfile(!!user);
+    const { profile, bookmarkedTors, toggleBookmark } = useUserProfile(!!user);
     const [savingBookmark, setSavingBookmark] = useState(false);
     const [bookmarkFeedback, setBookmarkFeedback] = useState<string | null>(null);
 
@@ -327,6 +328,8 @@ export default function TorDetailPage({
                                 )}
                             </div>
                         )}
+
+                        <QualificationMatchCard tor={tor} profile={profile} isLoggedIn={!!user} />
 
                         {tor.contactInformation.length > 0 && (
                             <div className="panel p-5">
