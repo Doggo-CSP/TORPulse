@@ -8,23 +8,7 @@ import {
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import type { UserProfile } from "@/api/user.api";
-
-// Keys of notificationMissingFields (backend missingNotificationFields), with where each is
-// filled in now. The qualification values are computed from the bidder profile, so there is no
-// separate form for them here.
-const MISSING_FIELD_LABELS: Record<string, string> = {
-  accountType: "ประเภทบัญชีเป็นนิติบุคคล",
-  companyName: "ชื่อบริษัท",
-  registrationNumber: "เลขทะเบียนนิติบุคคล",
-  interests: "หมวดที่สนใจอย่างน้อย 1 หมวด (แท็บความสนใจ)",
-  "qualification.registeredCapitalBaht": "ทุนจดทะเบียน",
-  "qualification.yearsInBusiness": "วันที่จดทะเบียนจัดตั้ง",
-  "qualification.maxPastContractValueBaht": "ผลงานที่ผ่านมาที่ระบุมูลค่าสัญญา",
-  "qualification.isThaiJuristicPerson": "ประเภทบัญชีเป็นนิติบุคคล",
-  "qualification.isSme": "สถานะ SME",
-  "qualification.hasPositiveNetWorth": "มูลค่าสุทธิของกิจการเป็นบวกหรือไม่",
-  "qualification.hasBangkokOffice": "มีสำนักงานในกรุงเทพฯ/ปริมณฑลหรือไม่",
-};
+import { missingFieldLabel } from "@/lib/qualification-labels";
 
 // The parent remounts this with a key built from the saved values, so local state resets
 // whenever the saved profile changes.
@@ -39,10 +23,8 @@ export function NotificationSettings({
 }) {
   const [emailEnabled, setEmailEnabled] = useState(profile.notificationPrefs?.emailEnabled ?? true);
 
-  // Several keys can map to the same wording (account type), so list each once
-  const missing = [
-    ...new Set((profile.notificationMissingFields ?? []).map((f) => MISSING_FIELD_LABELS[f] ?? f)),
-  ];
+  // The same fields the qualification score needs (backend profileCompleteness)
+  const missing = (profile.notificationMissingFields ?? []).map(missingFieldLabel);
 
   const toggleEmail = () => {
     const next = !emailEnabled;
@@ -58,11 +40,11 @@ export function NotificationSettings({
           <div>
             <h2 className="text-lg font-bold text-[#2d2d2d]">แจ้งเตือนทางอีเมล</h2>
             <p className="mt-1 text-sm text-[#7a8b6f]">
-              ส่งอีเมลเมื่อมี TOR ใหม่ที่คุณมีคุณสมบัติครบทุกข้อ ไปที่{" "}
+              ส่งอีเมลเมื่อ TOR ที่เปิดรับอยู่ได้คะแนนคุณสมบัติ 100% ไปที่{" "}
               <span className="font-medium text-[#2d2d2d]">{profile.contactEmail || profile.email}</span>
             </p>
             <p className="mt-1 text-xs text-[#998f80]">
-              ระบบใช้ข้อมูลจากโปรไฟล์ของคุณ (ข้อมูลนิติบุคคล ผลงาน และทีมงาน) ในการเทียบคุณสมบัติ
+              คะแนนคำนวณด้วย AI จากข้อมูลในโปรไฟล์ของคุณ (ข้อมูลพื้นฐาน ผลงาน และบุคลากร)
             </p>
           </div>
         </div>
@@ -89,7 +71,7 @@ export function NotificationSettings({
         (missing.length === 0 ? (
           <div className="mt-5 flex items-center gap-2 rounded-2xl border border-[#c4e3cb] bg-[#eaf4ed] p-4 text-sm text-[#2d5a37]">
             <CheckCircleIcon className="size-5 shrink-0" />
-            โปรไฟล์ครบถ้วน ระบบจะแจ้งเตือนเมื่อพบ TOR ที่คุณมีคุณสมบัติครบ
+            โปรไฟล์ครบถ้วน ระบบจะแจ้งเตือนเมื่อพบ TOR ที่ได้คะแนน 100%
           </div>
         ) : (
           <div className="mt-5 rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] p-4 text-sm text-[#5c5446]">
