@@ -10,6 +10,8 @@ import { useUserProfile } from "@/hooks/use-user-profile";
 import { useHomepage } from "@/hooks/use-homepage";
 import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
 import { useTorFilterOptions, useTorRecommendations, useTors } from "@/hooks/use-tors";
+import { useCardMatches } from "@/hooks/use-card-matches";
+import { CardMatchBadge } from "./card-match-badge";
 import { useCategories } from "@/hooks/use-categories";
 import { DeadlineBadge } from "@/app/components/deadline_badge";
 import { formatThaiDate } from "@/api/reports.api";
@@ -317,6 +319,11 @@ export default function HomePage() {
 
   const { data, isLoading: searching, error: searchError } = useTors(requestParams);
   const pagedResults = data?.items ?? [];
+  // Precomputed qualification scores for the cards on this page (UC-08)
+  const { byTorId: cardMatches } = useCardMatches(
+    pagedResults.map((t) => t.id),
+    isLoggedIn,
+  );
   const totalPages = Math.max(1, data?.totalPages ?? 1);
   const visiblePage = Math.min(currentPage, totalPages);
 
@@ -775,6 +782,7 @@ export default function HomePage() {
                   {/* Budget + CTA */}
                   <div className="shrink-0 flex flex-col items-end gap-2">
                     <p className="font-display text-lg font-semibold">{baht(t.budgetBaht ?? 0)}</p>
+                    <CardMatchBadge match={cardMatches.get(t.id)} />
                     <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-all group-hover:bg-primary group-hover:text-primary-foreground">
                       ดูรายละเอียด →
                     </span>
