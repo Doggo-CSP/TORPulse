@@ -54,6 +54,10 @@ interface Props {
   value: Partial<CompanyFormData>;
   onChange: (patch: Partial<CompanyFormData>) => void;
   teamCount: number;
+  /** Mark the fields the qualification score requires (onboarding). */
+  strict?: boolean;
+  /** Open every section (onboarding). */
+  defaultOpen?: boolean;
 }
 
 const CERT_SUGGESTIONS = ["ISO 9001", "ISO/IEC 27001", "ISO/IEC 20000", "CMMI"];
@@ -72,7 +76,8 @@ function yearsSince(isoDate?: string): number | null {
 
 /* ───────────── Main component ───────────── */
 
-export function CompanyForm({ value, onChange, teamCount }: Props) {
+export function CompanyForm({ value, onChange, teamCount, strict = false, defaultOpen = false }: Props) {
+  const star = strict ? " *" : "";
   const certifications = value.certifications ?? [];
 
   const regNo = value.registrationNumber ?? "";
@@ -86,9 +91,9 @@ export function CompanyForm({ value, onChange, teamCount }: Props) {
   // ── collapsible state ──
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({
     entity: true,
-    size: false,
-    certs: false,
-    contact: false,
+    size: defaultOpen,
+    certs: defaultOpen,
+    contact: defaultOpen,
   });
   const toggle = (k: SectionKey) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const setAll = (v: boolean) => setOpen({ entity: v, size: v, certs: v, contact: v });
@@ -172,7 +177,7 @@ export function CompanyForm({ value, onChange, teamCount }: Props) {
           </div>
           <div>
             <label htmlFor="company-name" className={labelCls}>
-              ชื่อบริษัท
+              ชื่อบริษัท{star}
             </label>
             <input
               id="company-name"
@@ -218,7 +223,7 @@ export function CompanyForm({ value, onChange, teamCount }: Props) {
           </div>
           <div className="md:col-span-2">
             <label htmlFor="company-business-type" className={labelCls}>
-              ประเภทธุรกิจ
+              ประเภทธุรกิจ{star}
             </label>
             <input
               id="company-business-type"
@@ -262,7 +267,7 @@ export function CompanyForm({ value, onChange, teamCount }: Props) {
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <div>
             <label htmlFor="company-capital" className={labelCls}>
-              ทุนจดทะเบียน
+              ทุนจดทะเบียน{star}
             </label>
             <NumberField
               id="company-capital"

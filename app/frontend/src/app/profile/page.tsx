@@ -3,21 +3,21 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { SiteNav } from "@/app/components/site_nav";
-import { useUserProfile, type UserProfileData } from "@/hooks/use-user-profile";
+import { useUserProfile } from "@/hooks/use-user-profile";
 import { useTorRecommendations } from "@/hooks/use-tors";
 import { useCategories } from "@/hooks/use-categories";
 import { useAuth } from "@/hooks/use-auth";
-import {
-  CompanyForm,
-  EGP_CERTIFICATION_NAME,
-  getCompanyFormError,
-  type CompanyFormData,
-} from "./forms/company-form";
+import { CompanyForm } from "./forms/company-form";
 import { ProjectsEditor, SelfEditor, TeamEditor } from "./forms/bidder-editors";
-import { NumberField, toCertificationInputs } from "./forms/form-ui";
+import { PersonalForm } from "./forms/personal-form";
+import {
+  mainFormError,
+  toMainProfileForm,
+  useSaveMainProfile,
+  type MainProfileForm,
+} from "./forms/main-profile";
 import { useBidderProfile } from "@/hooks/use-bidder-profile";
 import { missingFieldLabel } from "@/lib/qualification-labels";
-import type { BidderProfile, CertificationInput } from "@/api/bidder-profile.api";
 import {
   GlobeAltIcon,
   ChartBarIcon,
@@ -31,7 +31,6 @@ import {
   CheckCircleIcon,
   ArrowRightIcon,
   UserIcon,
-  CameraIcon,
 } from "@heroicons/react/24/outline";
 import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
 import { NotificationSettings } from "./notification-settings";
@@ -72,45 +71,11 @@ const LEGACY_INTEREST_IDS: Record<string, string> = {
   cloud: "cloud_infrastructure",
 };
 
-const inputCls =
-  "w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]";
-const labelCls = "block text-xs font-semibold text-[#5c5446] mb-1.5";
-
 type TabType = "profile" | "interests" | "bookmarks" | "recommended" | "notifications";
 const TABS: TabType[] = ["profile", "interests", "bookmarks", "recommended", "notifications"];
 
-// ฟอร์มรวมฟิลด์โปรไฟล์เดิม + ฟิลด์คุณสมบัติบริษัท
-type FormState = Partial<UserProfileData> & Partial<CompanyFormData>;
-
-// Fields of the main form that live in the bidder profile (organization and preferences)
-const bidderFormFields = (bidder: BidderProfile): Partial<CompanyFormData> => {
-  const certs = toCertificationInputs(bidder.organization.certifications);
-  return {
-    registeredDate: bidder.organization.registeredDate ?? "",
-    registeredCapital: bidder.organization.registeredCapitalBaht,
-    certifications: certs.filter((c) => c.name !== EGP_CERTIFICATION_NAME),
-    isEgpRegistered: certs.some((c) => c.name === EGP_CERTIFICATION_NAME),
-    isSme: bidder.organization.isSme,
-    hasPositiveNetWorth: bidder.organization.hasPositiveNetWorth,
-    hasBangkokOffice: bidder.organization.hasBangkokOffice,
-    budgetMin: bidder.preferences.budgetMinBaht,
-    budgetMax: bidder.preferences.budgetMaxBaht,
-    businessObjectives: bidder.preferences.businessObjectives,
-  };
-};
-
-// The e-GP checkbox is saved as a certification, so the AI matcher sees it
-const withEgpCertification = (
-  certs: CertificationInput[] = [],
-  isEgpRegistered = false,
-  previous: CertificationInput | undefined,
-): CertificationInput[] =>
-  isEgpRegistered
-    ? [
-        ...certs,
-        previous ?? { name: EGP_CERTIFICATION_NAME, issuer: "", issuedAt: null, expiresAt: null },
-      ]
-    : certs;
+// The main form; the same fields onboarding asks for (forms/main-profile.ts)
+type FormState = MainProfileForm;
 
 export default function ProfilePage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -126,6 +91,7 @@ export default function ProfilePage() {
   } = useUserProfile(!!authUser);
   const bidder = useBidderProfile(!!authUser);
   const bidderProfile = bidder.profile;
+  const saveMainProfile = useSaveMainProfile();
   const { data: recommendedTors = [], refetch: refetchRecommendations } =
     useTorRecommendations(!!authUser);
   // Every active category, whether or not any TOR uses it right now. (/tors/filter-options only
@@ -171,35 +137,6 @@ export default function ProfilePage() {
   });
   const [formData, setFormData] = useState<FormState>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("กรุณาเลือกไฟล์รูปภาพเท่านั้น");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      alert("ขนาดไฟล์ต้องไม่เกิน 5MB");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFormData((prev) => ({ ...prev, image: reader.result as string }));
-    };
-    reader.readAsDataURL(file);
-
-    // allow re-selecting the same file later
-    e.target.value = "";
-  };
-
   // Toggle against everything saved, not just the cards on screen, so interests in hidden
   // categories are kept (the backend accepts hidden keys the user already has).
   const handleInterestToggle = (catKey: string) => {
@@ -211,38 +148,15 @@ export default function ProfilePage() {
     );
   };
 
+  // Load the main form once both are available. Later saves of team members or projects refresh
+  // the bidder profile too, and must not reset what the user is typing here.
+  const formLoaded = useRef(false);
   useEffect(() => {
-    if (profile) {
-      setFormData((prev) => ({
-        ...prev,
-        accountType: profile.accountType || "personal",
-        displayName: profile.displayName || profile.name || "",
-        firstName: profile.firstName || "",
-        lastName: profile.lastName || "",
-        jobTitle: profile.jobTitle || "",
-        contactEmail: profile.contactEmail || profile.email || "",
-        phone: profile.phone || "",
-        image: profile.image || "",
-        address: profile.address || "",
-        about: profile.about || "",
-        website: profile.website || "",
-        // ── company ──
-        companyName: profile.companyName || "",
-        registrationNumber: profile.registrationNumber || "",
-        businessType: profile.businessType || "",
-      }));
+    if (profile && bidderProfile && !formLoaded.current) {
+      formLoaded.current = true;
+      setFormData(toMainProfileForm(profile, bidderProfile));
     }
-  }, [profile]);
-
-  // Load the bidder-profile fields of the main form once. Later saves of team members or
-  // projects refresh the bidder profile too, and must not reset what the user is typing here.
-  const bidderFieldsLoaded = useRef(false);
-  useEffect(() => {
-    if (bidderProfile && !bidderFieldsLoaded.current) {
-      bidderFieldsLoaded.current = true;
-      setFormData((prev) => ({ ...prev, ...bidderFormFields(bidderProfile) }));
-    }
-  }, [bidderProfile]);
+  }, [profile, bidderProfile]);
 
   if (authLoading || loading) {
     return (
@@ -287,73 +201,20 @@ export default function ProfilePage() {
   const completeness = bidderProfile?.completeness;
   const completionPercentage = completeness?.percentage ?? 0;
 
-  // Saves the main form: account and contact fields, then the organization (company only) and
-  // the preferences. Team members and projects are saved on their own by their editors.
+  // Saves the main form; team members and projects are saved by their own editors. Incomplete
+  // profiles are saved as drafts (UC-07): only values in a wrong format stop the save.
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const isCompany = formData.accountType === "company";
-    if (isCompany) {
-      const error = getCompanyFormError(formData);
-      if (error) {
-        setFormError(error);
-        return;
-      }
-    } else if (
-      formData.budgetMin != null &&
-      formData.budgetMax != null &&
-      formData.budgetMin > formData.budgetMax
-    ) {
-      setFormError("งบประมาณต่ำสุดต้องไม่มากกว่างบประมาณสูงสุด");
+    const error = mainFormError(formData);
+    if (error) {
+      setFormError(error);
       return;
     }
 
     setFormError(null);
     try {
-      await updateProfile({
-        accountType: formData.accountType,
-        displayName: formData.displayName,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        jobTitle: formData.jobTitle,
-        contactEmail: formData.contactEmail,
-        phone: formData.phone,
-        image: formData.image,
-        address: formData.address,
-        about: formData.about,
-        website: formData.website,
-        ...(isCompany && {
-          companyName: formData.companyName,
-          registrationNumber: formData.registrationNumber,
-          businessType: formData.businessType,
-        }),
-      });
-
-      if (isCompany) {
-        const previousEgp = bidderProfile?.organization.certifications.find(
-          (c) => c.name === EGP_CERTIFICATION_NAME,
-        );
-        await bidder.saveOrganization({
-          registeredDate: formData.registeredDate || null,
-          registeredCapitalBaht: formData.registeredCapital ?? null,
-          isSme: formData.isSme ?? null,
-          hasPositiveNetWorth: formData.hasPositiveNetWorth ?? null,
-          hasBangkokOffice: formData.hasBangkokOffice ?? null,
-          certifications: withEgpCertification(
-            formData.certifications?.filter((c) => c.name.trim()),
-            formData.isEgpRegistered,
-            previousEgp && toCertificationInputs([previousEgp])[0],
-          ),
-        });
-      }
-
-      await bidder.savePreferences({
-        budgetMinBaht: formData.budgetMin ?? null,
-        budgetMaxBaht: formData.budgetMax ?? null,
-        ...(isCompany && { businessObjectives: formData.businessObjectives ?? "" }),
-      });
-      // Name, contact and business type count towards completeness too
-      await bidder.refresh();
+      await saveMainProfile(formData);
     } catch (error) {
       setFormError(
         error instanceof Error && error.message
@@ -466,203 +327,42 @@ export default function ProfilePage() {
         {activeTab === "profile" && (
           <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm md:p-8">
             <form onSubmit={handleFormSubmit} className="space-y-6">
-              {/* Top Section */}
-              <div className="grid grid-cols-1 gap-8 md:grid-cols-[1fr_auto] md:items-start">
-                {/* Account Type — Left */}
-                <div>
-                  <h2 className="text-lg font-bold text-[#2d2d2d]">ประเภทบัญชี</h2>
-                  <p className="mt-1 text-sm text-[#7a8b6f]">
-                    เลือกประเภทให้ตรงกับผู้ใช้งาน เพื่อให้เราแสดงข้อมูลที่เกี่ยวข้องได้อย่างถูกต้อง
-                  </p>
+              {/* Account type */}
+              <div>
+                <h2 className="text-lg font-bold text-[#2d2d2d]">ประเภทบัญชี</h2>
+                <p className="mt-1 text-sm text-[#7a8b6f]">
+                  เลือกประเภทให้ตรงกับผู้ใช้งาน เพื่อให้เราแสดงข้อมูลที่เกี่ยวข้องได้อย่างถูกต้อง
+                </p>
 
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {[
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {(
+                    [
                       { id: "personal", label: "บุคคล / ผู้ใช้งาน" },
                       { id: "company", label: "บริษัท" },
-                    ].map((type) => (
-                      <button
-                        key={type.id}
-                        type="button"
-                        onClick={() =>
-                          setFormData({ ...formData, accountType: type.id as any })
-                        }
-                        className={`rounded-full border px-5 py-2.5 text-sm font-medium transition-all ${
-                          formData.accountType === type.id
-                            ? "border-[#4a7c59] bg-[#4a7c59] text-white shadow-sm"
-                            : "border-[#ddd5c8] bg-white text-[#5c5446] hover:bg-[#faf7f2]"
-                        }`}
-                      >
-                        {type.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Avatar — Right */}
-                <div className="grid grid-cols-1 gap-5 pt-2">
-                  <label className="mb-1.5 block text-xs font-semibold text-[#5c5446]">
-                    Avatar / รูปโปรไฟล์
-                  </label>
-
-                  <div className="flex items-center gap-4">
+                    ] as const
+                  ).map((type) => (
                     <button
+                      key={type.id}
                       type="button"
-                      onClick={handleAvatarClick}
-                      className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-[#e8e0d0] bg-[#faf7f2] focus:outline-none focus:ring-2 focus:ring-[#4a7c59]"
+                      onClick={() => setFormData({ ...formData, accountType: type.id })}
+                      className={`rounded-full border px-5 py-2.5 text-sm font-medium transition-all ${
+                        formData.accountType === type.id
+                          ? "border-[#4a7c59] bg-[#4a7c59] text-white shadow-sm"
+                          : "border-[#ddd5c8] bg-white text-[#5c5446] hover:bg-[#faf7f2]"
+                      }`}
                     >
-                      {formData.image ? (
-                        <img
-                          src={formData.image}
-                          alt="รูปโปรไฟล์"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="grid h-full w-full place-items-center text-[#b0a898]">
-                          <UserIcon className="size-8" />
-                        </div>
-                      )}
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                        <CameraIcon className="size-6 text-white" />
-                      </div>
+                      {type.label}
                     </button>
-
-                    <div>
-                      <button
-                        type="button"
-                        onClick={handleAvatarClick}
-                        className="rounded-full border border-[#ddd5c8] bg-white px-4 py-2 text-xs font-medium text-[#5c5446] hover:bg-[#faf7f2]"
-                      >
-                        เลือกรูปภาพ
-                      </button>
-
-                      {formData.image && (
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, image: "" })}
-                          className="ml-2 text-xs font-medium text-[#CC0000] hover:underline"
-                        >
-                          ลบรูป
-                        </button>
-                      )}
-
-                      <p className="mt-1.5 text-xs text-[#CC0000]">
-                        รองรับไฟล์ JPG, PNG ขนาดไม่เกิน 5MB
-                      </p>
-                    </div>
-
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageChange}
-                      className="hidden"
-                    />
-                  </div>
+                  ))}
                 </div>
               </div>
 
-              {/* ── PERSONAL ── */}
+              {/* ── PERSONAL (forms/personal-form.tsx, shared with onboarding) ── */}
               {formData.accountType === "personal" && (
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 pt-2">
-                  <div>
-                    <label className={labelCls}>ชื่อที่แสดง</label>
-                    <input
-                      type="text"
-                      value={formData.displayName || ""}
-                      onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                      placeholder="เช่น Kantapon Hemmadhun"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>ชื่อ</label>
-                    <input
-                      type="text"
-                      value={formData.firstName || ""}
-                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>นามสกุล</label>
-                    <input
-                      type="text"
-                      value={formData.lastName || ""}
-                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>ตำแหน่งงาน</label>
-                    <input
-                      type="text"
-                      value={formData.jobTitle || ""}
-                      onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
-                      placeholder="เช่น นักพัฒนาซอฟต์แวร์"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>อีเมล</label>
-                    <input
-                      type="email"
-                      value={formData.contactEmail || ""}
-                      onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>เบอร์โทรศัพท์</label>
-                    <input
-                      type="tel"
-                      value={formData.phone || ""}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={labelCls}>ที่อยู่</label>
-                    <textarea
-                      rows={2}
-                      value={formData.address || ""}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={labelCls}>เกี่ยวกับคุณ</label>
-                    <textarea
-                      rows={3}
-                      value={formData.about || ""}
-                      onChange={(e) => setFormData({ ...formData, about: e.target.value })}
-                      placeholder="แนะนำตัวสั้น ๆ เช่น ทักษะ ความถนัด หรือประสบการณ์"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <p className={labelCls}>ช่วงงบประมาณโครงการที่สนใจ</p>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                      <NumberField
-                        id="personal-budget-min"
-                        value={formData.budgetMin}
-                        onChange={(n) => setFormData({ ...formData, budgetMin: n })}
-                        suffix="บาท"
-                        placeholder="ต่ำสุด"
-                      />
-                      <span className="hidden text-center text-xs text-[#998f80] sm:block">ถึง</span>
-                      <NumberField
-                        id="personal-budget-max"
-                        value={formData.budgetMax}
-                        onChange={(n) => setFormData({ ...formData, budgetMax: n })}
-                        suffix="บาท"
-                        placeholder="สูงสุด (เว้นว่าง = ไม่จำกัด)"
-                      />
-                    </div>
-                    <p className="mt-1.5 text-[11px] text-[#998f80]">
-                      ใช้เป็นแนวทางคัดกรอง ไม่นับเป็นเงื่อนไขคุณสมบัติใน TOR
-                    </p>
-                  </div>
-                </div>
+                <PersonalForm
+                  value={formData}
+                  onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+                />
               )}
 
               {/* ── COMPANY (แยกไปที่ forms/company-form.tsx) ── */}
