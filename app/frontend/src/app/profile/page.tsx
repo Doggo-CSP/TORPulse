@@ -244,7 +244,7 @@ export default function ProfilePage() {
                 บัญชีผู้ใช้งาน
               </span>
               <h1 className="mt-1 text-2xl font-bold text-[#2d2d2d] md:text-3xl">
-                {profile?.displayName || profile?.name || "Kantapon Hemmadhun"}
+                {profile?.displayName || profile?.name || profile?.email || authUser?.email}
               </h1>
               <p className="mt-1 text-sm text-[#7a8b6f]">
                 {accountTypeLabel}
