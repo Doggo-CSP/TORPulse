@@ -13,11 +13,6 @@ import {
   type CompanyFormData,
 } from "./forms/company-form";
 import {
-  AgencyForm,
-  getAgencyFormError,
-  type AgencyFormData,
-} from "./forms/agency-form";
-import {
   GlobeAltIcon,
   ChartBarIcon,
   DevicePhoneMobileIcon,
@@ -78,8 +73,8 @@ const labelCls = "block text-xs font-semibold text-[#5c5446] mb-1.5";
 type TabType = "profile" | "interests" | "bookmarks" | "recommended" | "notifications";
 const TABS: TabType[] = ["profile", "interests", "bookmarks", "recommended", "notifications"];
 
-// ฟอร์มรวมฟิลด์โปรไฟล์เดิม + ฟิลด์คุณสมบัติบริษัท + ฟิลด์หน่วยงาน
-type FormState = Partial<UserProfileData> & Partial<CompanyFormData> & Partial<AgencyFormData>;
+// ฟอร์มรวมฟิลด์โปรไฟล์เดิม + ฟิลด์คุณสมบัติบริษัท
+type FormState = Partial<UserProfileData> & Partial<CompanyFormData>;
 
 export default function ProfilePage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -194,8 +189,6 @@ export default function ProfilePage() {
         image: profile.image || "",
         address: profile.address || "",
         about: profile.about || "",
-        agencyName: p.agencyName || "",
-        agencyType: p.agencyType || "",
         website: profile.website || "",
         // ── company ──
         companyName: p.companyName || "",
@@ -211,15 +204,6 @@ export default function ProfilePage() {
         certifications: p.certifications ?? [],
         isEgpRegistered: p.isEgpRegistered ?? false,
         pastProjects: p.pastProjects ?? [],
-        // ── agency (CPD) ──
-        agencyCode: p.agencyCode || "",
-        ministry: p.ministry || "",
-        foundedYear: p.foundedYear ?? null,
-        staffCount: p.staffCount ?? null,
-        annualBudget: p.annualBudget ?? null,
-        procurementMethods: p.procurementMethods ?? [],
-        agencyProjects: p.agencyProjects ?? [],
-        fax: p.fax || "",
       } as FormState);
     }
   }, [profile]);
@@ -261,11 +245,7 @@ export default function ProfilePage() {
   }
 
   const accountTypeLabel =
-    profile?.accountType === "company"
-      ? "บริษัท"
-      : profile?.accountType === "agency"
-      ? "หน่วยงาน"
-      : "บุคคล / ผู้ใช้งาน";
+    profile?.accountType === "company" ? "บริษัท" : "บุคคล / ผู้ใช้งาน";
 
   // นับเฉพาะฟิลด์ที่เกี่ยวกับประเภทบัญชีที่เลือก
   const liveCompletionPercentage = (() => {
@@ -291,17 +271,6 @@ export default function ProfilePage() {
         (formData.certifications?.length ?? 0) > 0,
         (formData.pastProjects?.length ?? 0) > 0,
       ];
-    } else if (formData.accountType === "agency") {
-      specific = [
-        filled(formData.agencyName),
-        filled(formData.agencyType),
-        filled(formData.ministry),
-        filled(formData.agencyCode),
-        formData.annualBudget != null,
-        formData.staffCount != null,
-        (formData.procurementMethods?.length ?? 0) > 0,
-        (formData.pastProjects?.length ?? 0) > 0,
-      ];
     } else {
       specific = [
         filled(formData.firstName),
@@ -320,14 +289,6 @@ export default function ProfilePage() {
 
     if (formData.accountType === "company") {
       const error = getCompanyFormError(formData);
-      if (error) {
-        setFormError(error);
-        return;
-      }
-    }
-
-    if (formData.accountType === "agency") {
-      const error = getAgencyFormError(formData);
       if (error) {
         setFormError(error);
         return;
@@ -438,7 +399,6 @@ export default function ProfilePage() {
                     {[
                       { id: "personal", label: "บุคคล / ผู้ใช้งาน" },
                       { id: "company", label: "บริษัท" },
-                      { id: "agency", label: "หน่วยงาน" },
                     ].map((type) => (
                       <button
                         key={type.id}
@@ -605,14 +565,6 @@ export default function ProfilePage() {
               {/* ── COMPANY (แยกไปที่ forms/company-form.tsx) ── */}
               {formData.accountType === "company" && (
                 <CompanyForm
-                  value={formData}
-                  onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch } as FormState))}
-                />
-              )}
-
-              {/* ── AGENCY (แยกไปที่ forms/agency-form.tsx) ── */}
-              {formData.accountType === "agency" && (
-                <AgencyForm
                   value={formData}
                   onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch } as FormState))}
                 />

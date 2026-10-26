@@ -7,7 +7,7 @@ export interface UserRecord {
   name: string
   email: string
   image: string | null
-  accountType?: 'personal' | 'company' | 'agency'
+  accountType?: 'personal' | 'company'
   displayName?: string
   firstName?: string
   lastName?: string
@@ -21,8 +21,6 @@ export interface UserRecord {
   companyName?: string
   registrationNumber?: string
   businessType?: string
-  agencyName?: string
-  agencyType?: string
   role?: 'admin' | 'user'
   status?: 'active' | 'suspended'
   qualification?: CompanyQualification
@@ -55,7 +53,7 @@ const userSchema = new Schema<UserRecord>(
     image: { type: String, default: null },
     role: { type: String, enum: ['admin', 'user'], default: 'user' },
     status: { type: String, enum: ['active', 'suspended'], default: 'active' },
-    accountType: { type: String, enum: ['personal', 'company', 'agency'], default: 'personal' },
+    accountType: { type: String, enum: ['personal', 'company'], default: 'personal' },
     displayName: { type: String, default: '' },
     firstName: { type: String, default: '' },
     lastName: { type: String, default: '' },
@@ -70,8 +68,6 @@ const userSchema = new Schema<UserRecord>(
     companyName: { type: String, default: '' },
     registrationNumber: { type: String, default: '' },
     businessType: { type: String, default: '' },
-    agencyName: { type: String, default: '' },
-    agencyType: { type: String, default: '' },
     // Matched against TOR eligibility for qualifying-TOR email notifications
     qualification: { type: qualificationSchema, default: () => ({}) },
     notificationPrefs: {

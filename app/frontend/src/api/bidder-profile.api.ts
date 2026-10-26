@@ -117,7 +117,7 @@ export interface ProfileCompleteness {
 }
 
 export interface BidderProfile {
-  accountType: "personal" | "company" | "agency";
+  accountType: "personal" | "company";
   organization: Organization;
   preferences: Preferences;
   self: Person | null;

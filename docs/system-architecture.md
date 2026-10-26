@@ -288,7 +288,7 @@ So `notification/eligibility.ts` keeps reading the same flat `qualification`. Us
 | `200 { match, isStale, completeness }` | `match` is null on `GET` until the first `POST` |
 | `401` | not logged in |
 | `400` / `404` | invalid or unknown (or hidden) TOR id |
-| `409` | agency account, or no bidder profile yet (`completeness` says what to fill in) |
+| `409` | account type is not personal or company, or no bidder profile yet (`completeness` says what to fill in) |
 | `422` | the TOR has no extracted requirement text |
 | `502` | the AI call failed; the previous result is kept |
 

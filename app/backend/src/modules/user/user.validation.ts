@@ -22,7 +22,7 @@ export const qualificationSchema = z.object({
 })
 
 export const updateProfileSchema = z.object({
-  accountType: z.enum(['personal', 'company', 'agency']).optional(),
+  accountType: z.enum(['personal', 'company']).optional(),
   displayName: z.string().trim().optional(),
   firstName: z.string().trim().optional(),
   lastName: z.string().trim().optional(),
@@ -35,8 +35,6 @@ export const updateProfileSchema = z.object({
   companyName: z.string().trim().optional(),
   registrationNumber: z.string().trim().optional(),
   businessType: z.string().trim().optional(),
-  agencyName: z.string().trim().optional(),
-  agencyType: z.string().trim().optional(),
   website: z.string().trim().optional(),
   qualification: qualificationSchema.optional(),
   notificationPrefs: z.object({ emailEnabled: z.boolean() }).optional(),

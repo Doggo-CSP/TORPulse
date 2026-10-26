@@ -139,7 +139,7 @@ export function profileCompleteness(
       ['contact', filled(user.contactEmail) || filled(user.phone)],
     )
   } else {
-    // Agencies publish TORs rather than bid on them
+    // Only personal and company accounts bid
     checks.push(['accountType', false])
   }
 

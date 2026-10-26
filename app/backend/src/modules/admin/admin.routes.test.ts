@@ -327,21 +327,21 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     const response = await request(app).patch(targetUrl(target._id)).send({
       name: 'Renamed Target',
       jobTitle: 'Procurement Officer',
-      agencyName: 'Seed Agency',
-      accountType: 'agency',
+      companyName: 'Seed Company',
+      accountType: 'company',
     })
 
     assert.equal(response.status, 200)
     const stored = await User.findById(target._id).lean()
     assert.equal(stored?.name, 'Renamed Target')
     assert.equal(stored?.jobTitle, 'Procurement Officer')
-    assert.equal(stored?.accountType, 'agency')
+    assert.equal(stored?.accountType, 'company')
 
     const log = await AuditLogModel.findOne({ targetId: target._id, action: 'user.updated' }).lean()
     assert.deepEqual(log?.before, {
       name: 'Seed Target',
       jobTitle: '',
-      agencyName: '',
+      companyName: '',
       accountType: 'personal',
     })
   })
@@ -352,7 +352,7 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     const status = await request(app).patch(targetUrl(target._id)).send({ status: 'suspended' })
     const badType = await request(app)
       .patch(targetUrl(target._id))
-      .send({ accountType: 'government' })
+      .send({ accountType: 'agency' })
     const missing = await request(app)
       .patch(targetUrl(new Types.ObjectId()))
       .send({ name: 'Nobody' })
@@ -366,7 +366,7 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
   })
 
   await t.test('GET /admin/users searches by organization and returns total', async () => {
-    const response = await request(app).get('/admin/users').query({ search: 'Seed Agency' })
+    const response = await request(app).get('/admin/users').query({ search: 'Seed Company' })
 
     assert.equal(response.status, 200)
     assert.ok(response.body.users.some((u: { _id: string }) => u._id === target._id.toString()))

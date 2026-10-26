@@ -209,8 +209,8 @@ test('profileCompleteness checks an individual on name and contact', () => {
   assert.deepEqual(profileCompleteness(filled, profile).missing, [])
 })
 
-test('profileCompleteness flags an agency account as not a bidder', () => {
-  assert.deepEqual(profileCompleteness({ accountType: 'agency' }, null).missing, [
+test('profileCompleteness flags an account without a bidder type', () => {
+  assert.deepEqual(profileCompleteness({ accountType: null }, null).missing, [
     'accountType',
     'projects',
   ])
