@@ -65,6 +65,17 @@ export const organizationSchema = z.object({
   certifications: z.array(certificationSchema).max(30).optional(),
 })
 
+export const preferencesSchema = z
+  .object({
+    budgetMinBaht: nullableAmount.optional(),
+    budgetMaxBaht: nullableAmount.optional(),
+    businessObjectives: z.string().trim().max(2000).optional(),
+  })
+  .refine(
+    (v) => v.budgetMinBaht == null || v.budgetMaxBaht == null || v.budgetMinBaht <= v.budgetMaxBaht,
+    { message: 'budgetMinBaht must not exceed budgetMaxBaht', path: ['budgetMinBaht'] },
+  )
+
 const objectIdString = z.string().regex(/^[0-9a-f]{24}$/i, 'must be an ObjectId')
 
 const pastProjectFields = {

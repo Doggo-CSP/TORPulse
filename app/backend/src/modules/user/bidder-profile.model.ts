@@ -70,9 +70,18 @@ export interface PastProjectRecord {
   memberIds: mongoose.Types.ObjectId[] // team members who worked on it
 }
 
+// What the bidder is looking for, for any bidder type. Not a qualification: the AI matcher
+// mentions it in the summary but never scores it.
+export interface PreferencesRecord {
+  budgetMinBaht: number | null
+  budgetMaxBaht: number | null
+  businessObjectives: string
+}
+
 export interface BidderProfileRecord {
   userId: mongoose.Types.ObjectId
   organization: OrganizationRecord
+  preferences: PreferencesRecord
   self: PersonRecord | null
   team: PersonRecord[]
   projects: PastProjectRecord[]
@@ -125,6 +134,15 @@ const organizationSchema = new Schema<OrganizationRecord>(
   { _id: false },
 )
 
+const preferencesSchema = new Schema<PreferencesRecord>(
+  {
+    budgetMinBaht: { type: Number, min: 0, default: null },
+    budgetMaxBaht: { type: Number, min: 0, default: null },
+    businessObjectives: { type: String, default: '', trim: true },
+  },
+  { _id: false },
+)
+
 const pastProjectSchema = new Schema<PastProjectRecord>({
   name: { type: String, required: true, trim: true },
   clientName: { type: String, default: '', trim: true },
@@ -146,6 +164,7 @@ const bidderProfileSchema = new Schema<BidderProfileRecord>(
   {
     userId: { type: Schema.Types.ObjectId, required: true, unique: true, ref: 'User' },
     organization: { type: organizationSchema, default: () => ({}) },
+    preferences: { type: preferencesSchema, default: () => ({}) },
     self: { type: personSchema, default: null },
     team: { type: [personSchema], default: [] },
     projects: { type: [pastProjectSchema], default: [] },

@@ -7,6 +7,7 @@ import {
   removeProjectHandler,
   removeTeamMemberHandler,
   updateOrganizationHandler,
+  updatePreferencesHandler,
   updateProjectHandler,
   updateSelfHandler,
   updateTeamMemberHandler,
@@ -33,6 +34,7 @@ router.get('/bidder-profile', getBidderProfileHandler)
 router.get('/bidder-profile/options', getBidderProfileOptionsHandler)
 router.put('/bidder-profile/organization', updateOrganizationHandler)
 router.put('/bidder-profile/self', updateSelfHandler)
+router.put('/bidder-profile/preferences', updatePreferencesHandler)
 router.post('/bidder-profile/team', addTeamMemberHandler)
 router.patch('/bidder-profile/team/:memberId', updateTeamMemberHandler)
 router.delete('/bidder-profile/team/:memberId', removeTeamMemberHandler)
