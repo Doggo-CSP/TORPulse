@@ -115,6 +115,81 @@ export function NumberField({
   );
 }
 
+/** Yes/No answer that can also be left unanswered (null). */
+export function YesNo({
+  value,
+  onChange,
+  id,
+}: {
+  value: boolean | null | undefined;
+  onChange: (value: boolean | null) => void;
+  id?: string;
+}) {
+  return (
+    <div className="flex gap-2" role="group" aria-labelledby={id}>
+      {[
+        { v: true, label: "ใช่" },
+        { v: false, label: "ไม่ใช่" },
+      ].map((option) => (
+        <button
+          key={option.label}
+          type="button"
+          aria-pressed={value === option.v}
+          // Clicking the chosen answer again clears it
+          onClick={() => onChange(value === option.v ? null : option.v)}
+          className={`rounded-full border px-4 py-2 text-sm font-medium transition-all ${
+            value === option.v
+              ? "border-[#4a7c59] bg-[#4a7c59] text-white"
+              : "border-[#ddd5c8] bg-white text-[#5c5446] hover:bg-[#faf7f2]"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export type OrganizationFlags = {
+  isSme: boolean | null;
+  hasPositiveNetWorth: boolean | null;
+  hasBangkokOffice: boolean | null;
+};
+
+const ORGANIZATION_FLAG_QUESTIONS: { key: keyof OrganizationFlags; label: string }[] = [
+  { key: "isSme", label: "เป็นวิสาหกิจขนาดกลางและขนาดย่อม (SME)" },
+  { key: "hasPositiveNetWorth", label: "มูลค่าสุทธิของกิจการเป็นบวกในงบการเงินปีล่าสุด" },
+  { key: "hasBangkokOffice", label: "มีสำนักงาน สาขา หรือศูนย์บริการในกรุงเทพฯ/ปริมณฑล" },
+];
+
+/** SME, positive net worth and Bangkok office: conditions TORs often set on the bidder. */
+export function OrganizationFlagFields({
+  value,
+  onChange,
+  idPrefix,
+}: {
+  value: Partial<OrganizationFlags>;
+  onChange: (patch: Partial<OrganizationFlags>) => void;
+  idPrefix: string;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+      {ORGANIZATION_FLAG_QUESTIONS.map(({ key, label }) => (
+        <div key={key}>
+          <p id={`${idPrefix}-${key}`} className={labelCls}>
+            {label}
+          </p>
+          <YesNo
+            id={`${idPrefix}-${key}`}
+            value={value[key]}
+            onChange={(v) => onChange({ [key]: v } as Partial<OrganizationFlags>)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Certifications the API returns, as the editable input shape. */
 export const toCertificationInputs = (certs: Certification[]): CertificationInput[] =>
   certs.map((c) => ({

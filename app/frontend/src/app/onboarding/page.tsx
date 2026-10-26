@@ -18,6 +18,7 @@ import { missingFieldLabel } from "@/lib/qualification-labels";
 import { ProjectsEditor, SelfEditor, TeamEditor } from "../profile/forms/bidder-editors";
 import {
   NumberField,
+  OrganizationFlagFields,
   errorCls,
   hintCls,
   inputCls,
@@ -176,6 +177,9 @@ function BasicsStep({
     businessType: profile.businessType || "",
     registeredDate: bidderProfile.organization.registeredDate ?? "",
     registeredCapital: bidderProfile.organization.registeredCapitalBaht,
+    isSme: bidderProfile.organization.isSme,
+    hasPositiveNetWorth: bidderProfile.organization.hasPositiveNetWorth,
+    hasBangkokOffice: bidderProfile.organization.hasBangkokOffice,
   });
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
   const isCompany = accountType === "company";
@@ -205,6 +209,9 @@ function BasicsStep({
         await bidder.saveOrganization({
           registeredDate: form.registeredDate || null,
           registeredCapitalBaht: form.registeredCapital ?? null,
+          isSme: form.isSme,
+          hasPositiveNetWorth: form.hasPositiveNetWorth,
+          hasBangkokOffice: form.hasBangkokOffice,
         });
       }
       await bidder.refresh();
@@ -288,6 +295,12 @@ function BasicsStep({
         )}
         {field("ob-email", "อีเมลติดต่อ *", text("ob-email", "contactEmail", "", "email"), false, "กรอกอีเมลหรือเบอร์โทรอย่างน้อย 1 อย่าง")}
         {field("ob-phone", "เบอร์โทรศัพท์", text("ob-phone", "phone", "", "tel"))}
+        {isCompany && (
+          <div className="md:col-span-2 border-t border-[#f0e8dc] pt-5">
+            <p className="mb-3 text-xs text-[#7a8b6f]">ไม่บังคับ · TOR หลายฉบับกำหนดเงื่อนไขเหล่านี้</p>
+            <OrganizationFlagFields idPrefix="ob" value={form} onChange={set} />
+          </div>
+        )}
       </div>
       {error && <p className={errorCls}>{error}</p>}
       <StepFooter busy={busy} onBack={onBack} onNext={save} nextLabel="บันทึกและถัดไป →" />
