@@ -5,6 +5,7 @@ import { enqueueForUser } from '../modules/notification/notification.service.js'
 import type { CompanyQualification } from '../modules/notification/qualification.js'
 import { TorNotificationModel } from '../modules/notification/tor-notification.model.js'
 import { PUBLIC_TOR_FILTER, TorModel } from '../modules/tor/tor.model.js'
+import { BidderProfileModel } from '../modules/user/bidder-profile.model.js'
 import { assertNotProduction } from './dev-session-token.js'
 
 // DEV ONLY: creates (or refreshes) a mock company user whose profile fully qualifies for the
@@ -100,7 +101,10 @@ async function seed(contactEmail: string): Promise<void> {
   }
 
   console.log(`Mock user ${MOCK_EMAIL} (id ${user._id}) → emails to ${contactEmail}`)
-  const missing = missingNotificationFields(user)
+  const missing = missingNotificationFields(
+    user,
+    await BidderProfileModel.findOne({ userId: user._id }).lean(),
+  )
   if (missing.length > 0) {
     console.log(`Profile not ready for notifications, missing: ${missing.join(', ')}`)
   }

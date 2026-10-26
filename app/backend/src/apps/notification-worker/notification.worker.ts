@@ -7,7 +7,11 @@ import { env } from '../../config/env.js'
 import { getSettings } from '../../modules/admin/settings.repository.js'
 import { User } from '../../modules/auth/user.model.js'
 import { buildQualifyingTorEmail } from '../../modules/notification/email-template.js'
-import { canReceiveNotification, isTorRelevant } from '../../modules/notification/eligibility.js'
+import {
+  canReceiveNotification,
+  isNotifiableMatch,
+  isTorRelevant,
+} from '../../modules/notification/eligibility.js'
 import { createSmtpMailer, type Mailer } from '../../modules/notification/mailer.js'
 import { TorNotificationModel } from '../../modules/notification/tor-notification.model.js'
 import {
@@ -16,7 +20,10 @@ import {
   markNotificationsSent,
   markNotificationsSkipped,
 } from '../../modules/notification/tor-notification.repository.js'
+import { QualificationMatchModel } from '../../modules/qualification/qualification-match.model.js'
+import { isMatchStale } from '../../modules/qualification/qualification-match.service.js'
 import { TorModel } from '../../modules/tor/tor.model.js'
+import { BidderProfileModel } from '../../modules/user/bidder-profile.model.js'
 
 // Sends one email for the next user with due notifications. Returns false when nothing was due.
 export async function processNextBatch(
@@ -30,8 +37,11 @@ export async function processNextBatch(
     return false
   }
 
-  const user = await User.findById(first.userId).lean()
-  if (!user || !canReceiveNotification(user)) {
+  const [user, profile] = await Promise.all([
+    User.findById(first.userId).lean(),
+    BidderProfileModel.findOne({ userId: first.userId }).lean(),
+  ])
+  if (!user || !profile || !canReceiveNotification(user, profile)) {
     await markNotificationsSkipped(
       rows.map((row) => row._id),
       workerId,
@@ -40,20 +50,38 @@ export async function processNextBatch(
     return true
   }
 
-  const tors = await TorModel.find({ _id: { $in: rows.map((row) => row.torId) } }).lean()
+  const torIds = rows.map((row) => row.torId)
+  const [tors, matches] = await Promise.all([
+    TorModel.find({ _id: { $in: torIds } }).lean(),
+    QualificationMatchModel.find({ userId: user._id, torId: { $in: torIds } }).lean(),
+  ])
   const torsById = new Map(tors.map((tor) => [tor._id.toString(), tor]))
+  const matchesByTor = new Map(matches.map((match) => [match.torId.toString(), match]))
   const now = new Date()
 
-  const sendable = rows.filter((row) => {
+  const closed = rows.filter((row) => {
     const tor = torsById.get(row.torId.toString())
-    return tor !== undefined && isTorRelevant(tor, now)
+    return tor === undefined || !isTorRelevant(tor, now)
   })
-  const stale = rows.filter((row) => !sendable.includes(row))
+  // The profile or TOR may have changed since the row was queued: send only while the score
+  // is still a current 100%
+  const noLongerFull = rows.filter((row) => {
+    if (closed.includes(row)) return false
+    const match = matchesByTor.get(row.torId.toString())
+    const tor = torsById.get(row.torId.toString())!
+    return !match || !isNotifiableMatch(match) || isMatchStale(match, user, profile, tor, now)
+  })
+  const sendable = rows.filter((row) => !closed.includes(row) && !noLongerFull.includes(row))
 
   await markNotificationsSkipped(
-    stale.map((row) => row._id),
+    closed.map((row) => row._id),
     workerId,
     'TOR removed, hidden or closed before sending',
+  )
+  await markNotificationsSkipped(
+    noLongerFull.map((row) => row._id),
+    workerId,
+    'Qualification score is no longer a current 100%',
   )
 
   if (sendable.length === 0) {

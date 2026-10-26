@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import type { BidderProfileInput } from '../user/bidder-profile.qualification.js'
 import {
   canReceiveNotification,
   isFullyQualified,
+  isNotifiableMatch,
   isTorRelevant,
   missingNotificationFields,
   type NotificationTor,
@@ -114,14 +116,32 @@ test('checks net worth, Bangkok office, past work age and staff roles', () => {
   ])
 })
 
-test('excludes incomplete profiles and users who turned notifications off', () => {
-  assert.equal(canReceiveNotification(readyUser), true)
-  assert.equal(canReceiveNotification({ ...readyUser, notificationPrefs: { emailEnabled: false } }), false)
-  assert.equal(canReceiveNotification({ ...readyUser, status: 'suspended' }), false)
-  assert.deepEqual(missingNotificationFields({ ...readyUser, accountType: 'personal' }), [
-    'accountType',
-  ])
-  assert.equal(canReceiveNotification({ ...readyUser, qualification: {} }), false)
+test('needs the same complete profile as the AI score, and email turned on', () => {
+  const user = { ...readyUser, businessType: 'Software house' }
+  const profile = {
+    organization: { registeredCapitalBaht: 10_000_000 },
+    projects: [{ contractValueBaht: 3_000_000 }],
+  } as unknown as BidderProfileInput
+
+  assert.equal(canReceiveNotification(user, profile), true)
+  assert.equal(canReceiveNotification({ ...user, notificationPrefs: { emailEnabled: false } }, profile), false)
+  assert.equal(canReceiveNotification({ ...user, status: 'suspended' }, profile), false)
+  assert.equal(canReceiveNotification(user, null), false)
+  assert.deepEqual(missingNotificationFields({ ...user, businessType: '' }, profile), ['businessType'])
+  // Individuals can be notified too
+  assert.equal(
+    canReceiveNotification(
+      { status: 'active', accountType: 'personal', displayName: 'Dao', phone: '0800000000' },
+      profile,
+    ),
+    true,
+  )
+})
+
+test('only a full score is worth an email', () => {
+  assert.equal(isNotifiableMatch({ percentage: 100 }), true)
+  assert.equal(isNotifiableMatch({ percentage: 99 }), false)
+  assert.equal(isNotifiableMatch({ percentage: null }), false)
 })
 
 test('ignores hidden and closed TORs', () => {

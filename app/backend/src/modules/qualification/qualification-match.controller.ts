@@ -1,6 +1,10 @@
 import type { Request, Response } from 'express'
 import { Types, isObjectIdOrHexString } from 'mongoose'
 
+import {
+  enqueueForUser,
+  enqueueInBackground,
+} from '../notification/notification.service.js'
 import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 import { findBidderProfile } from '../user/bidder-profile.repository.js'
 import { profileCompleteness } from '../user/bidder-profile.qualification.js'
@@ -131,6 +135,7 @@ export const evaluateQualificationMatchHandler = async (
     currentAiModel(),
     result,
   )
+  enqueueInBackground(`match ${user._id}/${tor._id}`, () => enqueueForUser(user._id, [tor._id]))
 
   res.json({ match: toMatchResponse(saved), isStale: false, completeness })
 }

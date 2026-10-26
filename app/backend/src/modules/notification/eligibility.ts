@@ -1,8 +1,13 @@
 import { HIDDEN_TOR_REVIEW_STATUSES, type TorReviewStatus } from '../tor/tor.model.js'
+import {
+  profileCompleteness,
+  type BidderProfileInput,
+  type BidderUser,
+} from '../user/bidder-profile.qualification.js'
 import type { CompanyQualification, TorEligibility } from './qualification.js'
 
 // Only the fields the matcher reads, so it works with lean documents and test fixtures.
-export interface NotificationUser {
+export interface NotificationUser extends BidderUser {
   status?: string | null
   accountType?: string | null
   companyName?: string | null
@@ -20,43 +25,36 @@ export interface NotificationTor {
   eligibility?: Partial<TorEligibility> | null
 }
 
-const SCALAR_QUALIFICATION_FIELDS = [
-  'registeredCapitalBaht',
-  'yearsInBusiness',
-  'maxPastContractValueBaht',
-  'isThaiJuristicPerson',
-  'isSme',
-  'hasPositiveNetWorth',
-  'hasBangkokOffice',
-] as const
-
-// Profile fields still missing before the user can receive qualifying-TOR emails.
-export function missingNotificationFields(user: NotificationUser): string[] {
-  const missing: string[] = []
-
-  if (user.accountType !== 'company') missing.push('accountType')
-  if (!user.companyName?.trim()) missing.push('companyName')
-  if (!user.registrationNumber?.trim()) missing.push('registrationNumber')
-  if (!user.interests?.length) missing.push('interests')
-
-  for (const field of SCALAR_QUALIFICATION_FIELDS) {
-    const value = user.qualification?.[field]
-    if (value === null || value === undefined) missing.push(`qualification.${field}`)
-  }
-
-  return missing
+// Profile fields still missing before the user can receive qualifying-TOR emails: the same
+// list the AI qualification score needs (UC-07), since an email is only sent for a score.
+export function missingNotificationFields(
+  user: NotificationUser,
+  profile: BidderProfileInput | null,
+): string[] {
+  return profileCompleteness(user, profile).missing
 }
 
-export function isProfileReadyForNotification(user: NotificationUser): boolean {
-  return missingNotificationFields(user).length === 0
+export function isProfileReadyForNotification(
+  user: NotificationUser,
+  profile: BidderProfileInput | null,
+): boolean {
+  return missingNotificationFields(user, profile).length === 0
 }
 
-export function canReceiveNotification(user: NotificationUser): boolean {
+export function canReceiveNotification(
+  user: NotificationUser,
+  profile: BidderProfileInput | null,
+): boolean {
   return (
     user.status !== 'suspended' &&
     user.notificationPrefs?.emailEnabled !== false &&
-    isProfileReadyForNotification(user)
+    isProfileReadyForNotification(user, profile)
   )
+}
+
+// Emails follow the AI qualification score: only a full 100% is worth one.
+export function isNotifiableMatch(match: { percentage: number | null }): boolean {
+  return match.percentage === 100
 }
 
 // A TOR is worth notifying about while it is public and still open for bids.
