@@ -17,6 +17,7 @@ export interface UpdateProfileInput {
   website?: string
   qualification?: CompanyQualification
   notificationPrefs?: { emailEnabled: boolean }
+  onboardingStatus?: 'completed' | 'dismissed'
 }
 
 export interface UpdateInterestsInput {

@@ -18,6 +18,7 @@ import {
   getProfileHandler,
   toggleBookmarkHandler,
   updateInterestsHandler,
+  updateOnboardingHandler,
   updateProfileHandler,
 } from './user.controller.js'
 
@@ -26,6 +27,7 @@ const router = Router()
 router.get('/profile', getProfileHandler)
 router.put('/profile', updateProfileHandler)
 router.put('/interests', updateInterestsHandler)
+router.put('/onboarding', updateOnboardingHandler)
 router.post('/bookmarks/:torId', toggleBookmarkHandler)
 router.get('/bookmarks', getBookmarksHandler)
 

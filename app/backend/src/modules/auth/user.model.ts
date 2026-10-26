@@ -25,6 +25,8 @@ export interface UserRecord {
   status?: 'active' | 'suspended'
   qualification?: CompanyQualification
   notificationPrefs?: { emailEnabled: boolean }
+  // null until the user finishes or skips the onboarding wizard after their first login
+  onboardingStatus?: 'completed' | 'dismissed' | null
   createdAt: Date
   updatedAt: Date
 }
@@ -70,6 +72,7 @@ const userSchema = new Schema<UserRecord>(
     businessType: { type: String, default: '' },
     // Matched against TOR eligibility for qualifying-TOR email notifications
     qualification: { type: qualificationSchema, default: () => ({}) },
+    onboardingStatus: { type: String, enum: ['completed', 'dismissed', null], default: null },
     notificationPrefs: {
       type: new Schema({ emailEnabled: { type: Boolean, default: true } }, { _id: false }),
       default: () => ({}),

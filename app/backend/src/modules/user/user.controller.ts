@@ -16,7 +16,11 @@ import {
   updateUserInterests,
   updateUserProfile,
 } from './user.repository.js'
-import { updateInterestsSchema, updateProfileSchema } from './user.validation.js'
+import {
+  updateInterestsSchema,
+  updateOnboardingSchema,
+  updateProfileSchema,
+} from './user.validation.js'
 
 export const calculateProfileCompletion = (user: any): number => {
   const fields = [
@@ -69,6 +73,7 @@ const toProfileResponse = (user: any, bookmarkedCount: number) => ({
     ...(user.qualification?.toObject?.() ?? user.qualification),
   },
   notificationPrefs: { emailEnabled: user.notificationPrefs?.emailEnabled !== false },
+  onboardingStatus: user.onboardingStatus ?? null,
   notificationMissingFields: missingNotificationFields(user),
   bookmarkedCount,
   completionPercentage: calculateProfileCompletion(user),
@@ -131,6 +136,30 @@ export const updateProfileHandler = async (req: Request, res: Response): Promise
   const bookmarkedCount = await countBookmarksByUser(req.user._id)
 
   res.json({ user: toProfileResponse(updatedUser, bookmarkedCount) })
+}
+
+// The user finished or skipped the onboarding wizard, so it is not offered again on login.
+export const updateOnboardingHandler = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+
+  const parsed = updateOnboardingSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() })
+    return
+  }
+
+  const updatedUser = await updateUserProfile(req.user._id, {
+    onboardingStatus: parsed.data.status,
+  })
+  if (!updatedUser) {
+    res.status(404).json({ error: 'User not found' })
+    return
+  }
+
+  res.json({ onboardingStatus: updatedUser.onboardingStatus ?? null })
 }
 
 export const updateInterestsHandler = async (req: Request, res: Response): Promise<void> => {
