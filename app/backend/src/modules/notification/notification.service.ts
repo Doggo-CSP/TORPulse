@@ -1,86 +1,76 @@
-import { Types } from 'mongoose'
+import type { Types } from 'mongoose'
 
 import { User } from '../auth/user.model.js'
-import { PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
-import { canReceiveNotification, isFullyQualified, isTorRelevant } from './eligibility.js'
+import { QualificationMatchModel } from '../qualification/qualification-match.model.js'
+import { isMatchStale, type MatchTor } from '../qualification/qualification-match.service.js'
+import { TorModel } from '../tor/tor.model.js'
+import { BidderProfileModel } from '../user/bidder-profile.model.js'
+import { canReceiveNotification, isNotifiableMatch, isTorRelevant } from './eligibility.js'
 import { enqueueNotifications } from './tor-notification.repository.js'
 
-const USER_FIELDS = {
-  status: 1,
-  accountType: 1,
-  companyName: 1,
-  registrationNumber: 1,
-  interests: 1,
-  qualification: 1,
-  notificationPrefs: 1,
+// Emails follow the AI qualification score: a (user, TOR) pair is queued once its up-to-date
+// match reaches 100%. The unique index keeps each pair to one email, ever.
+
+type NotifyTor = MatchTor & {
+  _id: Types.ObjectId
+  reviewStatus?: string | null
 }
 
+// What the match input hash and the relevance check read
 const TOR_FIELDS = {
-  reviewStatus: 1,
+  projectTitle: 1,
+  agencyName: 1,
+  budgetBaht: 1,
+  scope: 1,
+  requirements: 1,
+  bidderQualifications: 1,
+  evaluationCriteria: 1,
+  technologies: 1,
   submissionDeadlineAt: 1,
-  category: 1,
-  categories: 1,
-  eligibility: 1,
+  reviewStatus: 1,
 }
 
-// A newly ingested TOR: queue it for every user who fully qualifies.
-export async function enqueueForTor(
-  torId: Types.ObjectId | string,
-): Promise<{ queued: number; existing: number }> {
-  const tor = await TorModel.findById(torId).select(TOR_FIELDS).lean()
-  if (!tor || !tor.eligibility || !isTorRelevant(tor)) {
-    return { queued: 0, existing: 0 }
-  }
-
-  const torCategories = [...new Set([...(tor.categories ?? []), ...(tor.category ? [tor.category] : [])])]
-  if (torCategories.length === 0) {
-    return { queued: 0, existing: 0 }
-  }
-
-  const candidates = await User.find({
-    status: { $ne: 'suspended' },
-    accountType: 'company',
-    'notificationPrefs.emailEnabled': { $ne: false },
-    interests: { $in: torCategories },
-  })
-    .select(USER_FIELDS)
-    .lean()
-
-  const pairs = candidates
-    .filter((user) => canReceiveNotification(user) && isFullyQualified(user, tor).qualified)
-    .map((user) => ({ userId: user._id, torId: tor._id }))
-
-  return enqueueNotifications(pairs)
-}
-
-// The user changed their qualification, interests or opted in: queue every open TOR they now
-// fully qualify for. Pairs that were already sent stay deduplicated by the unique index.
+// Queues every TOR whose current match for this user is a full score. Called after a match is
+// saved (one TOR) and when the user turns email on again (all of them).
 export async function enqueueForUser(
   userId: Types.ObjectId | string,
+  torIds?: (Types.ObjectId | string)[],
 ): Promise<{ queued: number; existing: number }> {
-  const user = await User.findById(userId).select(USER_FIELDS).lean()
-  if (!user || !canReceiveNotification(user)) {
+  const [user, profile] = await Promise.all([
+    User.findById(userId).lean(),
+    BidderProfileModel.findOne({ userId }).lean(),
+  ])
+  if (!user || !profile || !canReceiveNotification(user, profile)) {
     return { queued: 0, existing: 0 }
   }
 
-  const now = new Date()
-  const tors = await TorModel.find({
-    ...PUBLIC_TOR_FILTER,
-    eligibility: { $ne: null },
-    $or: [{ submissionDeadlineAt: null }, { submissionDeadlineAt: { $gt: now } }],
-    categories: { $in: user.interests ?? [] },
+  const matches = await QualificationMatchModel.find({
+    userId: user._id,
+    ...(torIds && { torId: { $in: torIds } }),
   })
-    .select(TOR_FIELDS)
+    .select({ torId: 1, percentage: 1, inputVersion: 1, evaluatedAt: 1 })
     .lean()
+  const full = matches.filter(isNotifiableMatch)
+  if (full.length === 0) return { queued: 0, existing: 0 }
 
-  const pairs = tors
-    .filter((tor) => isTorRelevant(tor, now) && isFullyQualified(user, tor).qualified)
-    .map((tor) => ({ userId: user._id, torId: tor._id }))
+  const tors = (await TorModel.find({ _id: { $in: full.map((m) => m.torId) } })
+    .select(TOR_FIELDS)
+    .lean()) as NotifyTor[]
+  const torsById = new Map(tors.map((tor) => [tor._id.toString(), tor]))
+
+  const now = new Date()
+  const pairs = full
+    .filter((match) => {
+      const tor = torsById.get(match.torId.toString())
+      // A stale score was computed from an older profile or TOR, so it may no longer hold
+      return tor && isTorRelevant(tor, now) && !isMatchStale(match, user, profile, tor, now)
+    })
+    .map((match) => ({ userId: user._id, torId: match.torId }))
 
   return enqueueNotifications(pairs)
 }
 
-// Triggers must never break the request or ingestion job that fired them.
+// Triggers must never break the request or job that fired them.
 export function enqueueInBackground(label: string, task: () => Promise<unknown>): void {
   task().catch((error: unknown) => {
     console.error(`Notification enqueue failed (${label})`, error)

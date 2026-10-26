@@ -111,7 +111,8 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
       staffRoles: [],
     })
     assert.deepEqual(response.body.user.notificationPrefs, { emailEnabled: false })
-    assert.ok(response.body.user.notificationMissingFields.includes('accountType'))
+    // No bidder profile yet, so the past projects the AI score needs are missing
+    assert.ok(response.body.user.notificationMissingFields.includes('projects'))
   })
 
   await t.test('PUT /user/profile rejects an unknown certification', async () => {

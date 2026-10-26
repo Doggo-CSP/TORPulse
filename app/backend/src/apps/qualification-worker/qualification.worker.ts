@@ -3,6 +3,10 @@ import { randomUUID } from 'node:crypto'
 
 import { env } from '../../config/env.js'
 import { User } from '../../modules/auth/user.model.js'
+import {
+  enqueueForUser,
+  enqueueInBackground,
+} from '../../modules/notification/notification.service.js'
 import { QualificationJobModel } from '../../modules/qualification/qualification-job.model.js'
 import {
   claimNextJob,
@@ -77,6 +81,7 @@ export async function processNextJob(workerId: string, scope?: JobScope): Promis
     )
     await finishJob(job, workerId, 'done')
     console.log(`Matched user ${user._id} with TOR ${tor._id}: ${result.percentage}%`)
+    enqueueInBackground(`match ${user._id}/${tor._id}`, () => enqueueForUser(user._id, [tor._id]))
   } catch (error) {
     console.error(`Qualification match failed (user ${user._id}, TOR ${tor._id})`, error)
     await failJob(job, workerId, error)

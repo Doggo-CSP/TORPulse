@@ -40,16 +40,7 @@ export const calculateProfileCompletion = (user: any): number => {
   return Math.round((completed / fields.length) * 100)
 }
 
-// Profile fields that can change which TORs the user fully qualifies for
-const QUALIFYING_PROFILE_FIELDS = [
-  'accountType',
-  'companyName',
-  'registrationNumber',
-  'qualification',
-  'notificationPrefs',
-] as const
-
-const toProfileResponse = (user: any, bookmarkedCount: number) => ({
+const toProfileResponse = async (user: any, bookmarkedCount: number) => ({
   id: user._id.toString(),
   name: user.name,
   email: user.email,
@@ -74,7 +65,8 @@ const toProfileResponse = (user: any, bookmarkedCount: number) => ({
   },
   notificationPrefs: { emailEnabled: user.notificationPrefs?.emailEnabled !== false },
   onboardingStatus: user.onboardingStatus ?? null,
-  notificationMissingFields: missingNotificationFields(user),
+  // The bidder profile is read again so the list follows edits made in the same request
+  notificationMissingFields: missingNotificationFields(user, await findBidderProfile(user._id)),
   bookmarkedCount,
   completionPercentage: calculateProfileCompletion(user),
 })
@@ -93,7 +85,7 @@ export const getProfileHandler = async (req: Request, res: Response): Promise<vo
 
   const bookmarkedCount = await countBookmarksByUser(req.user._id)
 
-  res.json({ user: toProfileResponse(user, bookmarkedCount) })
+  res.json({ user: await toProfileResponse(user, bookmarkedCount) })
 }
 
 export const updateProfileHandler = async (req: Request, res: Response): Promise<void> => {
@@ -122,7 +114,9 @@ export const updateProfileHandler = async (req: Request, res: Response): Promise
     }
   }
 
-  if (QUALIFYING_PROFILE_FIELDS.some((field) => parsed.data[field] !== undefined)) {
+  // Turning email back on: queue the full scores already computed. Other edits make the scores
+  // stale, and the rematch queues the email once a new score reaches 100%.
+  if (parsed.data.notificationPrefs?.emailEnabled === true) {
     const userId = req.user._id
     enqueueInBackground(`user ${userId}`, () => enqueueForUser(userId))
   }
@@ -135,7 +129,7 @@ export const updateProfileHandler = async (req: Request, res: Response): Promise
 
   const bookmarkedCount = await countBookmarksByUser(req.user._id)
 
-  res.json({ user: toProfileResponse(updatedUser, bookmarkedCount) })
+  res.json({ user: await toProfileResponse(updatedUser, bookmarkedCount) })
 }
 
 // The user finished or skipped the onboarding wizard, so it is not offered again on login.
@@ -193,9 +187,6 @@ export const updateInterestsHandler = async (req: Request, res: Response): Promi
     res.status(404).json({ error: 'User not found' })
     return
   }
-
-  const userId = req.user._id
-  enqueueInBackground(`user ${userId}`, () => enqueueForUser(userId))
 
   res.json({
     interests: updatedUser.interests || [],

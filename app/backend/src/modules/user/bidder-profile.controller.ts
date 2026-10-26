@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 
-import { enqueueForUser, enqueueInBackground } from '../notification/notification.service.js'
+import { enqueueInBackground } from '../notification/notification.service.js'
 import { enqueueMatchesForUser } from '../qualification/qualification-precompute.service.js'
 import {
   EDUCATION_LEVELS,
@@ -144,7 +144,7 @@ const requireAccountType = (user: UserDocument, res: Response, allowed: AccountT
   return false
 }
 
-// After every write: refresh the derived qualification, re-check qualifying TORs (UC-07)
+// After every write: refresh the derived qualification, queue the AI rematch (UC-07)
 // and return the whole profile so the client can redraw it.
 const saveAndRespond = async (
   user: UserDocument,
@@ -156,7 +156,6 @@ const saveAndRespond = async (
   await syncDerivedQualification(user, profile)
 
   const userId = user._id
-  enqueueInBackground(`user ${userId}`, () => enqueueForUser(userId))
   enqueueInBackground(`qualification matches for user ${userId}`, () =>
     enqueueMatchesForUser(userId),
   )

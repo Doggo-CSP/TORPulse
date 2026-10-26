@@ -1,11 +1,10 @@
 import { database } from '../config/mongoose.js'
 import { mapEligibility } from '../modules/ingestion/extraction/eligibility-mapper.js'
-import { enqueueForTor } from '../modules/notification/notification.service.js'
 import { PUBLIC_TOR_FILTER, TorModel } from '../modules/tor/tor.model.js'
 
 // Usage: npm run backfill:eligibility -- [--all] [--dry-run]
 // Re-maps each TOR's stored bidderQualifications onto structured eligibility (one small LLM
-// call per TOR, no PDF download), then queues notifications for users who now fully qualify.
+// call per TOR, no PDF download). Notifications follow the AI qualification score instead.
 // By default only public TORs still open for bidding; --all covers every TOR.
 async function main(): Promise<void> {
   const all = process.argv.includes('--all')
@@ -29,7 +28,6 @@ async function main(): Promise<void> {
     console.log(`Mapping eligibility for ${tors.length} TOR(s)${dryRun ? ' (dry run)' : ''}`)
     let mapped = 0
     let failed = 0
-    let queued = 0
 
     for (const tor of tors) {
       try {
@@ -46,14 +44,13 @@ async function main(): Promise<void> {
         if (dryRun) continue
 
         await TorModel.updateOne({ _id: tor._id }, { $set: { eligibility } }).exec()
-        queued += (await enqueueForTor(tor._id)).queued
       } catch (error) {
         failed += 1
         console.error(`${tor._id} failed:`, error instanceof Error ? error.message : error)
       }
     }
 
-    console.log('Eligibility backfill completed', { scanned: tors.length, mapped, failed, queued })
+    console.log('Eligibility backfill completed', { scanned: tors.length, mapped, failed })
   } finally {
     await database.disconnect()
   }
