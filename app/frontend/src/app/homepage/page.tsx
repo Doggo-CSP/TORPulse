@@ -457,7 +457,12 @@ export default function HomePage() {
           </div>
         </section>
 
-        {bidderProfile && <ProfileProgressBanner completeness={bidderProfile.completeness} />}
+        {bidderProfile && (
+          <ProfileProgressBanner
+            completeness={bidderProfile.completeness}
+            accountType={bidderProfile.accountType}
+          />
+        )}
 
         {/* ── SmartSearch ── */}
         <section className="panel overflow-hidden" id="smart-search">

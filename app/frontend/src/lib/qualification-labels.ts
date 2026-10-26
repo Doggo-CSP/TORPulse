@@ -35,6 +35,12 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
 
 export const missingFieldLabel = (key: string) => MISSING_FIELD_LABELS[key] ?? key;
 
+/** The fields profileCompleteness requires, per account type, in the order they are asked. */
+export const REQUIRED_PROFILE_FIELDS: Record<"personal" | "company", string[]> = {
+  personal: ["name", "contact", "projects"],
+  company: ["companyName", "businessType", "organization.registeredCapitalBaht", "projects"],
+};
+
 export const STAFF_ROLE_LABELS: Record<string, string> = {
   project_manager: "ผู้จัดการโครงการ (PM)",
   system_analyst: "นักวิเคราะห์ระบบ (SA)",
