@@ -1,7 +1,9 @@
 "use client";
 
-// Step-by-step profile setup offered after the first login (UC-07). Every step saves through
-// the same API as the profile page, and every step can be skipped and finished later there.
+// Step-by-step profile setup offered after the first login (UC-07). It asks for exactly what the
+// profile page asks for, using the same forms and saving through the same API. Required fields
+// must be filled before "บันทึกและถัดไป"; every step can be skipped, and anything typed but not
+// saved is kept in this browser until the user comes back.
 
 import { useState } from "react";
 import Link from "next/link";
@@ -14,18 +16,19 @@ import { useAuth } from "@/hooks/use-auth";
 import { useUserProfile } from "@/hooks/use-user-profile";
 import { useBidderProfile } from "@/hooks/use-bidder-profile";
 import { useCategories } from "@/hooks/use-categories";
+import { useLocalDraft } from "@/hooks/use-local-draft";
 import { missingFieldLabel } from "@/lib/qualification-labels";
 import { ProjectsEditor, SelfEditor, TeamEditor } from "../profile/forms/bidder-editors";
+import { CompanyForm } from "../profile/forms/company-form";
+import { PersonalForm } from "../profile/forms/personal-form";
 import {
-  NumberField,
-  OrganizationFlagFields,
-  errorCls,
-  hintCls,
-  inputCls,
-  labelCls,
-  primaryButtonCls,
-  secondaryButtonCls,
-} from "../profile/forms/form-ui";
+  mainFormError,
+  missingMainFields,
+  toMainProfileForm,
+  useSaveMainProfile,
+  type MainProfileForm,
+} from "../profile/forms/main-profile";
+import { errorCls, primaryButtonCls, secondaryButtonCls } from "../profile/forms/form-ui";
 
 type AccountType = "personal" | "company";
 type StepKey = "type" | "basics" | "projects" | "team" | "self" | "interests";
@@ -45,6 +48,12 @@ const stepsFor = (accountType: AccountType): StepKey[] =>
     ? ["type", "basics", "projects", "team", "interests"]
     : ["type", "basics", "projects", "self", "interests"];
 
+/** A past project counts for the score with a value, and for a company also a delivery date. */
+const hasQualifyingProject = (bidder: BidderProfile, accountType: AccountType) =>
+  bidder.projects.some(
+    (p) => p.contractValueBaht != null && (accountType === "personal" || p.endDate !== null),
+  );
+
 /* ───────────── Shared step frame ───────────── */
 
 function StepFooter({
@@ -53,31 +62,46 @@ function StepFooter({
   onNext,
   nextLabel = "ถัดไป →",
   busy = false,
+  blockedReason,
 }: {
   onBack?: () => void;
   onSkip?: () => void;
   onNext: () => void;
   nextLabel?: string;
   busy?: boolean;
+  /** When set, the next button is disabled and this says what is still missing. */
+  blockedReason?: string | null;
 }) {
   return (
-    <div className="mt-6 flex items-center justify-between gap-3">
-      {onBack ? (
-        <button type="button" onClick={onBack} disabled={busy} className={secondaryButtonCls}>
-          ← ย้อนกลับ
-        </button>
-      ) : (
-        <span />
+    <div className="mt-6">
+      {blockedReason && (
+        <p className="mb-3 rounded-2xl border border-[#e8e0d0] bg-white px-4 py-2.5 text-right text-xs text-[#7a8b6f]">
+          {blockedReason}
+        </p>
       )}
-      <div className="flex items-center gap-2">
-        {onSkip && (
-          <button type="button" onClick={onSkip} disabled={busy} className={secondaryButtonCls}>
-            ข้ามขั้นนี้
+      <div className="flex items-center justify-between gap-3">
+        {onBack ? (
+          <button type="button" onClick={onBack} disabled={busy} className={secondaryButtonCls}>
+            ← ย้อนกลับ
           </button>
+        ) : (
+          <span />
         )}
-        <button type="button" onClick={onNext} disabled={busy} className={primaryButtonCls}>
-          {busy ? "กำลังบันทึก..." : nextLabel}
-        </button>
+        <div className="flex items-center gap-2">
+          {onSkip && (
+            <button type="button" onClick={onSkip} disabled={busy} className={secondaryButtonCls}>
+              ข้ามขั้นนี้
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={busy || Boolean(blockedReason)}
+            className={`${primaryButtonCls} disabled:cursor-not-allowed`}
+          >
+            {busy ? "กำลังบันทึก..." : nextLabel}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -97,13 +121,17 @@ const box = "mt-6 rounded-3xl border border-[#e8e0d0] bg-white p-6 md:p-7";
 /* ───────────── Step 1: account type ───────────── */
 
 function TypeStep({
+  draftKey,
   initial,
   onNext,
+  onSkip,
 }: {
+  draftKey: string;
   initial: AccountType;
   onNext: (type: AccountType) => Promise<void>;
+  onSkip: () => void;
 }) {
-  const [type, setType] = useState<AccountType>(initial);
+  const [type, setType, resetType] = useLocalDraft<AccountType>(`${draftKey}:type`, () => initial);
   const [busy, setBusy] = useState(false);
   const options: { id: AccountType; title: string; text: string; Icon: typeof UserIcon }[] = [
     { id: "personal", title: "บุคคลธรรมดา", text: "ฟรีแลนซ์หรือยื่นในนามตัวเอง", Icon: UserIcon },
@@ -134,10 +162,13 @@ function TypeStep({
       </div>
       <StepFooter
         busy={busy}
+        onSkip={onSkip}
+        nextLabel="บันทึกและถัดไป →"
         onNext={async () => {
           setBusy(true);
           try {
             await onNext(type);
+            resetType(type);
           } finally {
             setBusy(false);
           }
@@ -147,74 +178,49 @@ function TypeStep({
   );
 }
 
-/* ───────────── Step 2: basic information ───────────── */
+/* ───────────── Step 2: basic information (the profile page's main form) ───────────── */
 
 function BasicsStep({
+  draftKey,
   accountType,
   profile,
   bidderProfile,
   onBack,
   onNext,
 }: {
+  draftKey: string;
   accountType: AccountType;
   profile: UserProfile;
   bidderProfile: BidderProfile;
   onBack: () => void;
   onNext: () => void;
 }) {
-  const { updateProfile } = useUserProfile();
-  const bidder = useBidderProfile();
+  const saveMainProfile = useSaveMainProfile();
+  const [stored, setForm, resetForm] = useLocalDraft<MainProfileForm>(
+    `${draftKey}:basics:${accountType}`,
+    () => toMainProfileForm(profile, bidderProfile),
+  );
+  // The account type is chosen in step 1, whatever an older draft says
+  const form: MainProfileForm = { ...stored, accountType };
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({
-    displayName: profile.displayName || profile.name || "",
-    firstName: profile.firstName || "",
-    lastName: profile.lastName || "",
-    contactEmail: profile.contactEmail || profile.email || "",
-    phone: profile.phone || "",
-    companyName: profile.companyName || "",
-    registrationNumber: profile.registrationNumber || "",
-    businessType: profile.businessType || "",
-    registeredDate: bidderProfile.organization.registeredDate ?? "",
-    registeredCapital: bidderProfile.organization.registeredCapitalBaht,
-    isSme: bidderProfile.organization.isSme,
-    hasPositiveNetWorth: bidderProfile.organization.hasPositiveNetWorth,
-    hasBangkokOffice: bidderProfile.organization.hasBangkokOffice,
-  });
-  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
   const isCompany = accountType === "company";
-  const regNoInvalid = form.registrationNumber.length > 0 && !/^\d{13}$/.test(form.registrationNumber);
+
+  const missing = missingMainFields(form);
+  const formatError = mainFormError(form);
+  const blockedReason =
+    missing.length > 0
+      ? `กรอกให้ครบก่อนบันทึก: ${missing.join(", ")}`
+      : formatError;
+
+  const update = (patch: Partial<MainProfileForm>) => setForm((f) => ({ ...f, ...patch }));
 
   const save = async () => {
-    if (regNoInvalid) {
-      setError("เลขทะเบียนนิติบุคคลต้องเป็นตัวเลข 13 หลัก");
-      return;
-    }
     setError(null);
     setBusy(true);
     try {
-      await updateProfile({
-        displayName: form.displayName,
-        contactEmail: form.contactEmail,
-        phone: form.phone,
-        ...(isCompany
-          ? {
-              companyName: form.companyName,
-              registrationNumber: form.registrationNumber,
-              businessType: form.businessType,
-            }
-          : { firstName: form.firstName, lastName: form.lastName }),
-      });
-      if (isCompany) {
-        await bidder.saveOrganization({
-          registeredDate: form.registeredDate || null,
-          registeredCapitalBaht: form.registeredCapital ?? null,
-          isSme: form.isSme,
-          hasPositiveNetWorth: form.hasPositiveNetWorth,
-          hasBangkokOffice: form.hasBangkokOffice,
-        });
-      }
-      await bidder.refresh();
+      await saveMainProfile(form);
+      resetForm(form);
       onNext();
     } catch {
       setError("บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
@@ -223,87 +229,34 @@ function BasicsStep({
     }
   };
 
-  const field = (id: string, label: string, input: React.ReactNode, wide = false, hint?: string) => (
-    <div className={wide ? "md:col-span-2" : ""}>
-      <label htmlFor={id} className={labelCls}>
-        {label}
-      </label>
-      {input}
-      {hint && <p className={hintCls}>{hint}</p>}
-    </div>
-  );
-  const text = (id: string, key: keyof typeof form, placeholder = "", type = "text") => (
-    <input
-      id={id}
-      type={type}
-      value={(form[key] as string) ?? ""}
-      onChange={(e) => set({ [key]: e.target.value } as Partial<typeof form>)}
-      placeholder={placeholder}
-      className={inputCls}
-    />
-  );
-
   return (
     <>
       <StepHeading
         title={isCompany ? "ข้อมูลนิติบุคคล" : "ข้อมูลของคุณ"}
-        subtitle={
-          isCompany
-            ? "ทุนจดทะเบียนและประเภทธุรกิจใช้เทียบกับคุณสมบัติใน TOR"
-            : "ชื่อและช่องทางติดต่อของผู้ยื่นข้อเสนอ"
-        }
+        subtitle="ข้อมูลเดียวกับหน้าโปรไฟล์ · ช่องที่มี * จำเป็นสำหรับการคำนวณคะแนน"
       />
-      <div className={`${box} grid grid-cols-1 gap-5 md:grid-cols-2`}>
+      <div className={box}>
         {isCompany ? (
-          <>
-            {field("ob-company", "ชื่อบริษัท *", text("ob-company", "companyName", "เช่น บริษัท เทคโนโลยีไทย จำกัด"), true)}
-            {field("ob-business", "ประเภทธุรกิจ *", text("ob-business", "businessType", "เช่น พัฒนาซอฟต์แวร์"), true)}
-            {field(
-              "ob-capital",
-              "ทุนจดทะเบียน *",
-              <NumberField
-                id="ob-capital"
-                value={form.registeredCapital}
-                onChange={(n) => set({ registeredCapital: n })}
-                suffix="บาท"
-                placeholder="เช่น 5,000,000"
-              />,
-              false,
-              'TOR มักกำหนดทุนขั้นต่ำ เช่น "ไม่น้อยกว่า 2 ล้านบาท"',
-            )}
-            {field("ob-registered", "วันที่จดทะเบียนจัดตั้ง", text("ob-registered", "registeredDate", "", "date"))}
-            {field(
-              "ob-regno",
-              "เลขทะเบียนนิติบุคคล (13 หลัก)",
-              <input
-                id="ob-regno"
-                inputMode="numeric"
-                maxLength={13}
-                value={form.registrationNumber}
-                onChange={(e) => set({ registrationNumber: e.target.value.replace(/\D/g, "") })}
-                className={inputCls}
-              />,
-            )}
-            {field("ob-display", "ชื่อที่แสดง", text("ob-display", "displayName"))}
-          </>
+          <CompanyForm
+            value={form}
+            onChange={update}
+            teamCount={bidderProfile.team.length}
+            strict
+            defaultOpen
+          />
         ) : (
-          <>
-            {field("ob-first", "ชื่อ *", text("ob-first", "firstName"))}
-            {field("ob-last", "นามสกุล *", text("ob-last", "lastName"))}
-            {field("ob-display", "ชื่อที่แสดง", text("ob-display", "displayName"), true)}
-          </>
-        )}
-        {field("ob-email", "อีเมลติดต่อ *", text("ob-email", "contactEmail", "", "email"), false, "กรอกอีเมลหรือเบอร์โทรอย่างน้อย 1 อย่าง")}
-        {field("ob-phone", "เบอร์โทรศัพท์", text("ob-phone", "phone", "", "tel"))}
-        {isCompany && (
-          <div className="md:col-span-2 border-t border-[#f0e8dc] pt-5">
-            <p className="mb-3 text-xs text-[#7a8b6f]">ไม่บังคับ · TOR หลายฉบับกำหนดเงื่อนไขเหล่านี้</p>
-            <OrganizationFlagFields idPrefix="ob" value={form} onChange={set} />
-          </div>
+          <PersonalForm value={form} onChange={update} strict />
         )}
       </div>
       {error && <p className={errorCls}>{error}</p>}
-      <StepFooter busy={busy} onBack={onBack} onNext={save} nextLabel="บันทึกและถัดไป →" />
+      <StepFooter
+        busy={busy}
+        onBack={onBack}
+        onSkip={onNext}
+        onNext={save}
+        nextLabel="บันทึกและถัดไป →"
+        blockedReason={blockedReason}
+      />
     </>
   );
 }
@@ -311,17 +264,22 @@ function BasicsStep({
 /* ───────────── Step: interest categories ───────────── */
 
 function InterestsStep({
+  draftKey,
   initial,
   onBack,
   onNext,
 }: {
+  draftKey: string;
   initial: string[];
   onBack: () => void;
   onNext: () => void;
 }) {
   const { data: categories = [] } = useCategories();
-  const { updateInterests } = useUserProfile();
-  const [selected, setSelected] = useState<string[]>(initial);
+  const { updateInterests } = useUserProfile(false);
+  const [selected, setSelected, resetSelected] = useLocalDraft<string[]>(
+    `${draftKey}:interests`,
+    () => initial,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -366,6 +324,7 @@ function InterestsStep({
           setError(null);
           try {
             await updateInterests(selected);
+            resetSelected(selected);
             onNext();
           } catch {
             setError("บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
@@ -424,19 +383,20 @@ export default function OnboardingPage() {
     );
   }
 
+  // Drafts are kept per user, so two people sharing a browser do not see each other's typing
+  const draftKey = `onboarding:${profile.id}`;
   const accountType: AccountType = profile.accountType === "company" ? "company" : "personal";
   const steps = stepsFor(accountType);
   const step = steps[Math.min(stepIndex, steps.length - 1)];
   const { completeness } = bidderProfile;
-  const missing = new Set(completeness.missing);
+  const projectsReady = hasQualifyingProject(bidderProfile, accountType);
 
+  // Ticks in the sidebar follow what is saved, not what was visited
   const isStepDone = (key: StepKey, index: number): boolean => {
     if (key === "type") return index < stepIndex || finished;
     if (key === "basics")
-      return !["name", "contact", "companyName", "businessType", "organization.registeredCapitalBaht"].some(
-        (k) => missing.has(k),
-      ) && (index < stepIndex || finished);
-    if (key === "projects") return !missing.has("projects");
+      return missingMainFields(toMainProfileForm(profile, bidderProfile)).length === 0;
+    if (key === "projects") return projectsReady;
     if (key === "team") return bidderProfile.team.length > 0;
     if (key === "self") return bidderProfile.self !== null;
     return profile.interests.length > 0;
@@ -502,6 +462,7 @@ export default function OnboardingPage() {
         </ol>
         <p className="mt-6 text-[11.5px] leading-relaxed text-[#7a8b6f]">
           ข้อมูลนี้ใช้คำนวณว่าคุณมีคุณสมบัติตรงกับ TOR แต่ละฉบับกี่เปอร์เซ็นต์ แก้ไขภายหลังได้ที่หน้าโปรไฟล์
+          ข้อมูลที่พิมพ์ค้างไว้จะถูกจำไว้ในเบราว์เซอร์นี้
         </p>
       </aside>
 
@@ -559,7 +520,9 @@ export default function OnboardingPage() {
             </div>
           ) : step === "type" ? (
             <TypeStep
+              draftKey={draftKey}
               initial={accountType}
+              onSkip={next}
               onNext={async (type) => {
                 if (type !== profile.accountType) {
                   await updateProfile({ accountType: type });
@@ -570,6 +533,7 @@ export default function OnboardingPage() {
             />
           ) : step === "basics" ? (
             <BasicsStep
+              draftKey={draftKey}
               accountType={accountType}
               profile={profile}
               bidderProfile={bidderProfile}
@@ -580,12 +544,27 @@ export default function OnboardingPage() {
             <>
               <StepHeading
                 title="ผลงานที่ผ่านมา"
-                subtitle="ชื่อโครงการ งบ และวันที่ส่งมอบ · TOR ส่วนใหญ่กำหนดมูลค่าผลงานขั้นต่ำ"
+                subtitle={
+                  accountType === "company"
+                    ? "ต้องมีอย่างน้อย 1 โครงการ: ชื่อโครงการ งบ และวันที่ส่งมอบ"
+                    : "ต้องมีอย่างน้อย 1 โครงการ: ชื่อโครงการ และงบ"
+                }
               />
               <div className={box}>
-                <ProjectsEditor profile={bidderProfile} bare />
+                <ProjectsEditor profile={bidderProfile} bare strict draftKey={draftKey} />
               </div>
-              <StepFooter onBack={back} onNext={next} />
+              <StepFooter
+                onBack={back}
+                onSkip={next}
+                onNext={next}
+                blockedReason={
+                  projectsReady
+                    ? null
+                    : accountType === "company"
+                      ? "บันทึกผลงานอย่างน้อย 1 โครงการ ที่มีงบและวันที่ส่งมอบก่อน"
+                      : "บันทึกผลงานอย่างน้อย 1 โครงการ ที่มีงบก่อน"
+                }
+              />
             </>
           ) : step === "team" ? (
             <>
@@ -594,7 +573,7 @@ export default function OnboardingPage() {
                 subtitle="ตำแหน่ง วุฒิ ใบรับรอง และวันที่เข้าร่วมบริษัท · ใส่เฉพาะคนที่ใช้ยื่นงานบ่อย"
               />
               <div className={box}>
-                <TeamEditor profile={bidderProfile} bare />
+                <TeamEditor profile={bidderProfile} bare strict draftKey={draftKey} />
               </div>
               <StepFooter onBack={back} onSkip={next} onNext={next} />
             </>
@@ -605,12 +584,17 @@ export default function OnboardingPage() {
                 subtitle="ตำแหน่ง วุฒิ และใบรับรอง ใช้เทียบกับคุณสมบัติบุคลากรใน TOR"
               />
               <div className={box}>
-                <SelfEditor profile={bidderProfile} bare />
+                <SelfEditor profile={bidderProfile} bare draftKey={draftKey} />
               </div>
               <StepFooter onBack={back} onSkip={next} onNext={next} />
             </>
           ) : (
-            <InterestsStep initial={profile.interests} onBack={back} onNext={next} />
+            <InterestsStep
+              draftKey={draftKey}
+              initial={profile.interests}
+              onBack={back}
+              onNext={next}
+            />
           )}
         </div>
       </main>

@@ -22,6 +22,7 @@ import {
   type PersonInput,
 } from "@/api/bidder-profile.api";
 import { useBidderProfile, useBidderProfileOptions } from "@/hooks/use-bidder-profile";
+import { useLocalDraft } from "@/hooks/use-local-draft";
 import {
   EDUCATION_LEVEL_LABELS,
   EMPLOYMENT_TYPE_LABELS,
@@ -59,6 +60,18 @@ const formatBaht = (n: number | null) => (n == null ? "-" : `${n.toLocaleString(
 function Frame({ bare, children, ...section }: ComponentProps<typeof Section> & { bare: boolean }) {
   return bare ? <div className="space-y-4">{children}</div> : <Section {...section}>{children}</Section>;
 }
+
+/**
+ * bare: embedded without the collapsible section (onboarding).
+ * draftKey: keep what was typed but not saved in this browser, under this key.
+ * strict: require the fields the qualification score needs before saving (onboarding).
+ */
+type EditorProps = {
+  profile: BidderProfile;
+  bare?: boolean;
+  draftKey?: string;
+  strict?: boolean;
+};
 
 /* ───────────── Person (team member or the individual bidder) ───────────── */
 
@@ -100,12 +113,14 @@ function PersonFields({
   options,
   isTeamMember,
   idPrefix,
+  positionRequired = false,
 }: {
   draft: PersonDraft;
   onChange: (patch: Partial<PersonDraft>) => void;
   options: BidderProfileOptions | undefined;
   isTeamMember: boolean;
   idPrefix: string;
+  positionRequired?: boolean;
 }) {
   const toggleRole = (role: string) =>
     onChange({
@@ -134,7 +149,7 @@ function PersonFields({
         )}
         <div>
           <label htmlFor={`${idPrefix}-position`} className={labelCls}>
-            ตำแหน่ง
+            ตำแหน่ง{positionRequired && " *"}
           </label>
           <input
             id={`${idPrefix}-position`}
@@ -320,16 +335,25 @@ const personSummary = (person: Person) =>
 
 /* ───────────── Team (company accounts) ───────────── */
 
-export function TeamEditor({ profile, bare = false }: { profile: BidderProfile; bare?: boolean }) {
+export function TeamEditor({ profile, bare = false, draftKey, strict = false }: EditorProps) {
   const bidder = useBidderProfile();
   const { data: options } = useBidderProfileOptions();
   const [open, setOpen] = useState(true);
   // null: no editor open; "new": adding; otherwise the id of the member being edited.
   // Embedded in onboarding with nobody yet, the first form is open straight away.
-  const [editing, setEditing] = useState<string | null>(
-    bare && profile.team.length === 0 ? "new" : null,
+  const [storedEditing, setEditing] = useLocalDraft<string | null>(
+    draftKey ? `${draftKey}:team:editing` : null,
+    () => (bare && profile.team.length === 0 ? "new" : null),
   );
-  const [draft, setDraft] = useState<PersonDraft>(toPersonDraft(null));
+  // A restored draft may point at a member removed since
+  const editing =
+    storedEditing && storedEditing !== "new" && !profile.team.some((m) => m.id === storedEditing)
+      ? null
+      : storedEditing;
+  const [draft, setDraft] = useLocalDraft<PersonDraft>(
+    draftKey ? `${draftKey}:team:draft` : null,
+    () => toPersonDraft(null),
+  );
   const [error, setError] = useState<string | null>(null);
 
   const startEdit = (member: Person | null) => {
@@ -339,12 +363,17 @@ export function TeamEditor({ profile, bare = false }: { profile: BidderProfile; 
   };
 
   const save = async () => {
+    if (strict && !draft.positionTitle.trim()) {
+      setError("กรุณากรอกตำแหน่งของบุคลากร");
+      return;
+    }
     setError(null);
     try {
       const input = toPersonInput(draft, true);
       if (editing === "new") await bidder.addTeamMember(input);
       else if (editing) await bidder.updateTeamMember(editing, input);
       setEditing(null);
+      setDraft(toPersonDraft(null));
     } catch (e) {
       setError(errorText(e));
     }
@@ -390,6 +419,7 @@ export function TeamEditor({ profile, bare = false }: { profile: BidderProfile; 
                 options={options}
                 isTeamMember
                 idPrefix={`member-${member.id}`}
+                positionRequired={strict}
               />
               <EditorActions saving={bidder.saving} onSave={save} onCancel={() => setEditing(null)} />
             </div>
@@ -425,6 +455,7 @@ export function TeamEditor({ profile, bare = false }: { profile: BidderProfile; 
               options={options}
               isTeamMember
               idPrefix="member-new"
+              positionRequired={strict}
             />
             <EditorActions saving={bidder.saving} onSave={save} onCancel={() => setEditing(null)} />
           </div>
@@ -444,17 +475,22 @@ export function TeamEditor({ profile, bare = false }: { profile: BidderProfile; 
 
 /* ───────────── The individual bidder's own record (personal accounts) ───────────── */
 
-export function SelfEditor({ profile, bare = false }: { profile: BidderProfile; bare?: boolean }) {
+export function SelfEditor({ profile, bare = false, draftKey }: EditorProps) {
   const bidder = useBidderProfile();
   const { data: options } = useBidderProfileOptions();
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<PersonDraft>(() => toPersonDraft(profile.self));
+  const [draft, setDraft, resetDraft] = useLocalDraft<PersonDraft>(
+    draftKey ? `${draftKey}:self` : null,
+    () => toPersonDraft(profile.self),
+  );
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
 
   const save = async () => {
     setStatus(null);
     try {
       await bidder.saveSelf(toPersonInput(draft, false));
+      // Saved: nothing left to restore
+      resetDraft(draft);
       setStatus({ ok: true, text: "บันทึกแล้ว" });
     } catch (e) {
       setStatus({ ok: false, text: errorText(e) });
@@ -543,12 +579,16 @@ function ProjectFields({
   options,
   team,
   idPrefix,
+  valueRequired = false,
+  endDateRequired = false,
 }: {
   draft: ProjectDraft;
   onChange: (patch: Partial<ProjectDraft>) => void;
   options: BidderProfileOptions | undefined;
   team: Person[] | null; // null for personal accounts
   idPrefix: string;
+  valueRequired?: boolean;
+  endDateRequired?: boolean;
 }) {
   const datesInvalid = Boolean(draft.startDate && draft.endDate && draft.startDate > draft.endDate);
 
@@ -598,7 +638,7 @@ function ProjectFields({
       </div>
       <div>
         <label htmlFor={`${idPrefix}-value`} className={labelCls}>
-          งบ/มูลค่าโครงการ
+          งบ/มูลค่าโครงการ{valueRequired && " *"}
         </label>
         <NumberField
           id={`${idPrefix}-value`}
@@ -640,7 +680,7 @@ function ProjectFields({
       </div>
       <div>
         <label htmlFor={`${idPrefix}-end`} className={labelCls}>
-          วันที่ส่งมอบงาน
+          วันที่ส่งมอบงาน{endDateRequired && " *"}
         </label>
         <input
           id={`${idPrefix}-end`}
@@ -652,7 +692,7 @@ function ProjectFields({
         {datesInvalid ? (
           <p className={errorCls}>วันที่ส่งมอบต้องไม่ก่อนวันที่เริ่มสัญญา</p>
         ) : (
-          <p className={hintCls}>เว้นว่างถ้ายังดำเนินการอยู่</p>
+          !endDateRequired && <p className={hintCls}>เว้นว่างถ้ายังดำเนินการอยู่</p>
         )}
       </div>
       <div className="md:col-span-2">
@@ -725,17 +765,29 @@ function ProjectFields({
   );
 }
 
-export function ProjectsEditor({ profile, bare = false }: { profile: BidderProfile; bare?: boolean }) {
+export function ProjectsEditor({ profile, bare = false, draftKey, strict = false }: EditorProps) {
   const bidder = useBidderProfile();
   const { data: options } = useBidderProfileOptions();
   const [open, setOpen] = useState(true);
-  const [editing, setEditing] = useState<string | null>(
-    bare && profile.projects.length === 0 ? "new" : null,
+  const [storedEditing, setEditing] = useLocalDraft<string | null>(
+    draftKey ? `${draftKey}:projects:editing` : null,
+    () => (bare && profile.projects.length === 0 ? "new" : null),
   );
-  const [draft, setDraft] = useState<ProjectDraft>(toProjectDraft(null));
+  // A restored draft may point at a project removed since
+  const editing =
+    storedEditing && storedEditing !== "new" && !profile.projects.some((p) => p.id === storedEditing)
+      ? null
+      : storedEditing;
+  const [draft, setDraft] = useLocalDraft<ProjectDraft>(
+    draftKey ? `${draftKey}:projects:draft` : null,
+    () => toProjectDraft(null),
+  );
   const [error, setError] = useState<string | null>(null);
 
   const isCompany = profile.accountType === "company";
+  // What a past project needs to count for the qualification score (onboarding only)
+  const valueRequired = strict;
+  const endDateRequired = strict && isCompany;
   const team = isCompany ? profile.team : null;
   const limit = options?.limits.projects ?? 100;
 
@@ -750,6 +802,14 @@ export function ProjectsEditor({ profile, bare = false }: { profile: BidderProfi
       setError("กรุณากรอกชื่อโครงการ");
       return;
     }
+    if (valueRequired && draft.contractValueBaht == null) {
+      setError("กรุณากรอกงบ/มูลค่าโครงการ");
+      return;
+    }
+    if (endDateRequired && !draft.endDate) {
+      setError("กรุณากรอกวันที่ส่งมอบงาน");
+      return;
+    }
     if (draft.startDate && draft.endDate && draft.startDate > draft.endDate) {
       setError("วันที่ส่งมอบต้องไม่ก่อนวันที่เริ่มสัญญา");
       return;
@@ -760,6 +820,7 @@ export function ProjectsEditor({ profile, bare = false }: { profile: BidderProfi
       if (editing === "new") await bidder.addProject(input);
       else if (editing) await bidder.updateProject(editing, input);
       setEditing(null);
+      setDraft(toProjectDraft(null));
     } catch (e) {
       setError(errorText(e));
     }
@@ -784,6 +845,8 @@ export function ProjectsEditor({ profile, bare = false }: { profile: BidderProfi
         options={options}
         team={team}
         idPrefix={`project-${key}`}
+        valueRequired={valueRequired}
+        endDateRequired={endDateRequired}
       />
       <EditorActions saving={bidder.saving} onSave={save} onCancel={() => setEditing(null)} />
     </div>
