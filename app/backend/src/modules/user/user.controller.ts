@@ -64,8 +64,6 @@ const toProfileResponse = (user: any, bookmarkedCount: number) => ({
   companyName: user.companyName || '',
   registrationNumber: user.registrationNumber || '',
   businessType: user.businessType || '',
-  agencyName: user.agencyName || '',
-  agencyType: user.agencyType || '',
   qualification: {
     ...EMPTY_QUALIFICATION,
     ...(user.qualification?.toObject?.() ?? user.qualification),

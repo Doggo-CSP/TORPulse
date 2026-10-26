@@ -23,7 +23,7 @@ export interface UserProfile {
   name: string;
   email: string;
   image: string | null;
-  accountType: "personal" | "company" | "agency";
+  accountType: "personal" | "company";
   displayName: string;
   firstName: string;
   lastName: string;
@@ -51,16 +51,6 @@ export interface UserProfile {
   certifications?: string[];
   isEgpRegistered?: boolean;
   pastProjects?: PastProject[];
-
-  // Agency
-  agencyName?: string;
-  agencyType?: string;
-  agencyCode?: string;
-  ministry?: string;
-  foundedYear?: number | null;
-  staffCount?: number | null;
-  annualBudget?: number | null;
-  procurementMethods?: string[];
 
   // Qualifying-TOR email notifications
   qualification?: CompanyQualification;
