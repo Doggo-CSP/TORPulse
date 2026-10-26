@@ -11,13 +11,6 @@ export interface CompanyQualification {
   staffRoles: string[];
 }
 
-export interface PastProject {
-  name: string;
-  client: string;
-  valueBaht: number | null;
-  year: number | null; // พ.ศ.
-}
-
 export interface UserProfile {
   id: string;
   name: string;
@@ -41,16 +34,7 @@ export interface UserProfile {
   companyName?: string;
   registrationNumber?: string;
   businessType?: string;
-  registeredDate?: string;
-  registeredCapital?: number | null;
-  yearsExperience?: number | null;
-  teamSize?: number | null;
-  budgetMin?: number | null;
-  budgetMax?: number | null;
-  businessObjectives?: string;
-  certifications?: string[];
-  isEgpRegistered?: boolean;
-  pastProjects?: PastProject[];
+  // Registration date, capital, certifications, team and past projects: see bidder-profile.api.ts
 
   // Qualifying-TOR email notifications
   qualification?: CompanyQualification;

@@ -9,9 +9,15 @@ import { useCategories } from "@/hooks/use-categories";
 import { useAuth } from "@/hooks/use-auth";
 import {
   CompanyForm,
+  EGP_CERTIFICATION_NAME,
   getCompanyFormError,
   type CompanyFormData,
 } from "./forms/company-form";
+import { ProjectsEditor, SelfEditor, TeamEditor } from "./forms/bidder-editors";
+import { NumberField, toCertificationInputs } from "./forms/form-ui";
+import { useBidderProfile } from "@/hooks/use-bidder-profile";
+import { missingFieldLabel } from "@/lib/qualification-labels";
+import type { BidderProfile, CertificationInput } from "@/api/bidder-profile.api";
 import {
   GlobeAltIcon,
   ChartBarIcon,
@@ -76,6 +82,33 @@ const TABS: TabType[] = ["profile", "interests", "bookmarks", "recommended", "no
 // ฟอร์มรวมฟิลด์โปรไฟล์เดิม + ฟิลด์คุณสมบัติบริษัท
 type FormState = Partial<UserProfileData> & Partial<CompanyFormData>;
 
+// Fields of the main form that live in the bidder profile (organization and preferences)
+const bidderFormFields = (bidder: BidderProfile): Partial<CompanyFormData> => {
+  const certs = toCertificationInputs(bidder.organization.certifications);
+  return {
+    registeredDate: bidder.organization.registeredDate ?? "",
+    registeredCapital: bidder.organization.registeredCapitalBaht,
+    certifications: certs.filter((c) => c.name !== EGP_CERTIFICATION_NAME),
+    isEgpRegistered: certs.some((c) => c.name === EGP_CERTIFICATION_NAME),
+    budgetMin: bidder.preferences.budgetMinBaht,
+    budgetMax: bidder.preferences.budgetMaxBaht,
+    businessObjectives: bidder.preferences.businessObjectives,
+  };
+};
+
+// The e-GP checkbox is saved as a certification, so the AI matcher sees it
+const withEgpCertification = (
+  certs: CertificationInput[] = [],
+  isEgpRegistered = false,
+  previous: CertificationInput | undefined,
+): CertificationInput[] =>
+  isEgpRegistered
+    ? [
+        ...certs,
+        previous ?? { name: EGP_CERTIFICATION_NAME, issuer: "", issuedAt: null, expiresAt: null },
+      ]
+    : certs;
+
 export default function ProfilePage() {
   const { user: authUser, loading: authLoading } = useAuth();
   const {
@@ -88,6 +121,8 @@ export default function ProfilePage() {
     updateInterests,
     toggleBookmark,
   } = useUserProfile(!!authUser);
+  const bidder = useBidderProfile(!!authUser);
+  const bidderProfile = bidder.profile;
   const { data: recommendedTors = [], refetch: refetchRecommendations } =
     useTorRecommendations(!!authUser);
   // Every active category, whether or not any TOR uses it right now. (/tors/filter-options only
@@ -175,10 +210,8 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (profile) {
-      // ฟิลด์บริษัทยังไม่อยู่ใน UserProfileData → อ่านผ่าน record ชั่วคราว
-      // (ลบ cast นี้ได้เมื่อเพิ่มฟิลด์ใน type แล้ว)
-      const p = profile as unknown as Record<string, any>;
-      setFormData({
+      setFormData((prev) => ({
+        ...prev,
         accountType: profile.accountType || "personal",
         displayName: profile.displayName || profile.name || "",
         firstName: profile.firstName || "",
@@ -191,22 +224,22 @@ export default function ProfilePage() {
         about: profile.about || "",
         website: profile.website || "",
         // ── company ──
-        companyName: p.companyName || "",
-        registrationNumber: p.registrationNumber || "",
-        businessType: p.businessType || "",
-        registeredDate: p.registeredDate || "",
-        registeredCapital: p.registeredCapital ?? null,
-        yearsExperience: p.yearsExperience ?? null,
-        teamSize: p.teamSize ?? null,
-        budgetMin: p.budgetMin ?? null,
-        budgetMax: p.budgetMax ?? null,
-        businessObjectives: p.businessObjectives || "",
-        certifications: p.certifications ?? [],
-        isEgpRegistered: p.isEgpRegistered ?? false,
-        pastProjects: p.pastProjects ?? [],
-      } as FormState);
+        companyName: profile.companyName || "",
+        registrationNumber: profile.registrationNumber || "",
+        businessType: profile.businessType || "",
+      }));
     }
   }, [profile]);
+
+  // Load the bidder-profile fields of the main form once. Later saves of team members or
+  // projects refresh the bidder profile too, and must not reset what the user is typing here.
+  const bidderFieldsLoaded = useRef(false);
+  useEffect(() => {
+    if (bidderProfile && !bidderFieldsLoaded.current) {
+      bidderFieldsLoaded.current = true;
+      setFormData((prev) => ({ ...prev, ...bidderFormFields(bidderProfile) }));
+    }
+  }, [bidderProfile]);
 
   if (authLoading || loading) {
     return (
@@ -247,56 +280,81 @@ export default function ProfilePage() {
   const accountTypeLabel =
     profile?.accountType === "company" ? "บริษัท" : "บุคคล / ผู้ใช้งาน";
 
-  // นับเฉพาะฟิลด์ที่เกี่ยวกับประเภทบัญชีที่เลือก
-  const liveCompletionPercentage = (() => {
-    const filled = (v?: string | null) => Boolean(v?.trim());
-    const common = [
-      filled(formData.displayName),
-      filled(formData.contactEmail),
-      filled(formData.phone),
-      filled(formData.image),
-      filled(formData.address),
-      filled(formData.about),
-      selectedInterests.length > 0,
-    ];
+  // Required fields for qualification matching, as saved (UC-07)
+  const completeness = bidderProfile?.completeness;
+  const completionPercentage = completeness?.percentage ?? 0;
 
-    let specific: boolean[];
-    if (formData.accountType === "company") {
-      specific = [
-        filled(formData.companyName),
-        filled(formData.registrationNumber),
-        filled(formData.businessType),
-        formData.registeredCapital != null,
-        formData.yearsExperience != null,
-        (formData.certifications?.length ?? 0) > 0,
-        (formData.pastProjects?.length ?? 0) > 0,
-      ];
-    } else {
-      specific = [
-        filled(formData.firstName),
-        filled(formData.lastName),
-        filled(formData.jobTitle),
-      ];
-    }
-
-    const fields = [...common, ...specific];
-    const completed = fields.filter(Boolean).length;
-    return Math.round((completed / fields.length) * 100);
-  })();
-
-  const handleFormSubmit = (e: React.FormEvent) => {
+  // Saves the main form: account and contact fields, then the organization (company only) and
+  // the preferences. Team members and projects are saved on their own by their editors.
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (formData.accountType === "company") {
+    const isCompany = formData.accountType === "company";
+    if (isCompany) {
       const error = getCompanyFormError(formData);
       if (error) {
         setFormError(error);
         return;
       }
+    } else if (
+      formData.budgetMin != null &&
+      formData.budgetMax != null &&
+      formData.budgetMin > formData.budgetMax
+    ) {
+      setFormError("งบประมาณต่ำสุดต้องไม่มากกว่างบประมาณสูงสุด");
+      return;
     }
 
     setFormError(null);
-    void updateProfile(formData as Partial<UserProfileData>);
+    try {
+      await updateProfile({
+        accountType: formData.accountType,
+        displayName: formData.displayName,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        jobTitle: formData.jobTitle,
+        contactEmail: formData.contactEmail,
+        phone: formData.phone,
+        image: formData.image,
+        address: formData.address,
+        about: formData.about,
+        website: formData.website,
+        ...(isCompany && {
+          companyName: formData.companyName,
+          registrationNumber: formData.registrationNumber,
+          businessType: formData.businessType,
+        }),
+      });
+
+      if (isCompany) {
+        const previousEgp = bidderProfile?.organization.certifications.find(
+          (c) => c.name === EGP_CERTIFICATION_NAME,
+        );
+        await bidder.saveOrganization({
+          registeredDate: formData.registeredDate || null,
+          registeredCapitalBaht: formData.registeredCapital ?? null,
+          certifications: withEgpCertification(
+            formData.certifications?.filter((c) => c.name.trim()),
+            formData.isEgpRegistered,
+            previousEgp && toCertificationInputs([previousEgp])[0],
+          ),
+        });
+      }
+
+      await bidder.savePreferences({
+        budgetMinBaht: formData.budgetMin ?? null,
+        budgetMaxBaht: formData.budgetMax ?? null,
+        ...(isCompany && { businessObjectives: formData.businessObjectives ?? "" }),
+      });
+      // Name, contact and business type count towards completeness too
+      await bidder.refresh();
+    } catch (error) {
+      setFormError(
+        error instanceof Error && error.message
+          ? `บันทึกไม่สำเร็จ: ${error.message}`
+          : "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+      );
+    }
   };
 
   const tabClass = (tab: TabType) =>
@@ -334,15 +392,25 @@ export default function ProfilePage() {
               <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-[#5c5446]">
                 <span>ความสมบูรณ์ของโปรไฟล์</span>
                 <span className="font-semibold text-[#4a7c59]">
-                  {liveCompletionPercentage}%
+                  {completionPercentage}%
                 </span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-[#e8e0d0]">
                 <div
                   className="h-full rounded-full bg-[#4a7c59] transition-all duration-500"
-                  style={{ width: `${liveCompletionPercentage}%` }}
+                  style={{ width: `${completionPercentage}%` }}
                 />
               </div>
+              {completeness && !completeness.isComplete && (
+                <div className="mt-2 text-[11px] text-[#7a8b6f]">
+                  <p className="font-medium text-[#5c5446]">กรอกเพิ่มเพื่อประเมินคุณสมบัติกับ TOR:</p>
+                  <ul className="mt-0.5 list-disc pl-4">
+                    {completeness.missing.map((key) => (
+                      <li key={key}>{missingFieldLabel(key)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
 
@@ -559,6 +627,29 @@ export default function ProfilePage() {
                       className={inputCls}
                     />
                   </div>
+                  <div className="md:col-span-2">
+                    <p className={labelCls}>ช่วงงบประมาณโครงการที่สนใจ</p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+                      <NumberField
+                        id="personal-budget-min"
+                        value={formData.budgetMin}
+                        onChange={(n) => setFormData({ ...formData, budgetMin: n })}
+                        suffix="บาท"
+                        placeholder="ต่ำสุด"
+                      />
+                      <span className="hidden text-center text-xs text-[#998f80] sm:block">ถึง</span>
+                      <NumberField
+                        id="personal-budget-max"
+                        value={formData.budgetMax}
+                        onChange={(n) => setFormData({ ...formData, budgetMax: n })}
+                        suffix="บาท"
+                        placeholder="สูงสุด (เว้นว่าง = ไม่จำกัด)"
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-[#998f80]">
+                      ใช้เป็นแนวทางคัดกรอง ไม่นับเป็นเงื่อนไขคุณสมบัติใน TOR
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -567,6 +658,7 @@ export default function ProfilePage() {
                 <CompanyForm
                   value={formData}
                   onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch } as FormState))}
+                  teamCount={bidderProfile?.team.length ?? 0}
                 />
               )}
 
@@ -591,6 +683,29 @@ export default function ProfilePage() {
                 </div>
               </div>
             </form>
+
+            {/* Saved one item at a time, separately from the form above */}
+            {bidderProfile && (
+              <div className="mt-8 space-y-4 border-t border-[#f0e8dc] pt-6">
+                <div>
+                  <h2 className="text-lg font-bold text-[#2d2d2d]">ข้อมูลสำหรับประเมินคุณสมบัติ</h2>
+                  <p className="mt-1 text-sm text-[#7a8b6f]">
+                    แต่ละรายการบันทึกทันทีเมื่อกดบันทึก ระบบจะประเมินความเหมาะสมกับ TOR ใหม่ให้อัตโนมัติ
+                  </p>
+                </div>
+                {bidderProfile.accountType !== formData.accountType && (
+                  <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                    กด &quot;บันทึกการเปลี่ยนแปลง&quot; เพื่อเปลี่ยนประเภทบัญชีก่อน แล้วจึงกรอกข้อมูลด้านล่าง
+                  </p>
+                )}
+                {bidderProfile.accountType === "company" ? (
+                  <TeamEditor profile={bidderProfile} />
+                ) : (
+                  <SelfEditor profile={bidderProfile} />
+                )}
+                <ProjectsEditor profile={bidderProfile} />
+              </div>
+            )}
           </div>
         )}
 
