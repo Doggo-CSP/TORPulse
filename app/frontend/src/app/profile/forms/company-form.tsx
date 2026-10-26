@@ -9,10 +9,20 @@ import {
   BriefcaseIcon,
   PhoneIcon,
   PlusIcon,
-  XMarkIcon,
   TrashIcon,
   ChevronDownIcon,
+  AcademicCapIcon,
 } from "@heroicons/react/24/outline";
+import {
+  PrimaryContactFields,
+  primaryContactProgress,
+  CertificateUploader,
+  TeamMembersFields,
+  teamMembersCompleteCount,
+  type PrimaryContact,
+  type TeamMember,
+  type CertificateFile,
+} from "./company-extras";
 
 /* ───────────── Types ───────────── */
 
@@ -35,7 +45,10 @@ export interface CompanyFormData {
   budgetMin: number | null;
   budgetMax: number | null;
   businessObjectives: string;
-  certifications: string[];
+  certifications: string[]; // legacy: ข้อความเดิม (ไม่แสดงในฟอร์มแล้ว แต่ยังส่งกลับไปตามเดิม)
+  certificateFiles: CertificateFile[]; // ไฟล์ใบรับรอง (PDF/รูป)
+  primaryContact: PrimaryContact; // ผู้รับผิดชอบหลัก
+  teamMembers: TeamMember[]; // สมาชิกในทีม (เพิ่มได้ไม่จำกัด)
   isEgpRegistered: boolean;
   pastProjects: PastProject[];
   contactEmail: string;
@@ -57,18 +70,9 @@ const labelCls = "block text-xs font-semibold text-[#5c5446] mb-1.5";
 const hintCls = "mt-1.5 text-[11px] text-[#998f80]";
 const errorCls = "mt-1.5 text-[11px] text-[#CC0000]";
 
-const CERT_SUGGESTIONS = [
-  "ISO 9001",
-  "ISO 27001",
-  "ISO 20000",
-  "CMMI",
-  "PMP (ทีมงาน)",
-  "CISSP (ทีมงาน)",
-];
-
 /* ───────────── Small building blocks ───────────── */
 
-type SectionKey = "entity" | "size" | "certs" | "projects" | "contact";
+type SectionKey = "entity" | "contactPerson" | "size" | "certs" | "projects" | "contact";
 
 type BadgeTone = "done" | "partial" | "empty" | "error";
 
@@ -177,10 +181,9 @@ function yearsSince(isoDate?: string): number | null {
 /* ───────────── Main component ───────────── */
 
 export function CompanyForm({ value, onChange }: Props) {
-  const [certInput, setCertInput] = useState("");
-
-  const certifications = value.certifications ?? [];
+  const certificateFiles = value.certificateFiles ?? [];
   const projects = value.pastProjects ?? [];
+  const teamMembers = value.teamMembers ?? [];
 
   const regNo = value.registrationNumber ?? "";
   const regNoInvalid = regNo.length > 0 && !/^\d{13}$/.test(regNo);
@@ -195,6 +198,7 @@ export function CompanyForm({ value, onChange }: Props) {
   // ── collapsible state ──
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({
     entity: true,
+    contactPerson: false,
     size: false,
     certs: false,
     projects: false,
@@ -202,7 +206,14 @@ export function CompanyForm({ value, onChange }: Props) {
   });
   const toggle = (k: SectionKey) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const setAll = (v: boolean) =>
-    setOpen({ entity: v, size: v, certs: v, projects: v, contact: v });
+    setOpen({
+      entity: v,
+      contactPerson: v,
+      size: v,
+      certs: v,
+      projects: v,
+      contact: v,
+    });
   const allOpen = Object.values(open).every(Boolean);
 
   const has = (v?: string | null) => Boolean(v?.trim());
@@ -224,6 +235,12 @@ export function CompanyForm({ value, onChange }: Props) {
         5,
       );
 
+  // นับผู้รับผิดชอบหลัก (4 ช่อง) + สมาชิกในทีมแต่ละคน (คนละ 1 หน่วย เมื่อกรอกครบ 4 ช่อง)
+  const contactPersonStatus = progress(
+    primaryContactProgress(value.primaryContact) + teamMembersCompleteCount(teamMembers),
+    4 + teamMembers.length,
+  );
+
   const sizeStatus = budgetInvalid
     ? { badge: "ต้องแก้ไข", tone: "error" as BadgeTone }
     : progress(
@@ -237,7 +254,7 @@ export function CompanyForm({ value, onChange }: Props) {
       );
 
   const certsStatus = progress(
-    [certifications.length > 0, !!value.isEgpRegistered].filter(Boolean).length,
+    [certificateFiles.length > 0, !!value.isEgpRegistered].filter(Boolean).length,
     2,
   );
 
@@ -255,13 +272,6 @@ export function CompanyForm({ value, onChange }: Props) {
     ].filter(Boolean).length,
     4,
   );
-
-  const addCert = (raw: string) => {
-    const name = raw.trim();
-    if (!name || certifications.includes(name)) return;
-    onChange({ certifications: [...certifications, name] });
-    setCertInput("");
-  };
 
   const updateProject = (index: number, patch: Partial<PastProject>) =>
     onChange({
@@ -371,7 +381,29 @@ export function CompanyForm({ value, onChange }: Props) {
         </div>
       </Section>
 
-      {/* ── 2. ขนาดธุรกิจและงบประมาณ ── */}
+      {/* ── 2. ผู้รับผิดชอบหลัก + สมาชิกในทีม ── */}
+      <Section
+        icon={AcademicCapIcon}
+        title="ผู้รับผิดชอบหลัก"
+        subtitle={`ชื่อ ตำแหน่ง วุฒิการศึกษา และวันที่เข้าทำงานที่บริษัท${
+          teamMembers.length > 0 ? ` · ทีม ${teamMembers.length} คน` : ""
+        }`}
+        open={open.contactPerson}
+        onToggle={() => toggle("contactPerson")}
+        badge={contactPersonStatus.badge}
+        tone={contactPersonStatus.tone}
+      >
+        <PrimaryContactFields
+          value={value.primaryContact}
+          onChange={(primaryContact) => onChange({ primaryContact })}
+        />
+        <TeamMembersFields
+          value={value.teamMembers}
+          onChange={(teamMembers) => onChange({ teamMembers })}
+        />
+      </Section>
+
+      {/* ── 3. ขนาดธุรกิจและงบประมาณ ── */}
       <Section
         icon={BanknotesIcon}
         title="ขนาดธุรกิจและงบประมาณ"
@@ -438,77 +470,22 @@ export function CompanyForm({ value, onChange }: Props) {
         </div>
       </Section>
 
-      {/* ── 3. ใบรับรองและมาตรฐาน ── */}
+      {/* ── 4. ใบรับรองและมาตรฐาน ── */}
       <Section
         icon={ShieldCheckIcon}
         title="ใบรับรองและมาตรฐาน"
-        subtitle="ใช้เทียบกับข้อกำหนดด้านมาตรฐานและบุคลากรใน TOR"
+        subtitle="อัปโหลดไฟล์ใบรับรอง (PDF หรือรูปภาพ) และสถานะ e-GP"
         open={open.certs}
         onToggle={() => toggle("certs")}
         badge={certsStatus.badge}
         tone={certsStatus.tone}
       >
         <div>
-          <label className={labelCls}>ใบรับรอง / มาตรฐานที่บริษัทมี</label>
-
-          {certifications.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-2">
-              {certifications.map((c) => (
-                <span
-                  key={c}
-                  className="inline-flex items-center gap-1 rounded-full bg-[#e2ede4] py-1 pl-3 pr-1.5 text-xs font-medium text-[#2d5a37]"
-                >
-                  {c}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onChange({ certifications: certifications.filter((x) => x !== c) })
-                    }
-                    className="grid size-5 place-items-center rounded-full hover:bg-[#c4e3cb]"
-                    aria-label={`ลบ ${c}`}
-                  >
-                    <XMarkIcon className="size-3.5" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={certInput}
-              onChange={(e) => setCertInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addCert(certInput);
-                }
-              }}
-              placeholder="พิมพ์ชื่อแล้วกด Enter"
-              className={inputCls}
-            />
-            <button
-              type="button"
-              onClick={() => addCert(certInput)}
-              className="shrink-0 rounded-full border border-[#ddd5c8] bg-white px-5 text-xs font-medium text-[#5c5446] hover:bg-[#faf7f2]"
-            >
-              เพิ่ม
-            </button>
-          </div>
-
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {CERT_SUGGESTIONS.filter((s) => !certifications.includes(s)).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => addCert(s)}
-                className="rounded-full border border-dashed border-[#ddd5c8] px-3 py-1 text-[11px] text-[#7a8b6f] hover:border-[#4a7c59] hover:text-[#4a7c59]"
-              >
-                + {s}
-              </button>
-            ))}
-          </div>
+          <label className={labelCls}>ไฟล์ Certificate / ใบรับรอง</label>
+          <CertificateUploader
+            files={certificateFiles}
+            onChange={(files) => onChange({ certificateFiles: files })}
+          />
         </div>
 
         <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] p-4">
@@ -527,7 +504,7 @@ export function CompanyForm({ value, onChange }: Props) {
         </label>
       </Section>
 
-      {/* ── 4. ผลงานที่ผ่านมา ── */}
+      {/* ── 5. ผลงานที่ผ่านมา ── */}
       <Section
         icon={BriefcaseIcon}
         title="ผลงานที่ผ่านมา"
@@ -617,7 +594,7 @@ export function CompanyForm({ value, onChange }: Props) {
         )}
       </Section>
 
-      {/* ── 5. ข้อมูลติดต่อ ── */}
+      {/* ── 6. ข้อมูลติดต่อ ── */}
       <Section
         icon={PhoneIcon}
         title="ข้อมูลติดต่อ"
