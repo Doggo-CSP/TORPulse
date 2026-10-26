@@ -4,25 +4,12 @@
 import type { CardMatch } from "@/api/bidder-profile.api";
 import { verdictFor } from "@/lib/qualification-labels";
 
-/** Qualification score on a TOR card. Shows nothing when there is nothing useful to say. */
+/**
+ * Qualification score on a TOR card, shown only once there is a score. Profile completeness is
+ * shown once, by the banner above the list, instead of on every card.
+ */
 export function CardMatchBadge({ match }: { match: CardMatch | undefined }) {
   if (!match) return null;
-
-  if (match.status === "pending") {
-    return (
-      <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[11px] text-muted-foreground">
-        กำลังวิเคราะห์คุณสมบัติ…
-      </span>
-    );
-  }
-
-  if (match.status === "profile_incomplete") {
-    return (
-      <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] text-amber-700">
-        กรอกโปรไฟล์เพื่อดูความเหมาะสม
-      </span>
-    );
-  }
 
   if ((match.status === "ready" || match.status === "stale") && match.percentage !== null) {
     const verdict = verdictFor(match.percentage, match.allMandatoryMet ?? false);
@@ -38,6 +25,6 @@ export function CardMatchBadge({ match }: { match: CardMatch | undefined }) {
     );
   }
 
-  // failed, not_evaluated (e.g. closed TORs), no_requirements
+  // pending, profile_incomplete, failed, not_evaluated (e.g. closed TORs), no_requirements
   return null;
 }
