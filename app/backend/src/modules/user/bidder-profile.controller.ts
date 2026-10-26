@@ -35,6 +35,7 @@ import {
   createProjectSchema,
   organizationSchema,
   personSchema,
+  preferencesSchema,
   updateProjectSchema,
 } from './bidder-profile.validation.js'
 import { findUserById } from './user.repository.js'
@@ -103,6 +104,11 @@ const toBidderProfileResponse = (user: UserDocument, profile: BidderProfileDocum
       hasPositiveNetWorth: organization?.hasPositiveNetWorth ?? null,
       hasBangkokOffice: organization?.hasBangkokOffice ?? null,
       certifications: (organization?.certifications ?? []).map(toCertificationResponse),
+    },
+    preferences: {
+      budgetMinBaht: profile?.preferences?.budgetMinBaht ?? null,
+      budgetMaxBaht: profile?.preferences?.budgetMaxBaht ?? null,
+      businessObjectives: profile?.preferences?.businessObjectives ?? '',
     },
     self: profile?.self ? toPersonResponse(profile.self) : null,
     team: (profile?.team ?? []).map(toPersonResponse),
@@ -195,6 +201,38 @@ export const updateOrganizationHandler = async (req: Request, res: Response): Pr
 
   const profile = await findOrCreateBidderProfile(user._id)
   Object.assign(profile.organization, definedFields(parsed.data))
+  await saveAndRespond(user, profile, res)
+}
+
+// Budget range and objectives, for both personal and company bidders
+export const updatePreferencesHandler = async (req: Request, res: Response): Promise<void> => {
+  const user = await loadUser(req, res)
+  if (!user || !requireAccountType(user, res, ['personal', 'company'])) return
+
+  const parsed = preferencesSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() })
+    return
+  }
+
+  const profile = await findOrCreateBidderProfile(user._id)
+  const current = profile.preferences
+  const merged = {
+    budgetMinBaht: current?.budgetMinBaht ?? null,
+    budgetMaxBaht: current?.budgetMaxBaht ?? null,
+    businessObjectives: current?.businessObjectives ?? '',
+    ...definedFields(parsed.data),
+  }
+  if (
+    merged.budgetMinBaht != null &&
+    merged.budgetMaxBaht != null &&
+    merged.budgetMinBaht > merged.budgetMaxBaht
+  ) {
+    res.status(400).json({ error: 'budgetMinBaht must not exceed budgetMaxBaht' })
+    return
+  }
+
+  profile.set('preferences', merged)
   await saveAndRespond(user, profile, res)
 }
 

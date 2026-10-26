@@ -245,7 +245,7 @@ test('scoreRequirements returns null when there is nothing to judge', () => {
 
 test('matchInputVersion follows the data the AI sees, not edit times', () => {
   const base = matchInputVersion(user, profile, tor)
-  assert.match(base, /^v1:[0-9a-f]{32}$/)
+  assert.match(base, /^v2:[0-9a-f]{32}$/)
 
   // Saving without a real change, or changing data the AI never sees, keeps it
   assert.equal(matchInputVersion({ ...user, updatedAt: new Date() }, profile, tor), base)
@@ -260,6 +260,31 @@ test('matchInputVersion follows the data the AI sees, not edit times', () => {
     matchInputVersion(user, profile, { ...tor, bidderQualifications: ['ใหม่'] }),
     base,
   )
+})
+
+test('preferences reach the AI as context and change the input hash', () => {
+  const withPrefs: MatchProfile = {
+    ...profile,
+    preferences: {
+      budgetMinBaht: 1_000_000,
+      budgetMaxBaht: 10_000_000,
+      businessObjectives: 'งานภาครัฐ',
+    },
+  }
+  const snapshot = buildBidderSnapshot(user, withPrefs, NOW)
+
+  assert.deepEqual(snapshot.preferences, {
+    budgetMinBaht: 1_000_000,
+    budgetMaxBaht: 10_000_000,
+    businessObjectives: 'งานภาครัฐ',
+  })
+  assert.deepEqual(buildBidderSnapshot(user, profile, NOW).preferences, {
+    budgetMinBaht: null,
+    budgetMaxBaht: null,
+    businessObjectives: null,
+  })
+  assert.notEqual(matchInputVersion(user, withPrefs, tor), matchInputVersion(user, profile, tor))
+  assert.match(buildMatchPrompt(), /"preferences".*Never list it as a requirement/)
 })
 
 test('isMatchStale on a changed input or a result older than 30 days', () => {

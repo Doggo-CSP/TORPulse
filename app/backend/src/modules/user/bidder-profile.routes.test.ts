@@ -84,6 +84,36 @@ test('bidder profile routes: organization, team, projects and derived qualificat
     assert.deepEqual(profile.derivedQualification.staffRoles, ['developer'])
   })
 
+  await t.test('PUT /user/bidder-profile/preferences works for a personal bidder', async () => {
+    const saved = await request(app).put('/user/bidder-profile/preferences').send({
+      budgetMinBaht: 500_000,
+      budgetMaxBaht: 5_000_000,
+      businessObjectives: 'ระบบเว็บภาครัฐ',
+    })
+    assert.equal(saved.status, 200)
+    assert.deepEqual(saved.body.bidderProfile.preferences, {
+      budgetMinBaht: 500_000,
+      budgetMaxBaht: 5_000_000,
+      businessObjectives: 'ระบบเว็บภาครัฐ',
+    })
+
+    // A partial update keeps the other fields, and the merged range is checked
+    const partial = await request(app)
+      .put('/user/bidder-profile/preferences')
+      .send({ businessObjectives: 'งานดูแลระบบ' })
+    assert.equal(partial.body.bidderProfile.preferences.budgetMaxBaht, 5_000_000)
+
+    const inverted = await request(app)
+      .put('/user/bidder-profile/preferences')
+      .send({ budgetMinBaht: 9_000_000 })
+    assert.equal(inverted.status, 400)
+
+    const bothInverted = await request(app)
+      .put('/user/bidder-profile/preferences')
+      .send({ budgetMinBaht: 2, budgetMaxBaht: 1 })
+    assert.equal(bothInverted.status, 400)
+  })
+
   await t.test('company-only routes are refused for a personal account', async () => {
     const response = await request(app)
       .post('/user/bidder-profile/team')

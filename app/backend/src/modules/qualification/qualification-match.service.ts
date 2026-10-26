@@ -27,7 +27,7 @@ import {
 // so the same judgments always give the same score.
 
 // Bump when the prompt or the input shape changes, so cached results are recomputed.
-export const MATCH_PROMPT_VERSION = 'v1'
+export const MATCH_PROMPT_VERSION = 'v2'
 
 const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/chat/completions'
 // Gemini counts thinking tokens against this limit, so it needs headroom beyond the JSON.
@@ -52,7 +52,7 @@ export type MatchUser = BidderUser & { _id: unknown; updatedAt?: Date | null }
 export type MatchProfile = Pick<
   BidderProfileRecord,
   'organization' | 'self' | 'team' | 'projects'
-> & { updatedAt?: Date | null }
+> & { preferences?: BidderProfileRecord['preferences'] | null; updatedAt?: Date | null }
 
 export interface MatchResult {
   requirements: RequirementResultRecord[]
@@ -121,6 +121,12 @@ export function buildBidderSnapshot(user: MatchUser, profile: MatchProfile, now 
       },
     }),
     people: persons.map((person) => toPerson(person, labels.get(person._id.toString())!, now)),
+    // What the bidder is looking for; context for the summary, never a requirement
+    preferences: {
+      budgetMinBaht: profile.preferences?.budgetMinBaht ?? null,
+      budgetMaxBaht: profile.preferences?.budgetMaxBaht ?? null,
+      businessObjectives: truncate(profile.preferences?.businessObjectives, 1_000) || null,
+    },
     pastProjects: profile.projects.map((project) => ({
       name: project.name,
       client: project.clientName || null,
@@ -182,6 +188,7 @@ Rules:
 - Certification names may be written differently ("ISO 27001" is "ISO/IEC 27001:2022"); match on what the certificate is.
 - Personnel requirements are met by the people in "people" through their position, roles, years of experience, education and certifications. For an individual bidder, "people" is the bidder themself.
 - Past work counts only when it is relevant to what the requirement asks for (kind of work, client type, value, age).
+- "preferences" is what the bidder is looking for (preferred budget range and business objectives), not something the TOR requires. Never list it as a requirement and never use it to judge one.
 
 For each requirement return:
 - "requirement": the requirement in Thai.
@@ -191,7 +198,7 @@ For each requirement return:
 - "reason": one or two Thai sentences citing the bidder data used, for example "คนที่ 2 มี PMP มา 7 ปี".
 - "suggestion": one Thai sentence on what the bidder needs to add or do to meet it; "" when met.
 
-Also return "summary": two or three Thai sentences on the bidder's overall fit and the main gaps.
+Also return "summary": two or three Thai sentences on the bidder's overall fit and the main gaps. When "preferences" is filled in, add whether the TOR's budget falls in the preferred range and whether the work fits the stated objectives.
 
 Return one JSON object with exactly this shape:
 {
