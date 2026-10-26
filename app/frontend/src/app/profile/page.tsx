@@ -90,6 +90,9 @@ const bidderFormFields = (bidder: BidderProfile): Partial<CompanyFormData> => {
     registeredCapital: bidder.organization.registeredCapitalBaht,
     certifications: certs.filter((c) => c.name !== EGP_CERTIFICATION_NAME),
     isEgpRegistered: certs.some((c) => c.name === EGP_CERTIFICATION_NAME),
+    isSme: bidder.organization.isSme,
+    hasPositiveNetWorth: bidder.organization.hasPositiveNetWorth,
+    hasBangkokOffice: bidder.organization.hasBangkokOffice,
     budgetMin: bidder.preferences.budgetMinBaht,
     budgetMax: bidder.preferences.budgetMaxBaht,
     businessObjectives: bidder.preferences.businessObjectives,
@@ -333,6 +336,9 @@ export default function ProfilePage() {
         await bidder.saveOrganization({
           registeredDate: formData.registeredDate || null,
           registeredCapitalBaht: formData.registeredCapital ?? null,
+          isSme: formData.isSme ?? null,
+          hasPositiveNetWorth: formData.hasPositiveNetWorth ?? null,
+          hasBangkokOffice: formData.hasBangkokOffice ?? null,
           certifications: withEgpCertification(
             formData.certifications?.filter((c) => c.name.trim()),
             formData.isEgpRegistered,

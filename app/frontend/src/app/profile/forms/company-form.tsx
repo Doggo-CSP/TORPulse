@@ -12,6 +12,7 @@ import type { CertificationInput } from "@/api/bidder-profile.api";
 import {
   CertificationList,
   NumberField,
+  OrganizationFlagFields,
   Section,
   errorCls,
   hintCls,
@@ -37,6 +38,9 @@ export interface CompanyFormData {
   businessObjectives: string;
   certifications: CertificationInput[];
   isEgpRegistered: boolean; // saved as the certification EGP_CERTIFICATION_NAME
+  isSme: boolean | null;
+  hasPositiveNetWorth: boolean | null;
+  hasBangkokOffice: boolean | null;
   contactEmail: string;
   phone: string;
   address: string;
@@ -242,6 +246,7 @@ export function CompanyForm({ value, onChange, teamCount }: Props) {
             </p>
           </div>
         </div>
+        <OrganizationFlagFields idPrefix="company" value={value} onChange={onChange} />
       </Section>
 
       {/* ── 2. ขนาดธุรกิจและงบประมาณ ── */}
