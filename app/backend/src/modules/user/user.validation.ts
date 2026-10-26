@@ -43,6 +43,10 @@ export const updateProfileSchema = z.object({
 // TODO(LEGACY-INTEREST-IDS): also accepts the profile page's old ids ("web", "ai", ...) and
 // converts them to category keys before saving; drop the legacy ids once the frontend is fixed.
 // Whether each key is an active category is checked against the DB in the handler.
+export const updateOnboardingSchema = z.object({
+  status: z.enum(['completed', 'dismissed']),
+})
+
 export const updateInterestsSchema = z.object({
   interests: z
     .array(z.string().trim().min(1))

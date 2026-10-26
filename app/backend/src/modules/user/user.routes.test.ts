@@ -131,6 +131,21 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
     assert.equal(response.status, 400)
   })
 
+  await t.test('PUT /user/onboarding records that the wizard was skipped or finished', async () => {
+    const before = await request(app).get('/user/profile')
+    assert.equal(before.body.user.onboardingStatus, null)
+
+    const skipped = await request(app).put('/user/onboarding').send({ status: 'dismissed' })
+    assert.equal(skipped.status, 200)
+    assert.equal(skipped.body.onboardingStatus, 'dismissed')
+
+    const after = await request(app).get('/user/profile')
+    assert.equal(after.body.user.onboardingStatus, 'dismissed')
+
+    const invalid = await request(app).put('/user/onboarding').send({ status: 'later' })
+    assert.equal(invalid.status, 400)
+  })
+
   await t.test('PUT /user/interests rejects a non-array payload', async () => {
     const response = await request(app).put('/user/interests').send({ interests: 'web' })
 
