@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useDebounce } from "use-debounce";
 import { SiteNav } from "@/app/components/site_nav";
 import { useAuth } from "@/hooks/use-auth";
@@ -12,6 +12,9 @@ import { formatBudgetSummary, formatLastUpdatedTime } from "@/api/homepage.api";
 import { useTorFilterOptions, useTorRecommendations, useTors } from "@/hooks/use-tors";
 import { useCardMatches } from "@/hooks/use-card-matches";
 import { CardMatchBadge } from "./card-match-badge";
+import { ProfileProgressBanner } from "./profile-progress-banner";
+import { useBidderProfile } from "@/hooks/use-bidder-profile";
+import { useRouter } from "next/navigation";
 import { useCategories } from "@/hooks/use-categories";
 import { DeadlineBadge } from "@/app/components/deadline_badge";
 import { formatThaiDate } from "@/api/reports.api";
@@ -262,6 +265,18 @@ export default function HomePage() {
 
   const { data: recommendedTors = [] } = useTorRecommendations(isLoggedIn);
 
+  // Profile completeness for qualification scores, and the onboarding wizard for new users
+  const { profile: bidderProfile } = useBidderProfile(!!user);
+  const router = useRouter();
+  const shouldOnboard =
+    !!profile &&
+    !!bidderProfile &&
+    (profile.onboardingStatus ?? null) === null &&
+    !bidderProfile.completeness.isComplete;
+  useEffect(() => {
+    if (shouldOnboard) router.replace("/onboarding");
+  }, [shouldOnboard, router]);
+
   // Immediate (UI-bound) states
   const [nameInput, setNameInput] = useState("");
   const [budgetMinInput, setBudgetMinInput] = useState("");
@@ -441,6 +456,8 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {bidderProfile && <ProfileProgressBanner completeness={bidderProfile.completeness} />}
 
         {/* ── SmartSearch ── */}
         <section className="panel overflow-hidden" id="smart-search">

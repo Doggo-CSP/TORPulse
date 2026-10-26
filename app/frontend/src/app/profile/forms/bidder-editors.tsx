@@ -3,7 +3,7 @@
 // its own through /user/bidder-profile/*, so editing one never overwrites another.
 "use client";
 
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import {
   BriefcaseIcon,
   PencilSquareIcon,
@@ -54,6 +54,11 @@ const splitTags = (text: string) =>
     .filter(Boolean);
 
 const formatBaht = (n: number | null) => (n == null ? "-" : `${n.toLocaleString("th-TH")} บาท`);
+
+/** A collapsible profile section, or just its content when the editor is embedded (onboarding). */
+function Frame({ bare, children, ...section }: ComponentProps<typeof Section> & { bare: boolean }) {
+  return bare ? <div className="space-y-4">{children}</div> : <Section {...section}>{children}</Section>;
+}
 
 /* ───────────── Person (team member or the individual bidder) ───────────── */
 
@@ -315,7 +320,7 @@ const personSummary = (person: Person) =>
 
 /* ───────────── Team (company accounts) ───────────── */
 
-export function TeamEditor({ profile }: { profile: BidderProfile }) {
+export function TeamEditor({ profile, bare = false }: { profile: BidderProfile; bare?: boolean }) {
   const bidder = useBidderProfile();
   const { data: options } = useBidderProfileOptions();
   const [open, setOpen] = useState(true);
@@ -356,7 +361,8 @@ export function TeamEditor({ profile }: { profile: BidderProfile }) {
   const limit = options?.limits.teamMembers ?? 100;
 
   return (
-    <Section
+    <Frame
+      bare={bare}
       icon={UserGroupIcon}
       title="บุคลากรในทีม (ไม่บังคับ)"
       subtitle="TOR ส่วนใหญ่กำหนดคุณสมบัติบุคลากร เช่น ตำแหน่ง วุฒิ และใบรับรอง"
@@ -430,13 +436,13 @@ export function TeamEditor({ profile }: { profile: BidderProfile }) {
           เพิ่มบุคลากร
         </button>
       )}
-    </Section>
+    </Frame>
   );
 }
 
 /* ───────────── The individual bidder's own record (personal accounts) ───────────── */
 
-export function SelfEditor({ profile }: { profile: BidderProfile }) {
+export function SelfEditor({ profile, bare = false }: { profile: BidderProfile; bare?: boolean }) {
   const bidder = useBidderProfile();
   const { data: options } = useBidderProfileOptions();
   const [open, setOpen] = useState(false);
@@ -454,7 +460,8 @@ export function SelfEditor({ profile }: { profile: BidderProfile }) {
   };
 
   return (
-    <Section
+    <Frame
+      bare={bare}
       icon={IdentificationIcon}
       title="ความเชี่ยวชาญของคุณ (ไม่บังคับ)"
       subtitle="ตำแหน่ง วุฒิ และใบรับรอง ใช้เทียบกับคุณสมบัติบุคลากรใน TOR"
@@ -480,7 +487,7 @@ export function SelfEditor({ profile }: { profile: BidderProfile }) {
           </span>
         )}
       </div>
-    </Section>
+    </Frame>
   );
 }
 
@@ -716,7 +723,7 @@ function ProjectFields({
   );
 }
 
-export function ProjectsEditor({ profile }: { profile: BidderProfile }) {
+export function ProjectsEditor({ profile, bare = false }: { profile: BidderProfile; bare?: boolean }) {
   const bidder = useBidderProfile();
   const { data: options } = useBidderProfileOptions();
   const [open, setOpen] = useState(true);
@@ -779,7 +786,8 @@ export function ProjectsEditor({ profile }: { profile: BidderProfile }) {
   );
 
   return (
-    <Section
+    <Frame
+      bare={bare}
       icon={BriefcaseIcon}
       title="ผลงานที่ผ่านมา"
       subtitle="TOR ส่วนใหญ่กำหนดมูลค่าผลงานขั้นต่ำ ยิ่งกรอกครบ ผลประเมินยิ่งแม่น"
@@ -835,7 +843,7 @@ export function ProjectsEditor({ profile }: { profile: BidderProfile }) {
           เพิ่มผลงาน
         </button>
       )}
-    </Section>
+    </Frame>
   );
 }
 

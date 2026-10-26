@@ -10,7 +10,6 @@ import { useQualificationMatch } from "@/hooks/use-qualification-match";
 import {
   REQUIREMENT_CATEGORY_LABELS,
   REQUIREMENT_STATUS_LABELS,
-  missingFieldLabel,
   verdictFor,
 } from "@/lib/qualification-labels";
 import {
@@ -195,37 +194,10 @@ export function QualificationMatchCard({
     );
   }
 
-  // 4. Profile missing required fields (UC-08)
+  // 4. Profile missing required fields: the card appears once there is a score; the homepage
+  // banner and the onboarding wizard ask for the missing fields instead (UC-08)
   if (result.state === "no-profile") {
-    return (
-      <Shell showEditLink={false}>
-        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-          <div className="flex items-start gap-2.5">
-            <BuildingOffice2Icon className="size-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-xs font-semibold text-amber-900">ข้อมูลโปรไฟล์ยังไม่ครบ</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
-                กรอกข้อมูลต่อไปนี้เพื่อคำนวณคะแนนความเหมาะสมกับ TOR นี้
-              </p>
-              {result.missing.length > 0 && (
-                <ul className="mt-1.5 list-disc pl-4 text-[11px] leading-relaxed text-amber-800">
-                  {result.missing.map((key) => (
-                    <li key={key}>{missingFieldLabel(key)}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-          <Link
-            href="/profile"
-            className="mt-3.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white shadow-xs hover:bg-amber-700 transition-colors"
-          >
-            <span>กรอกโปรไฟล์ตอนนี้</span>
-            <ArrowTopRightOnSquareIcon className="size-3.5" />
-          </Link>
-        </div>
-      </Shell>
-    );
+    return null;
   }
 
   // 5. Error state

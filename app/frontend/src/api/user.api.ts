@@ -40,6 +40,9 @@ export interface UserProfile {
   qualification?: CompanyQualification;
   notificationPrefs?: { emailEnabled: boolean };
   notificationMissingFields?: string[];
+
+  // null until the onboarding wizard is finished or skipped
+  onboardingStatus?: "completed" | "dismissed" | null;
 }
 
 export interface TorItem {
@@ -169,4 +172,24 @@ export async function fetchUserBookmarks(): Promise<TorItem[]> {
 
   const data = await res.json();
   return data.tors || [];
+}
+
+/**
+ * Records that the onboarding wizard was finished or skipped, so it is not offered again
+ */
+export async function updateOnboardingStatus(
+  status: "completed" | "dismissed",
+): Promise<{ onboardingStatus: "completed" | "dismissed" }> {
+  const res = await fetch(`${apiUrl}/api/v1/user/onboarding`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ status }),
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to update onboarding status");
+  }
+
+  return await res.json();
 }

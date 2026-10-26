@@ -401,6 +401,12 @@ export default function ProfilePage() {
                   style={{ width: `${completionPercentage}%` }}
                 />
               </div>
+              <Link
+                href="/onboarding"
+                className="mt-2 inline-block text-[11px] font-semibold text-[#4a7c59] hover:underline"
+              >
+                กรอกแบบทีละขั้นตอน →
+              </Link>
               {completeness && !completeness.isComplete && (
                 <div className="mt-2 text-[11px] text-[#7a8b6f]">
                   <p className="font-medium text-[#5c5446]">กรอกเพิ่มเพื่อประเมินคุณสมบัติกับ TOR:</p>
