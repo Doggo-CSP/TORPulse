@@ -11,6 +11,13 @@ export interface CompanyQualification {
   staffRoles: string[];
 }
 
+export interface PastProject {
+  name: string;
+  client: string;
+  valueBaht: number | null;
+  year: number | null; // พ.ศ.
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -29,15 +36,31 @@ export interface UserProfile {
   bookmarkedCount: number;
   completionPercentage: number;
 
-  // Organization
+  // Organization / Company
   website?: string;
   companyName?: string;
   registrationNumber?: string;
   businessType?: string;
+  registeredDate?: string;
+  registeredCapital?: number | null;
+  yearsExperience?: number | null;
+  teamSize?: number | null;
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  businessObjectives?: string;
+  certifications?: string[];
+  isEgpRegistered?: boolean;
+  pastProjects?: PastProject[];
 
   // Agency
   agencyName?: string;
   agencyType?: string;
+  agencyCode?: string;
+  ministry?: string;
+  foundedYear?: number | null;
+  staffCount?: number | null;
+  annualBudget?: number | null;
+  procurementMethods?: string[];
 
   // Qualifying-TOR email notifications
   qualification?: CompanyQualification;

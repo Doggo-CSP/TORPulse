@@ -353,7 +353,20 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
   const sort = parseStringParam(req.query.sort)
 
   const query: Record<string, unknown> = { ...PUBLIC_TOR_FILTER }
-  if (q) query.projectTitle = { $regex: escapeRegex(q), $options: 'i' }
+  const andClauses: Record<string, unknown>[] = []
+  if (q) {
+    const searchRegex = { $regex: escapeRegex(q.trim()), $options: 'i' }
+    andClauses.push({
+      $or: [
+        { projectTitle: searchRegex },
+        { externalId: searchRegex },
+        { agencyName: searchRegex },
+        { departmentName: searchRegex },
+        { summary: searchRegex },
+        { technologies: searchRegex },
+      ],
+    })
+  }
   if (categoryParam && categoryParam !== 'all') {
     const categoryKeys = categoryParam
       .split(',')
@@ -361,8 +374,13 @@ export async function listTorsHandler(req: Request, res: Response): Promise<void
       .filter(Boolean)
     // TORs stored before `categories` existed only have the primary `category`.
     if (categoryKeys.length > 0) {
-      query.$or = [{ categories: { $in: categoryKeys } }, { category: { $in: categoryKeys } }]
+      andClauses.push({
+        $or: [{ categories: { $in: categoryKeys } }, { category: { $in: categoryKeys } }],
+      })
     }
+  }
+  if (andClauses.length > 0) {
+    query.$and = andClauses
   }
   if (budgetMin !== undefined || budgetMax !== undefined) {
     const budgetBaht: Record<string, number> = {}
