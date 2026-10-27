@@ -10,6 +10,7 @@ const details = {
   midPriceBaht: 2370000,
   contractStatus: 'ระหว่างดำเนินการ',
   contractStatusCode: 'S1',
+  announcements: [],
 }
 
 test('backfills BMA TORs and counts missing and failed projects', async () => {

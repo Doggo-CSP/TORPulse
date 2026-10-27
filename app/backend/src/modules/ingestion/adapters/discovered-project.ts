@@ -1,3 +1,13 @@
+// A hearing document BMA publishes for a project (ร่างประกาศ, ร่าง TOR, ...).
+export interface ProjectAnnouncement {
+  sourceId: string
+  title: string | null
+  hearingStartAt: Date | null
+  hearingEndAt: Date | null
+  fileName: string | null
+  fileUrl: string | null
+}
+
 // Project metadata a discovery adapter reports, refreshed on every producer sync.
 export interface ProjectSourceMetadata {
   title: string
@@ -14,6 +24,8 @@ export interface ProjectSourceMetadata {
   budgetBaht: number | null
   midPriceBaht: number | null
   awardedPriceBaht: number | null
+  // null when the source was not asked or the request failed; [] when it has none.
+  announcements: ProjectAnnouncement[] | null
 }
 
 export interface DiscoveredProcurementProject {
