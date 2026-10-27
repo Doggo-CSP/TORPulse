@@ -53,8 +53,9 @@ export async function enrichBmaTorRecords(
 }
 
 /**
- * Fills BMA project id, middle price and contract status on existing BMA TORs and their
- * ingestion jobs. By default only TORs without a middle price are visited.
+ * Fills BMA project id, middle price, contract status and hearing announcements on existing
+ * BMA TORs and their ingestion jobs. By default only TORs missing a middle price or
+ * announcements are visited.
  */
 export async function backfillBmaTorDetails(
   options: { dryRun?: boolean; onlyMissing?: boolean } = {},
@@ -63,7 +64,9 @@ export async function backfillBmaTorDetails(
   const adapter = new BmaDiscoveryAdapter()
   const records = TorModel.find({
     sourceAdapter: 'bma_egp',
-    ...(onlyMissing ? { midPriceBaht: null } : {}),
+    ...(onlyMissing
+      ? { $or: [{ midPriceBaht: null }, { announcements: { $exists: false } }] }
+      : {}),
   })
     .select({ _id: 1, externalId: 1, sourceAdapter: 1, ingestionJobId: 1 })
     .lean<BackfillTor>()

@@ -1,19 +1,26 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { BmaDiscoveryAdapter } from './bma-discovery.adapter.js'
+import { BmaDiscoveryAdapter, toBmaFileUrl } from './bma-discovery.adapter.js'
 
-// Routes project-search requests to `body` and project-detail requests to `detail`.
+const emptyPage = { totalCount: 0, hasNextPage: false, data: [] }
+
+// Routes project-search requests to `body`, project-detail requests to `detail` and
+// TOR-announcement requests to `announcements`.
 function adapterReturning(
   body: unknown,
   onRequest?: (url: URL) => void,
   detail: (projectId: string) => Response = () => new Response(null, { status: 404 }),
+  announcements: (url: URL) => Response = () => Response.json(emptyPage),
 ) {
   return new BmaDiscoveryAdapter({
     requestTimeoutMs: 1_000,
     fetchImpl: (async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : input.toString())
       onRequest?.(url)
+      if (url.pathname.endsWith('/GetTorInProject')) {
+        return announcements(url)
+      }
       return url.pathname.endsWith('/GetProjectDetail')
         ? detail(url.searchParams.get('projectId') ?? '')
         : Response.json(body)
@@ -44,6 +51,26 @@ const detailBody = {
   projectAverageBudget: 7000000,
 }
 
+const torRow = {
+  no: 1,
+  projectId: BMA_PROJECT_ID,
+  projectTorTitle: 'เอกสาร(ร่าง) TOR ',
+  projectTorHearingStartDate: '2026-10-13T17:00:00Z',
+  projectTorHearingEndDate: '2026-10-18T17:00:00Z',
+  projectTorPath: 'TORFinal_compressed_1792389614253.pdf',
+  id: 'f3afd7e8-4005-49c9-b39e-7ee8c93cfa88',
+}
+
+const torAnnouncement = {
+  sourceId: 'f3afd7e8-4005-49c9-b39e-7ee8c93cfa88',
+  title: 'เอกสาร(ร่าง) TOR',
+  hearingStartAt: new Date('2026-10-13T17:00:00Z'),
+  hearingEndAt: new Date('2026-10-18T17:00:00Z'),
+  fileName: 'TORFinal_compressed_1792389614253.pdf',
+  fileUrl:
+    'https://egp2.bangkok.go.th/api/file/f3afd7e8-4005-49c9-b39e-7ee8c93cfa88/TORFinal_compressed_1792389614253.pdf',
+}
+
 const listInput = { budgetYear: 2570, keyword: 'ระบบ', pageNo: 1, pageSize: 100 }
 
 test('filters the BMA search by keyword, invitation stage and budget year', async () => {
@@ -67,12 +94,17 @@ test('filters the BMA search by keyword, invitation stage and budget year', asyn
 
 test('maps a BMA project to a Central eGP project id with detail metadata', async () => {
   const detailIds: string[] = []
+  const announcementIds: string[] = []
   const adapter = adapterReturning(
     { totalCount: 1, hasNextPage: false, data: [searchRow] },
     undefined,
     (projectId) => {
       detailIds.push(projectId)
       return Response.json(detailBody)
+    },
+    (url) => {
+      announcementIds.push(url.searchParams.get('projectId') ?? '')
+      return Response.json({ totalCount: 1, hasNextPage: false, data: [torRow] })
     },
   )
 
@@ -98,11 +130,57 @@ test('maps a BMA project to a Central eGP project id with detail metadata', asyn
           budgetBaht: 7087000,
           midPriceBaht: 7000000,
           awardedPriceBaht: null,
+          announcements: [torAnnouncement],
         },
       },
     ],
   })
   assert.deepEqual(detailIds, [BMA_PROJECT_ID])
+  assert.deepEqual(announcementIds, [BMA_PROJECT_ID])
+})
+
+test('follows announcement pages and skips rows without an id', async () => {
+  const pages: string[] = []
+  const adapter = adapterReturning(
+    { totalCount: 1, hasNextPage: false, data: [searchRow] },
+    undefined,
+    () => Response.json(detailBody),
+    (url) => {
+      const pageNo = url.searchParams.get('pageNo') ?? ''
+      pages.push(pageNo)
+      return pageNo === '1'
+        ? Response.json({ totalCount: 2, hasNextPage: true, data: [{ ...torRow, id: null }] })
+        : Response.json({ totalCount: 2, hasNextPage: false, data: [torRow] })
+    },
+  )
+
+  const [project] = (await adapter.listProjects(listInput)).projects
+
+  assert.deepEqual(pages, ['1', '2'])
+  assert.deepEqual(project?.metadata.announcements, [torAnnouncement])
+})
+
+test('leaves announcements null when their request fails but keeps detail fields', async () => {
+  const adapter = adapterReturning(
+    { totalCount: 1, hasNextPage: false, data: [searchRow] },
+    undefined,
+    () => Response.json(detailBody),
+    () => new Response(null, { status: 500 }),
+  )
+
+  const [project] = (await adapter.listProjects(listInput)).projects
+
+  assert.equal(project?.metadata.announcements, null)
+  assert.equal(project?.metadata.midPriceBaht, 7000000)
+})
+
+test('builds BMA file links the way the project page does', () => {
+  assert.equal(toBmaFileUrl('abc', 'a b.pdf'), 'https://egp2.bangkok.go.th/api/file/abc/a%20b.pdf')
+  assert.equal(
+    toBmaFileUrl('abc', 'Uploads/tor.pdf'),
+    'https://adminapiegp.bangkok.go.th/Uploads/tor.pdf',
+  )
+  assert.equal(toBmaFileUrl('abc', 'https://cdn.example/tor.pdf'), 'https://cdn.example/tor.pdf')
 })
 
 test('keeps the project with search values when its detail request fails', async () => {
@@ -159,6 +237,7 @@ test('finds project details by eGP project number across all stages', async () =
     midPriceBaht: 7000000,
     contractStatus: 'ระหว่างดำเนินการ',
     contractStatusCode: 'S1',
+    announcements: [],
   })
   assert.equal(searchUrl?.searchParams.get('projectSearchText'), '69099316505')
   assert.equal(searchUrl?.searchParams.has('masterAnnounceTypeId'), false)
