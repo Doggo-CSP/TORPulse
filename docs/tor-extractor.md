@@ -25,7 +25,7 @@ Two processes share MongoDB:
 
      `annoudoc_*.pdf` (the announcement) is ignored. If no TOR PDF is found, the job becomes `skipped`.
   3. **Extract text**: OpenDataLoader converts the PDFs to Markdown, in the order above, capped at 300k characters. If fewer than 200 meaningful characters come out, the PDF is probably scanned, so the job becomes `review_required` (`OcrRequiredError`).
-  4. **Classify and extract**: the active categories are loaded from the `categories` collection and inserted into the prompt. One LLM call returns JSON, which is validated with zod (`parseTorAnalysis`). The provider is Gemini on Vertex AI or DeepSeek, chosen by `AI_PROVIDER`. The prompt treats the document as untrusted.
+  4. **Classify and extract**: the active categories are loaded from the `categories` collection and inserted into the prompt. One LLM call returns JSON, which is validated with zod (`parseTorAnalysis`). The provider is Gemini on Vertex AI. The prompt treats the document as untrusted.
   5. **Gate**: if `isSoftwareRelated` is false, the job becomes `rejected`.
   6. **Store**: the TOR is upserted and the job becomes `completed`. The fields come from these sources:
      - LLM fields: summary, requirements, qualifications, technologies and categories.
@@ -104,7 +104,7 @@ flowchart TD
     D1 -- yes --> F[extracting_text<br/>OpenDataLoader PDF to Markdown]
     F --> G{enough text?<br/>>= 200 chars}
     G -- no --> R2[/review_required:<br/>OCR needed/]
-    G -- yes --> H[classifying<br/>load categories,<br/>LLM call by AI_PROVIDER]
+    G -- yes --> H[classifying<br/>load categories,<br/>Gemini LLM call]
     H --> I[parseTorAnalysis<br/>JSON.parse + zod]
     I --> J{isSoftwareRelated?}
     J -- no --> X[/rejected:<br/>classificationReason/]
@@ -165,8 +165,8 @@ C4Component
         Component(service, "Ingestion Service", "ingestion.service.ts", "Orchestrates fetch, download, extract, classify, store. Returns completed / skipped / rejected / review_required")
         Component(egpAdapter, "Central eGP Adapter", "central-egp.adapters.ts", "Archive metadata and ZIP download only; selects tor_ / Attach_TOR / doc_ PDFs")
         Component(pdf, "PDF Text Extractor", "opendataloader-text-extractor.ts", "PDFs to Markdown in a temp dir. Throws OcrRequiredError when text is too short")
-        Component(analyzer, "TOR Analyzer", "gemini-tor-extractor.ts / deepseek-tor-extractor.ts", "Picked by AI_PROVIDER. Builds the prompt with categories, calls the LLM, returns TorAnalysis")
-        Component(schema, "Analysis Parser and Prompt", "deepseek-tor-extractor.ts", "buildSystemPrompt(categories), parseTorAnalysis (zod), TOR_ANALYSIS_VERSION")
+        Component(analyzer, "TOR Analyzer", "gemini-tor-extractor.ts", "Builds the prompt with categories, calls the LLM, returns TorAnalysis")
+        Component(schema, "Analysis Parser and Prompt", "tor-analysis.ts", "buildSystemPrompt(categories), parseTorAnalysis (zod), TOR_ANALYSIS_VERSION")
     }
 
     Container_Boundary(shared, "Shared modules") {
@@ -179,7 +179,6 @@ C4Component
     System_Ext(govspending, "GovSpending API", "Project list and metadata: department, status, prices, dates")
     System_Ext(egp, "Central eGP (process5)", "Announcement archive metadata and TOR ZIP")
     System_Ext(gemini, "Gemini (Vertex AI)", "LLM, JSON output")
-    System_Ext(deepseek, "DeepSeek API", "LLM, JSON output")
 
     Rel(sync, bmaAdapter, "listProjects")
     Rel(bmaAdapter, bma, "HTTPS GET")
@@ -195,7 +194,6 @@ C4Component
     Rel(service, analyzer, "analyze(markdown, project, categories)")
     Rel(analyzer, schema, "Uses prompt and parseTorAnalysis")
     Rel(analyzer, gemini, "generateContent", "HTTPS")
-    Rel(analyzer, deepseek, "chat/completions", "HTTPS")
     Rel(service, torrepo, "upsertTor")
 
     Rel(jobrepo, mongo, "ingestion_jobs")
@@ -226,7 +224,6 @@ HTTP endpoints (API server):
 
 ## Known issues
 
-- `parseTorAnalysis` error messages say "DeepSeek" even when the output came from Gemini.
 - The `extracting_fields` stage does no work. Extraction already happens during `classifying`.
 - The job field is spelled `attempCount` in the model.
 - TORs processed before analysis version `v3` have no stored category or `doc_` documents until they are requeued.

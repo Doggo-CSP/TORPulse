@@ -12,7 +12,6 @@ import { createGeminiClient, type GeminiClient } from './gemini-tor-extractor.js
 // the notification matcher checks. Runs as its own small LLM call so ingestion and the
 // backfill script share one prompt and the backfill needs no PDF download.
 
-const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/chat/completions'
 // Gemini counts thinking tokens against this limit, so it needs headroom beyond the small JSON.
 const MAX_RESPONSE_TOKENS = 8_000
 
@@ -130,45 +129,6 @@ function buildUserMessage(qualifications: string[]): string {
   return ['<qualifications>', ...qualifications.map((q) => `- ${q}`), '</qualifications>'].join('\n')
 }
 
-async function callDeepSeek(qualifications: string[]): Promise<string> {
-  if (!env.DEEPSEEK_API_KEY) {
-    throw new Error('DEEPSEEK_API_KEY is required to map TOR eligibility')
-  }
-
-  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: env.DEEPSEEK_MODEL,
-      response_format: { type: 'json_object' },
-      thinking: { type: 'disabled' },
-      max_tokens: MAX_RESPONSE_TOKENS,
-      messages: [
-        { role: 'system', content: buildEligibilityPrompt() },
-        { role: 'user', content: buildUserMessage(qualifications) },
-      ],
-    }),
-    signal: AbortSignal.timeout(60_000),
-  })
-
-  if (!response.ok) {
-    const errorBody = (await response.text()).slice(0, 500)
-    throw new Error(`DeepSeek eligibility mapping failed (${response.status}): ${errorBody}`)
-  }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string | null } }>
-  }
-  const content = payload.choices?.[0]?.message?.content
-  if (!content) {
-    throw new Error('DeepSeek returned an empty eligibility mapping')
-  }
-  return content
-}
-
 async function callGemini(
   qualifications: string[],
   client: GeminiClient = createGeminiClient(),
@@ -196,7 +156,6 @@ export async function mapEligibility(qualifications: string[]): Promise<TorEligi
     return null
   }
 
-  const content =
-    env.AI_PROVIDER === 'gemini' ? await callGemini(items) : await callDeepSeek(items)
+  const content = await callGemini(items)
   return parseEligibility(content)
 }

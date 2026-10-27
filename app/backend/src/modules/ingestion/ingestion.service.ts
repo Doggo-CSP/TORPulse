@@ -11,10 +11,7 @@ import type {
   ProcurementSourceAdapter,
 } from './adapters/procurement-source.adapter.js'
 import { CentralEgpAdapter, NoTorDocumentsError } from './adapters/central-egp.adapters.js'
-import {
-  analyzeTorWithDeepSeek,
-  TOR_ANALYSIS_VERSION,
-} from './extraction/deepseek-tor-extractor.js'
+import { TOR_ANALYSIS_VERSION } from './extraction/tor-analysis.js'
 import { analyzeTorWithGemini } from './extraction/gemini-tor-extractor.js'
 import { mapEligibility } from './extraction/eligibility-mapper.js'
 import {
@@ -37,11 +34,6 @@ const adapters: Record<string, ProcurementSourceAdapter> = {
   central_egp: centralEgpAdapter,
   // BMA projects are published on Central eGP under the same project id.
   bma_egp: centralEgpAdapter,
-}
-
-const torAnalyzers = {
-  deepseek: analyzeTorWithDeepSeek,
-  gemini: analyzeTorWithGemini,
 }
 
 export async function processIngestionJob(
@@ -96,7 +88,7 @@ export async function processIngestionJob(
 
   await updateStage('classifying')
   const categoryCatalog = await getCategoryCatalog()
-  const extractedTor = await torAnalyzers[env.AI_PROVIDER](extractedText, project, categoryCatalog)
+  const extractedTor = await analyzeTorWithGemini(extractedText, project, categoryCatalog)
 
   if (!extractedTor.isSoftwareRelated) {
     return {
@@ -166,7 +158,7 @@ export async function processIngestionJob(
     contactInformation: extractedTor.contactInformation,
     classificationReason: extractedTor.classificationReason,
     confidence: extractedTor.confidence,
-    analysisModel: env.AI_PROVIDER === 'gemini' ? env.GEMINI_MODEL : env.DEEPSEEK_MODEL,
+    analysisModel: env.GEMINI_MODEL,
     analysisVersion: TOR_ANALYSIS_VERSION,
     analyzedAt: new Date(),
     documents: documents.map((document) => ({
