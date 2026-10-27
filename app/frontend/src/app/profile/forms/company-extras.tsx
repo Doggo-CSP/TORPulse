@@ -5,7 +5,6 @@ import {
   DocumentArrowUpIcon,
   TrashIcon,
   DocumentTextIcon,
-  PlusIcon,
 } from "@heroicons/react/24/outline";
 
 const inputCls =
@@ -21,7 +20,7 @@ export interface PrimaryContact {
   startDate: string; // yyyy-mm-dd
 }
 
-export const EDUCATION_OPTIONS = [
+const EDUCATION_OPTIONS = [
   "ต่ำกว่าปริญญาตรี",
   "ประกาศนียบัตร (ปวช./ปวส.)",
   "ปริญญาตรี",
@@ -92,129 +91,6 @@ export function PrimaryContactFields({
 /** จำนวนช่องที่กรอกแล้ว (0–4) ใช้แสดง badge เช่น "2/4" */
 export const primaryContactProgress = (v?: PrimaryContact) =>
   [v?.name, v?.position, v?.education, v?.startDate].filter((x) => x?.trim()).length;
-
-/* ───────── สมาชิกในทีม (เพิ่มได้ไม่จำกัด) ───────── */
-
-/** โครงสร้างเดียวกับ PrimaryContact (name, position, education, startDate) */
-export type TeamMember = PrimaryContact;
-
-export const emptyTeamMember = (): TeamMember => ({
-  name: "",
-  position: "",
-  education: "",
-  startDate: "",
-});
-
-/** จำนวนสมาชิกที่กรอกครบทั้ง 4 ช่อง */
-export const teamMembersCompleteCount = (members?: TeamMember[]) =>
-  (members ?? []).filter(
-    (m) => m.name.trim() && m.position.trim() && m.education.trim() && m.startDate.trim(),
-  ).length;
-
-export function TeamMembersFields({
-  value,
-  onChange,
-}: {
-  value: TeamMember[] | undefined;
-  onChange: (members: TeamMember[]) => void;
-}) {
-  const members = value ?? [];
-
-  const update = (index: number, patch: Partial<TeamMember>) =>
-    onChange(members.map((m, i) => (i === index ? { ...m, ...patch } : m)));
-
-  return (
-    <div className="space-y-3 border-t border-dashed border-[#e8e0d0] pt-4">
-      <div>
-        <h4 className="text-xs font-semibold text-[#5c5446]">สมาชิกในทีม</h4>
-        <p className="mt-0.5 text-[11px] text-[#998f80]">
-          เพิ่มบุคลากรที่เกี่ยวข้องกับโครงการได้ไม่จำกัดจำนวน
-          {members.length > 0 && ` (ตอนนี้ ${members.length} คน)`}
-        </p>
-      </div>
-
-      {members.length === 0 && (
-        <p className="rounded-2xl border border-dashed border-[#ddd5c8] bg-[#faf7f2] p-6 text-center text-xs text-[#7a8b6f]">
-          ยังไม่มีสมาชิกในทีม กดปุ่มด้านล่างเพื่อเพิ่ม
-        </p>
-      )}
-
-      <div className="space-y-3">
-        {members.map((m, i) => (
-          <div key={i} className="rounded-2xl border border-[#e8e0d0] bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-xs font-semibold text-[#4a7c59]">สมาชิกคนที่ {i + 1}</span>
-              <button
-                type="button"
-                onClick={() => onChange(members.filter((_, idx) => idx !== i))}
-                className="grid size-8 place-items-center rounded-full text-[#CC0000] hover:bg-red-50"
-                aria-label={`ลบสมาชิกคนที่ ${i + 1}`}
-              >
-                <TrashIcon className="size-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className={labelCls}>ชื่อ-นามสกุล</label>
-                <input
-                  type="text"
-                  className={inputCls}
-                  value={m.name}
-                  onChange={(e) => update(i, { name: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>ตำแหน่งงาน</label>
-                <input
-                  type="text"
-                  className={inputCls}
-                  value={m.position}
-                  placeholder="เช่น โปรแกรมเมอร์ / นักวิเคราะห์ระบบ"
-                  onChange={(e) => update(i, { position: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>วุฒิการศึกษา</label>
-                <select
-                  className={inputCls}
-                  value={m.education}
-                  onChange={(e) => update(i, { education: e.target.value })}
-                >
-                  <option value="">เลือกวุฒิการศึกษา</option>
-                  {EDUCATION_OPTIONS.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={labelCls}>วันที่เข้ามาทำงานที่บริษัท</label>
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={m.startDate}
-                  max={new Date().toISOString().slice(0, 10)}
-                  onChange={(e) => update(i, { startDate: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => onChange([...members, emptyTeamMember()])}
-        className="inline-flex items-center gap-1.5 rounded-full border border-[#ddd5c8] bg-white px-5 py-2.5 text-xs font-medium text-[#5c5446] hover:bg-[#faf7f2]"
-      >
-        <PlusIcon className="size-4" />
-        เพิ่มสมาชิกในทีม
-      </button>
-    </div>
-  );
-}
 
 /* ───────── อัปโหลด Certificate ───────── */
 

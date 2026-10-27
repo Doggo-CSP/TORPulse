@@ -2,26 +2,28 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { TorDetail } from "@/api/tor.api";
 import { UserProfile } from "@/api/user.api";
+import type { QualificationMatch, RequirementStatus } from "@/api/bidder-profile.api";
+import { useQualificationMatch } from "@/hooks/use-qualification-match";
 import {
-  useQualificationMatch,
-  type MatchStatus,
-  type RequirementMatch,
-  type QualificationScoreSummary,
-} from "@/hooks/use-qualification-match";
+  REQUIREMENT_CATEGORY_LABELS,
+  REQUIREMENT_STATUS_LABELS,
+  verdictFor,
+} from "@/lib/qualification-labels";
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   XCircleIcon,
+  QuestionMarkCircleIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   BuildingOffice2Icon,
   SparklesIcon,
   ArrowTopRightOnSquareIcon,
+  ArrowPathIcon,
   XMarkIcon,
-  ShieldExclamationIcon,
 } from "@heroicons/react/24/outline";
 
 export interface QualificationMatchCardProps {
@@ -32,62 +34,75 @@ export interface QualificationMatchCardProps {
 }
 
 const STATUS_CONFIG: Record<
-  MatchStatus,
+  RequirementStatus,
   {
     label: string;
-    dot: string;
     text: string;
     bg: string;
     border: string;
+    tile: string;
+    tileActive: string;
     icon: typeof CheckCircleIcon;
   }
 > = {
-  matched: {
-    label: "ตรงตามเงื่อนไข",
-    dot: "bg-emerald-500",
+  met: {
+    label: REQUIREMENT_STATUS_LABELS.met,
     text: "text-emerald-700",
     bg: "bg-emerald-50",
     border: "border-emerald-200",
+    tile: "bg-emerald-50/60 border-emerald-100 hover:bg-emerald-100/50",
+    tileActive: "bg-emerald-100/70 border-emerald-400 ring-1 ring-emerald-400",
     icon: CheckCircleIcon,
   },
   partial: {
-    label: "ตรงบางส่วน",
-    dot: "bg-amber-500",
+    label: REQUIREMENT_STATUS_LABELS.partial,
     text: "text-amber-700",
     bg: "bg-amber-50",
     border: "border-amber-200",
+    tile: "bg-amber-50/60 border-amber-100 hover:bg-amber-100/50",
+    tileActive: "bg-amber-100/70 border-amber-400 ring-1 ring-amber-400",
     icon: ExclamationTriangleIcon,
   },
-  missing: {
-    label: "ยังไม่ตรง",
-    dot: "bg-rose-500",
+  not_met: {
+    label: REQUIREMENT_STATUS_LABELS.not_met,
     text: "text-rose-700",
     bg: "bg-rose-50",
     border: "border-rose-200",
+    tile: "bg-rose-50/60 border-rose-100 hover:bg-rose-100/50",
+    tileActive: "bg-rose-100/70 border-rose-400 ring-1 ring-rose-400",
     icon: XCircleIcon,
+  },
+  unknown: {
+    label: REQUIREMENT_STATUS_LABELS.unknown,
+    text: "text-slate-600",
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+    tile: "bg-slate-50/60 border-slate-100 hover:bg-slate-100/50",
+    tileActive: "bg-slate-100/70 border-slate-400 ring-1 ring-slate-400",
+    icon: QuestionMarkCircleIcon,
   },
 };
 
-export function QualificationMatchCard({
-  torId,
-  tor,
-  profile,
-  isLoggedIn,
-}: QualificationMatchCardProps) {
-  const result = useQualificationMatch(tor ?? torId, isLoggedIn, profile);
-  const [filter, setFilter] = useState<"all" | MatchStatus>("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+const STATUS_ORDER: RequirementStatus[] = ["met", "partial", "not_met", "unknown"];
+// Order of the requirement list: what still needs work first
+const LIST_ORDER: RequirementStatus[] = ["not_met", "partial", "unknown", "met"];
 
-  // Shared wrapper
-  const Shell = ({ children }: { children: React.ReactNode }) => (
+const countOf = (match: QualificationMatch, status: RequirementStatus) =>
+  status === "not_met" ? match.counts.notMet : match.counts[status];
+
+const formatThaiDateTime = (iso: string) =>
+  new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+
+// Shared wrapper; defined outside the component so React keeps its children mounted
+function Shell({ children, showEditLink }: { children: React.ReactNode; showEditLink: boolean }) {
+  return (
     <div className="panel p-5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-1.5">
           <SparklesIcon className="size-4 text-primary" />
           <p className="label-eyebrow">ความเหมาะสมของบริษัท</p>
         </div>
-        {isLoggedIn && result.state === "ready" && (
+        {showEditLink && (
           <Link
             href="/profile"
             className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
@@ -101,16 +116,48 @@ export function QualificationMatchCard({
       {children}
     </div>
   );
+}
+
+function LoadingSkeleton({ note }: { note?: string }) {
+  return (
+    <div className="animate-pulse space-y-3" aria-busy="true">
+      <div className="flex justify-between items-center">
+        <div className="h-8 w-20 rounded-lg bg-surface-2" />
+        <div className="h-6 w-28 rounded-full bg-surface-2" />
+      </div>
+      <div className="h-2.5 w-full rounded-full bg-surface-2" />
+      <div className="grid grid-cols-4 gap-2 pt-2">
+        <div className="h-10 rounded-lg bg-surface-2" />
+        <div className="h-10 rounded-lg bg-surface-2" />
+        <div className="h-10 rounded-lg bg-surface-2" />
+        <div className="h-10 rounded-lg bg-surface-2" />
+      </div>
+      {note && <p className="text-center text-[11px] text-muted-foreground">{note}</p>}
+    </div>
+  );
+}
+
+export function QualificationMatchCard({
+  torId,
+  tor,
+  profile,
+  isLoggedIn,
+}: QualificationMatchCardProps) {
+  const { result, reevaluate } = useQualificationMatch(tor?.id ?? torId, isLoggedIn);
+  const [filter, setFilter] = useState<"all" | RequirementStatus>("all");
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const companyName =
+    profile?.companyName || profile?.displayName || profile?.name || "บริษัทของคุณ";
 
   // 1. Idle state (not logged in)
   if (result.state === "idle") {
     return (
-      <Shell>
+      <Shell showEditLink={false}>
         <div className="rounded-xl border border-dashed border-border bg-surface-2/40 p-4 text-center">
           <BuildingOffice2Icon className="mx-auto size-7 text-muted-foreground/60 mb-2" />
-          <p className="text-xs font-medium text-foreground">
-            เข้าสู่ระบบเพื่อเทียบคุณสมบัติ
-          </p>
+          <p className="text-xs font-medium text-foreground">เข้าสู่ระบบเพื่อเทียบคุณสมบัติ</p>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
             ระบบจะวิเคราะห์เงื่อนไข TOR เทียบกับข้อมูลและผลงานบริษัทของคุณโดยอัตโนมัติ
           </p>
@@ -128,93 +175,86 @@ export function QualificationMatchCard({
   // 2. Loading state
   if (result.state === "loading") {
     return (
-      <Shell>
-        <div className="animate-pulse space-y-3" aria-busy="true">
-          <div className="flex justify-between items-center">
-            <div className="h-8 w-20 rounded-lg bg-surface-2" />
-            <div className="h-6 w-28 rounded-full bg-surface-2" />
-          </div>
-          <div className="h-2.5 w-full rounded-full bg-surface-2" />
-          <div className="grid grid-cols-3 gap-2 pt-2">
-            <div className="h-10 rounded-lg bg-surface-2" />
-            <div className="h-10 rounded-lg bg-surface-2" />
-            <div className="h-10 rounded-lg bg-surface-2" />
-          </div>
-          <div className="h-14 rounded-lg bg-surface-2 mt-3" />
-        </div>
+      <Shell showEditLink={false}>
+        <LoadingSkeleton />
       </Shell>
     );
   }
 
-  // 3. No profile state
-  if (result.state === "no-profile") {
+  // 3. AI is evaluating (about 10 seconds)
+  if (result.state === "evaluating") {
     return (
-      <Shell>
-        <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-          <div className="flex items-start gap-2.5">
-            <BuildingOffice2Icon className="size-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-xs font-semibold text-amber-900">
-                ยังไม่มีข้อมูลโปรไฟล์บริษัท
-              </p>
-              <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
-                กรอกข้อมูลบริษัท ทุนจดทะเบียน สถานะ e-GP และผลงานโครงการเพื่อคำนวณคะแนนความเหมาะสมกับ TOR นี้
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/profile"
-            className="mt-3.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-3 py-2 text-xs font-semibold text-white shadow-xs hover:bg-amber-700 transition-colors"
-          >
-            <span>กรอกโปรไฟล์บริษัทตอนนี้</span>
-            <ArrowTopRightOnSquareIcon className="size-3.5" />
-          </Link>
-        </div>
+      <Shell showEditLink={false}>
+        <LoadingSkeleton
+          note={
+            result.previous
+              ? "ข้อมูลเปลี่ยนแปลง กำลังวิเคราะห์ใหม่ด้วย AI (ประมาณ 10 วินาที)"
+              : "AI กำลังวิเคราะห์คุณสมบัติเทียบกับ TOR (ประมาณ 10 วินาที)"
+          }
+        />
       </Shell>
     );
   }
 
-  // 4. Error state
+  // 4. Profile missing required fields: the card appears once there is a score; the homepage
+  // banner and the onboarding wizard ask for the missing fields instead (UC-08)
+  if (result.state === "no-profile") {
+    return null;
+  }
+
+  // 5. Error state
   if (result.state === "error") {
     return (
-      <Shell>
+      <Shell showEditLink={false}>
         <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-3 text-center">
-          <p className="text-xs text-rose-800">
-            {result.message || "ไม่สามารถประเมินความเหมาะสมได้ กรุณาลองใหม่อีกครั้ง"}
-          </p>
+          <p className="text-xs text-rose-800">{result.message}</p>
+          {result.canRetry && (
+            <button
+              type="button"
+              onClick={reevaluate}
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 hover:underline"
+            >
+              <ArrowPathIcon className="size-3.5" />
+              ลองใหม่
+            </button>
+          )}
         </div>
       </Shell>
     );
   }
 
-  // 5. Ready state
-  const data: QualificationScoreSummary = result.data;
-  const { score, verdict, matchedCount, partialCount, missingCount, items, companyName } = data;
-
-  const filteredItems = items.filter((item) => {
-    if (filter === "all") return true;
-    return item.status === filter;
-  });
+  // 6. Ready state
+  const match = result.data;
+  const verdict = verdictFor(match.percentage, match.allMandatoryMet);
+  const score = match.percentage ?? 0;
+  // What still needs work comes first: not met, partial, unknown, then met; mandatory first
+  const items = match.requirements
+    .map((item, index) => ({ ...item, index }))
+    .sort(
+      (a, b) =>
+        LIST_ORDER.indexOf(a.status) - LIST_ORDER.indexOf(b.status) ||
+        Number(b.mandatory) - Number(a.mandatory) ||
+        a.index - b.index,
+    );
+  const filteredItems = filter === "all" ? items : items.filter((item) => item.status === filter);
 
   return (
     <>
-      <Shell>
+      <Shell showEditLink>
         {/* Company Name Badge */}
         <div className="mb-3 flex items-center justify-between text-xs text-muted-foreground border-b border-border pb-2.5">
           <div className="flex items-center gap-1.5 truncate">
             <BuildingOffice2Icon className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate font-medium text-foreground">{companyName}</span>
           </div>
-          <span className="shrink-0 text-[10px] text-muted-foreground">
-            {items.length} เงื่อนไข
-          </span>
+          <span className="shrink-0 text-[10px] text-muted-foreground">{items.length} เงื่อนไข</span>
         </div>
 
         {/* Score & Verdict */}
         <div className="flex items-baseline justify-between gap-2">
           <div className="flex items-baseline gap-1">
             <span className="font-display text-3xl font-extrabold tracking-tight text-foreground">
-              {score}
+              {match.percentage ?? "-"}
             </span>
             <span className="text-sm font-semibold text-muted-foreground">%</span>
           </div>
@@ -241,57 +281,39 @@ export function QualificationMatchCard({
         </div>
 
         <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-          {verdict.description}
+          {match.summary || verdict.description}
         </p>
 
+        {result.isStale && (
+          <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200/70 px-2 py-1.5 text-[11px] text-amber-800">
+            ข้อมูลโปรไฟล์หรือ TOR เปลี่ยนไปหลังการประเมินครั้งนี้ กด &quot;ประเมินใหม่&quot; เพื่ออัปเดต
+          </p>
+        )}
+
         {/* Metric Badges (Clickable Filters) */}
-        <div className="mt-3.5 grid grid-cols-3 gap-1.5">
-          <button
-            type="button"
-            onClick={() => setFilter(filter === "matched" ? "all" : "matched")}
-            className={`flex flex-col items-center justify-center rounded-xl p-2 text-center transition-all border ${
-              filter === "matched"
-                ? "bg-emerald-100/70 border-emerald-400 ring-1 ring-emerald-400"
-                : "bg-emerald-50/60 border-emerald-100 hover:bg-emerald-100/50"
-            }`}
-          >
-            <span className="text-[10px] font-medium text-emerald-800">ตรงเงื่อนไข</span>
-            <span className="text-base font-bold text-emerald-700">{matchedCount}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFilter(filter === "partial" ? "all" : "partial")}
-            className={`flex flex-col items-center justify-center rounded-xl p-2 text-center transition-all border ${
-              filter === "partial"
-                ? "bg-amber-100/70 border-amber-400 ring-1 ring-amber-400"
-                : "bg-amber-50/60 border-amber-100 hover:bg-amber-100/50"
-            }`}
-          >
-            <span className="text-[10px] font-medium text-amber-800">ตรงบางส่วน</span>
-            <span className="text-base font-bold text-amber-700">{partialCount}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFilter(filter === "missing" ? "all" : "missing")}
-            className={`flex flex-col items-center justify-center rounded-xl p-2 text-center transition-all border ${
-              filter === "missing"
-                ? "bg-rose-100/70 border-rose-400 ring-1 ring-rose-400"
-                : "bg-rose-50/60 border-rose-100 hover:bg-rose-100/50"
-            }`}
-          >
-            <span className="text-[10px] font-medium text-rose-800">ยังไม่ตรง</span>
-            <span className="text-base font-bold text-rose-700">{missingCount}</span>
-          </button>
+        <div className="mt-3.5 grid grid-cols-4 gap-1.5">
+          {STATUS_ORDER.map((status) => {
+            const meta = STATUS_CONFIG[status];
+            return (
+              <button
+                key={status}
+                type="button"
+                onClick={() => setFilter(filter === status ? "all" : status)}
+                className={`flex flex-col items-center justify-center rounded-xl p-2 text-center transition-all border ${
+                  filter === status ? meta.tileActive : meta.tile
+                }`}
+              >
+                <span className={`text-[10px] font-medium ${meta.text}`}>{meta.label}</span>
+                <span className={`text-base font-bold ${meta.text}`}>{countOf(match, status)}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Filter Tabs */}
         <div className="mt-3.5 flex items-center justify-between border-b border-border pb-2 text-[11px]">
           <span className="font-medium text-muted-foreground">
-            {filter === "all"
-              ? "แสดงเงื่อนไขทั้งหมด"
-              : `กรอง: ${STATUS_CONFIG[filter].label}`}
+            {filter === "all" ? "แสดงเงื่อนไขทั้งหมด" : `กรอง: ${STATUS_CONFIG[filter].label}`}
           </span>
           {filter !== "all" && (
             <button
@@ -307,25 +329,23 @@ export function QualificationMatchCard({
         {/* Requirement Item List */}
         <div className="mt-2.5 space-y-2 max-h-[380px] overflow-y-auto pr-0.5 custom-scrollbar">
           {filteredItems.length === 0 ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">
-              ไม่มีเงื่อนไขในหมวดหมู่นี้
-            </p>
+            <p className="py-4 text-center text-xs text-muted-foreground">ไม่มีเงื่อนไขในหมวดหมู่นี้</p>
           ) : (
             filteredItems.map((item) => {
               const meta = STATUS_CONFIG[item.status];
               const Icon = meta.icon;
-              const isExpanded = expandedId === item.id;
+              const isExpanded = expandedIndex === item.index;
 
               return (
                 <div
-                  key={item.id}
+                  key={item.index}
                   className={`rounded-xl border p-2.5 transition-colors ${
                     isExpanded ? "border-primary/40 bg-surface-2/30" : "border-border/80 bg-surface"
                   }`}
                 >
                   <button
                     type="button"
-                    onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                    onClick={() => setExpandedIndex(isExpanded ? null : item.index)}
                     aria-expanded={isExpanded}
                     className="flex w-full items-start justify-between gap-2 text-left"
                   >
@@ -339,9 +359,9 @@ export function QualificationMatchCard({
                             {meta.label}
                           </span>
                           <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[9px] text-muted-foreground font-medium">
-                            {item.categoryLabel}
+                            {REQUIREMENT_CATEGORY_LABELS[item.category]}
                           </span>
-                          {item.isCritical && (
+                          {item.mandatory && (
                             <span className="rounded bg-rose-100 text-rose-800 px-1.5 py-0.5 text-[9px] font-semibold">
                               เกณฑ์บังคับ
                             </span>
@@ -362,39 +382,19 @@ export function QualificationMatchCard({
                   {/* Expanded Accordion Content */}
                   {isExpanded && (
                     <div className="mt-2.5 pt-2 border-t border-border/60 text-[11px] space-y-2 animate-in fade-in">
-                      {item.companyValue && (
-                        <div>
-                          <span className="font-semibold text-muted-foreground block text-[10px]">
-                            ข้อมูลบริษัทของคุณ:
-                          </span>
-                          <p className="font-medium text-foreground">{item.companyValue}</p>
-                        </div>
-                      )}
-
-                      {item.torRequirement && (
-                        <div>
-                          <span className="font-semibold text-muted-foreground block text-[10px]">
-                            เกณฑ์ที่ต้องการ:
-                          </span>
-                          <p className="text-muted-foreground">{item.torRequirement}</p>
-                        </div>
-                      )}
-
                       <div>
                         <span className="font-semibold text-muted-foreground block text-[10px]">
                           ผลการวิเคราะห์:
                         </span>
-                        <p className="leading-relaxed text-foreground">{item.reason}</p>
+                        <p className="leading-relaxed text-foreground">{item.reason || "-"}</p>
                       </div>
 
-                      {item.recommendation && (
+                      {item.suggestion && (
                         <div className="rounded-lg bg-amber-50 p-2 border border-amber-200/60">
                           <span className="font-semibold text-amber-900 block text-[10px]">
                             💡 คำแนะนำเพื่อเพิ่มโอกาส:
                           </span>
-                          <p className="text-amber-800 leading-relaxed mt-0.5">
-                            {item.recommendation}
-                          </p>
+                          <p className="text-amber-800 leading-relaxed mt-0.5">{item.suggestion}</p>
                         </div>
                       )}
                     </div>
@@ -405,11 +405,24 @@ export function QualificationMatchCard({
           )}
         </div>
 
+        {/* Evaluated at + re-run */}
+        <div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground">
+          <span>ประเมินโดย AI เมื่อ {formatThaiDateTime(match.evaluatedAt)}</span>
+          <button
+            type="button"
+            onClick={reevaluate}
+            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          >
+            <ArrowPathIcon className="size-3" />
+            ประเมินใหม่
+          </button>
+        </div>
+
         {/* Open Full Comparison Modal Button */}
         <button
           type="button"
           onClick={() => setIsModalOpen(true)}
-          className="mt-3.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-2 transition-colors"
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-2 transition-colors"
         >
           <span>ดูรายละเอียดการเปรียบเทียบทั้งหมด</span>
           <ArrowTopRightOnSquareIcon className="size-3.5 text-muted-foreground" />
@@ -451,7 +464,7 @@ export function QualificationMatchCard({
                 <div className="flex items-center gap-4">
                   <div className="flex flex-col items-center justify-center rounded-2xl bg-surface border border-border size-20 shadow-xs">
                     <span className="font-display text-2xl font-black text-foreground">
-                      {score}%
+                      {match.percentage ?? "-"}%
                     </span>
                     <span className="text-[10px] text-muted-foreground">คะแนน</span>
                   </div>
@@ -462,21 +475,20 @@ export function QualificationMatchCard({
                       {verdict.label}
                     </span>
                     <p className="text-xs text-muted-foreground mt-1 max-w-md">
-                      {verdict.description}
+                      {match.summary || verdict.description}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-800">
-                    ตรง {matchedCount}
-                  </span>
-                  <span className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-semibold text-amber-800">
-                    บางส่วน {partialCount}
-                  </span>
-                  <span className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-800">
-                    ขาด {missingCount}
-                  </span>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {STATUS_ORDER.map((status) => (
+                    <span
+                      key={status}
+                      className={`rounded-xl border px-3 py-1.5 text-xs font-semibold ${STATUS_CONFIG[status].bg} ${STATUS_CONFIG[status].border} ${STATUS_CONFIG[status].text}`}
+                    >
+                      {STATUS_CONFIG[status].label} {countOf(match, status)}
+                    </span>
+                  ))}
                 </div>
               </div>
 
@@ -487,71 +499,43 @@ export function QualificationMatchCard({
                 </h4>
 
                 <div className="divide-y divide-border rounded-xl border border-border overflow-hidden bg-surface">
-                  {items.map((item, index) => {
+                  {items.map((item) => {
                     const meta = STATUS_CONFIG[item.status];
                     const Icon = meta.icon;
 
                     return (
-                      <div
-                        key={item.id}
-                        className="p-4 hover:bg-surface-2/30 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-2.5 flex-1">
-                            <Icon className={`size-5 shrink-0 mt-0.5 ${meta.text}`} />
-                            <div className="space-y-1.5 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span
-                                  className={`rounded-md px-2 py-0.5 text-xs font-semibold border ${meta.bg} ${meta.text} ${meta.border}`}
-                                >
-                                  {meta.label}
+                      <div key={item.index} className="p-4 hover:bg-surface-2/30 transition-colors">
+                        <div className="flex items-start gap-2.5">
+                          <Icon className={`size-5 shrink-0 mt-0.5 ${meta.text}`} />
+                          <div className="space-y-1.5 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span
+                                className={`rounded-md px-2 py-0.5 text-xs font-semibold border ${meta.bg} ${meta.text} ${meta.border}`}
+                              >
+                                {meta.label}
+                              </span>
+                              <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground font-medium">
+                                {REQUIREMENT_CATEGORY_LABELS[item.category]}
+                              </span>
+                              {item.mandatory && (
+                                <span className="rounded bg-rose-100 text-rose-800 px-2 py-0.5 text-xs font-semibold">
+                                  เกณฑ์บังคับ
                                 </span>
-                                <span className="rounded bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground font-medium">
-                                  {item.categoryLabel}
-                                </span>
-                                {item.isCritical && (
-                                  <span className="rounded bg-rose-100 text-rose-800 px-2 py-0.5 text-xs font-semibold">
-                                    เกณฑ์บังคับ
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-sm font-medium text-foreground">
-                                {item.requirement}
-                              </p>
-
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 text-xs">
-                                <div className="rounded-lg bg-surface-2/60 p-2.5">
-                                  <span className="text-[10px] font-semibold text-muted-foreground block">
-                                    ข้อมูลบริษัทของคุณ
-                                  </span>
-                                  <p className="font-medium text-foreground mt-0.5">
-                                    {item.companyValue || "-"}
-                                  </p>
-                                </div>
-                                <div className="rounded-lg bg-surface-2/60 p-2.5">
-                                  <span className="text-[10px] font-semibold text-muted-foreground block">
-                                    เกณฑ์ที่ TOR ต้องการ
-                                  </span>
-                                  <p className="text-muted-foreground mt-0.5">
-                                    {item.torRequirement || "-"}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="pt-1 text-xs">
-                                <span className="font-semibold text-muted-foreground">
-                                  การวิเคราะห์:{" "}
-                                </span>
-                                <span className="text-foreground">{item.reason}</span>
-                              </div>
-
-                              {item.recommendation && (
-                                <div className="rounded-lg bg-amber-50 border border-amber-200/70 p-2 text-xs text-amber-900 mt-2">
-                                  <span className="font-semibold">💡 คำแนะนำ: </span>
-                                  {item.recommendation}
-                                </div>
                               )}
                             </div>
+                            <p className="text-sm font-medium text-foreground">{item.requirement}</p>
+
+                            <div className="pt-1 text-xs">
+                              <span className="font-semibold text-muted-foreground">การวิเคราะห์: </span>
+                              <span className="text-foreground">{item.reason || "-"}</span>
+                            </div>
+
+                            {item.suggestion && (
+                              <div className="rounded-lg bg-amber-50 border border-amber-200/70 p-2 text-xs text-amber-900 mt-2">
+                                <span className="font-semibold">💡 คำแนะนำ: </span>
+                                {item.suggestion}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -562,16 +546,16 @@ export function QualificationMatchCard({
             </div>
 
             {/* Modal Footer */}
-            <div className="border-t border-border px-6 py-3.5 bg-[#F8FAF7] flex items-center justify-between">
+            <div className="border-t border-border px-6 py-3.5 bg-[#F8FAF7] flex items-center justify-between gap-3">
               <span className="text-xs text-muted-foreground">
-                การแก้ไขข้อมูลในหน้าโปรไฟล์จะมีผลต่อการคำนวณคะแนนทันที
+                แก้ไขโปรไฟล์แล้ว ระบบจะประเมินใหม่ให้อัตโนมัติ (ภายในไม่กี่นาที)
               </span>
               <div className="flex items-center gap-2">
                 <Link
                   href="/profile"
                   className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-colors"
                 >
-                  <span>ไปที่หน้าโปรไฟล์บริษัท</span>
+                  <span>ไปที่หน้าโปรไฟล์</span>
                   <ArrowTopRightOnSquareIcon className="size-3.5" />
                 </Link>
                 <button

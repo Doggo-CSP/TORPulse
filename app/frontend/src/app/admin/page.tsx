@@ -106,7 +106,6 @@ const STATUS_CONFIG: Record<
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   personal: "บุคคลธรรมดา",
   company: "นิติบุคคล/บริษัท",
-  agency: "หน่วยงานรัฐ",
 };
 
 const errorMessage = (error: unknown) =>
@@ -142,7 +141,6 @@ export default function AdminPage() {
     role: "user" as UserRole,
     name: "",
     jobTitle: "",
-    agencyName: "",
     companyName: "",
     accountType: "personal" as AccountType,
   });
@@ -322,7 +320,6 @@ export default function AdminPage() {
         u.name.toLowerCase().includes(q) ||
         u.displayName.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
-        (u.agencyName && u.agencyName.toLowerCase().includes(q)) ||
         (u.companyName && u.companyName.toLowerCase().includes(q));
 
       return matchRole && matchStatus && matchSearch;
@@ -417,7 +414,6 @@ export default function AdminPage() {
       role: user.role,
       name: user.name ?? "",
       jobTitle: user.jobTitle ?? "",
-      agencyName: user.agencyName ?? "",
       companyName: user.companyName ?? "",
       accountType: user.accountType,
     });
@@ -436,7 +432,7 @@ export default function AdminPage() {
     // Send only the fields that changed, so the audit log records the real edit
     const profileChanges: AdminUserUpdateInput = {};
     if (name !== target.name) profileChanges.name = name;
-    for (const field of ["jobTitle", "agencyName", "companyName"] as const) {
+    for (const field of ["jobTitle", "companyName"] as const) {
       const next = userForm[field].trim();
       if (next !== (target[field] ?? "").trim()) profileChanges[field] = next;
     }
@@ -927,7 +923,7 @@ export default function AdminPage() {
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="ค้นหาตามชื่อ, อีเมล, หน่วยงาน หรือบริษัท..."
+                        placeholder="ค้นหาตามชื่อ, อีเมล หรือบริษัท..."
                         className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] py-2 pl-10 pr-4 text-sm text-[#2d2d2d] placeholder-[#998f80] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
                       />
                       {searchQuery && (
@@ -1038,7 +1034,7 @@ export default function AdminPage() {
 
                                 <td className="px-5 py-4 text-xs text-[#5c5446]">
                                   <div className="font-medium">
-                                    {user.agencyName || user.companyName || "-"}
+                                    {user.companyName || "-"}
                                   </div>
                                   {user.jobTitle && (
                                     <div className="text-[11px] text-[#998f80]">{user.jobTitle}</div>
@@ -1484,7 +1480,7 @@ export default function AdminPage() {
                           อีเมลผู้ส่ง (Sender Email)
                         </label>
                         <p className="text-xs text-[#7a8b6f]">
-                          ยังไม่ได้ใช้ส่งอีเมล (เตรียมไว้สำหรับระบบแจ้งเตือน)
+                          ใช้เป็นผู้ส่งอีเมลแจ้งเตือน TOR ที่ผู้ใช้มีคุณสมบัติครบ
                         </p>
                         <input
                           id="admin-sender-email"
@@ -1730,18 +1726,6 @@ export default function AdminPage() {
                     type="text"
                     value={userForm.jobTitle}
                     onChange={(e) => setUserForm((f) => ({ ...f, jobTitle: e.target.value }))}
-                    className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-2 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="user-agency" className="mb-1.5 block text-xs font-bold text-[#7a8b6f]">
-                    หน่วยงาน
-                  </label>
-                  <input
-                    id="user-agency"
-                    type="text"
-                    value={userForm.agencyName}
-                    onChange={(e) => setUserForm((f) => ({ ...f, agencyName: e.target.value }))}
                     className="w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-2 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]"
                   />
                 </div>

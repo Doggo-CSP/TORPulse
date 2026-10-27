@@ -60,15 +60,14 @@ export const updateSettingsSchema = z
   .refine((value) => Object.keys(value).length > 0)
 
 // Profile fields an admin may fix. Uses the existing User field names:
-// organization -> agencyName / companyName, position -> jobTitle, government -> 'agency'.
+// organization -> companyName, position -> jobTitle.
 // email, role and status are rejected here (role/status have their own endpoints).
 export const updateAdminUserSchema = z
   .object({
     name: z.string().trim().min(1).optional(),
     jobTitle: z.string().trim().optional(),
-    agencyName: z.string().trim().optional(),
     companyName: z.string().trim().optional(),
-    accountType: z.enum(['personal', 'company', 'agency']).optional(),
+    accountType: z.enum(['personal', 'company']).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0)

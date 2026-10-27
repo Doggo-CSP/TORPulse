@@ -6,10 +6,7 @@ import {
   BuildingOffice2Icon,
   BanknotesIcon,
   ShieldCheckIcon,
-  BriefcaseIcon,
   PhoneIcon,
-  PlusIcon,
-  TrashIcon,
   ChevronDownIcon,
   AcademicCapIcon,
 } from "@heroicons/react/24/outline";
@@ -17,22 +14,15 @@ import {
   PrimaryContactFields,
   primaryContactProgress,
   CertificateUploader,
-  TeamMembersFields,
-  teamMembersCompleteCount,
   type PrimaryContact,
-  type TeamMember,
   type CertificateFile,
 } from "./company-extras";
 
 /* ───────────── Types ───────────── */
 
-export interface PastProject {
-  name: string;
-  client: string;
-  valueBaht: number | null;
-  year: number | null; // พ.ศ.
-}
-
+// Saved with PUT /user/profile (names, contact, business type), PUT /user/bidder-profile/
+// organization (registration date, capital, certifications) and .../preferences (budget range,
+// objectives). Past projects and team members are saved one by one in bidder-editors.tsx.
 export interface CompanyFormData {
   displayName: string;
   companyName: string;
@@ -40,26 +30,27 @@ export interface CompanyFormData {
   businessType: string;
   registeredDate: string; // YYYY-MM-DD
   registeredCapital: number | null;
-  yearsExperience: number | null;
-  teamSize: number | null;
   budgetMin: number | null;
   budgetMax: number | null;
   businessObjectives: string;
   certifications: string[]; // legacy: ข้อความเดิม (ไม่แสดงในฟอร์มแล้ว แต่ยังส่งกลับไปตามเดิม)
   certificateFiles: CertificateFile[]; // ไฟล์ใบรับรอง (PDF/รูป)
   primaryContact: PrimaryContact; // ผู้รับผิดชอบหลัก
-  teamMembers: TeamMember[]; // สมาชิกในทีม (เพิ่มได้ไม่จำกัด)
   isEgpRegistered: boolean;
-  pastProjects: PastProject[];
   contactEmail: string;
   phone: string;
   address: string;
   about: string;
 }
 
+/** The e-GP checkbox is stored as a certification with this name, so the AI matcher sees it. */
+export const EGP_CERTIFICATION_NAME = "ลงทะเบียนผู้ค้าในระบบ e-GP";
+
 interface Props {
   value: Partial<CompanyFormData>;
   onChange: (patch: Partial<CompanyFormData>) => void;
+  /** จำนวนบุคลากรในทีมที่บันทึกแล้ว (จาก TeamEditor) ใช้แสดงเป็น "ขนาดทีม" */
+  teamCount?: number;
 }
 
 /* ───────────── Shared styles (same tokens as the profile page) ───────────── */
@@ -70,9 +61,17 @@ const labelCls = "block text-xs font-semibold text-[#5c5446] mb-1.5";
 const hintCls = "mt-1.5 text-[11px] text-[#998f80]";
 const errorCls = "mt-1.5 text-[11px] text-[#CC0000]";
 
-/* ───────────── Small building blocks ───────────── */
+/** Red asterisk for required fields */
+const star = (
+  <span className="text-[#CC0000]" aria-hidden="true">
+    {" "}
+    *
+  </span>
+);
 
-type SectionKey = "entity" | "contactPerson" | "size" | "certs" | "projects" | "contact";
+/* ───────────── Helpers ───────────── */
+
+type SectionKey = "entity" | "contactPerson" | "size" | "certs" | "contact";
 
 type BadgeTone = "done" | "partial" | "empty" | "error";
 
@@ -136,12 +135,14 @@ function Section({
 
 /** Text input that shows 10,000,000 but stores a number (no spinner arrows). */
 function NumberField({
+  id,
   value,
   onChange,
   placeholder,
   suffix,
   grouping = true,
 }: {
+  id?: string;
   value: number | null | undefined;
   onChange: (n: number | null) => void;
   placeholder?: string;
@@ -151,6 +152,7 @@ function NumberField({
   return (
     <div className="relative">
       <input
+        id={id}
         type="text"
         inputMode="numeric"
         value={value == null ? "" : grouping ? value.toLocaleString("en-US") : String(value)}
@@ -180,18 +182,14 @@ function yearsSince(isoDate?: string): number | null {
 
 /* ───────────── Main component ───────────── */
 
-export function CompanyForm({ value, onChange }: Props) {
+export function CompanyForm({ value, onChange, teamCount = 0 }: Props) {
   const certificateFiles = value.certificateFiles ?? [];
-  const projects = value.pastProjects ?? [];
-  const teamMembers = value.teamMembers ?? [];
 
   const regNo = value.registrationNumber ?? "";
   const regNoInvalid = regNo.length > 0 && !/^\d{13}$/.test(regNo);
 
   const budgetInvalid =
-    value.budgetMin != null &&
-    value.budgetMax != null &&
-    value.budgetMin > value.budgetMax;
+    value.budgetMin != null && value.budgetMax != null && value.budgetMin > value.budgetMax;
 
   const computedYears = yearsSince(value.registeredDate);
 
@@ -201,7 +199,6 @@ export function CompanyForm({ value, onChange }: Props) {
     contactPerson: false,
     size: false,
     certs: false,
-    projects: false,
     contact: false,
   });
   const toggle = (k: SectionKey) => setOpen((o) => ({ ...o, [k]: !o[k] }));
@@ -211,7 +208,6 @@ export function CompanyForm({ value, onChange }: Props) {
       contactPerson: v,
       size: v,
       certs: v,
-      projects: v,
       contact: v,
     });
   const allOpen = Object.values(open).every(Boolean);
@@ -235,33 +231,22 @@ export function CompanyForm({ value, onChange }: Props) {
         5,
       );
 
-  // นับผู้รับผิดชอบหลัก (4 ช่อง) + สมาชิกในทีมแต่ละคน (คนละ 1 หน่วย เมื่อกรอกครบ 4 ช่อง)
-  const contactPersonStatus = progress(
-    primaryContactProgress(value.primaryContact) + teamMembersCompleteCount(teamMembers),
-    4 + teamMembers.length,
-  );
+  const contactPersonStatus = progress(primaryContactProgress(value.primaryContact), 4);
 
   const sizeStatus = budgetInvalid
     ? { badge: "ต้องแก้ไข", tone: "error" as BadgeTone }
     : progress(
         [
           value.registeredCapital != null,
-          value.yearsExperience != null,
-          value.teamSize != null,
           value.budgetMin != null || value.budgetMax != null,
         ].filter(Boolean).length,
-        4,
+        2,
       );
 
   const certsStatus = progress(
     [certificateFiles.length > 0, !!value.isEgpRegistered].filter(Boolean).length,
     2,
   );
-
-  const projectsStatus: { badge: string; tone: BadgeTone } =
-    projects.length > 0
-      ? { badge: `${projects.length} รายการ`, tone: "done" }
-      : { badge: "ยังไม่มี", tone: "empty" };
 
   const contactStatus = progress(
     [
@@ -272,11 +257,6 @@ export function CompanyForm({ value, onChange }: Props) {
     ].filter(Boolean).length,
     4,
   );
-
-  const updateProject = (index: number, patch: Partial<PastProject>) =>
-    onChange({
-      pastProjects: projects.map((p, i) => (i === index ? { ...p, ...patch } : p)),
-    });
 
   return (
     <div className="space-y-4 pt-2">
@@ -302,8 +282,11 @@ export function CompanyForm({ value, onChange }: Props) {
       >
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <div>
-            <label className={labelCls}>ชื่อที่แสดง</label>
+            <label htmlFor="company-display-name" className={labelCls}>
+              ชื่อที่แสดง
+            </label>
             <input
+              id="company-display-name"
               type="text"
               value={value.displayName ?? ""}
               onChange={(e) => onChange({ displayName: e.target.value })}
@@ -311,8 +294,11 @@ export function CompanyForm({ value, onChange }: Props) {
             />
           </div>
           <div>
-            <label className={labelCls}>ชื่อบริษัท</label>
+            <label htmlFor="company-name" className={labelCls}>
+              ชื่อบริษัท{star}
+            </label>
             <input
+              id="company-name"
               type="text"
               value={value.companyName ?? ""}
               onChange={(e) => onChange({ companyName: e.target.value })}
@@ -321,15 +307,16 @@ export function CompanyForm({ value, onChange }: Props) {
             />
           </div>
           <div>
-            <label className={labelCls}>เลขทะเบียนนิติบุคคล (13 หลัก)</label>
+            <label htmlFor="company-reg-no" className={labelCls}>
+              เลขทะเบียนนิติบุคคล (13 หลัก)
+            </label>
             <input
+              id="company-reg-no"
               type="text"
               inputMode="numeric"
               maxLength={13}
               value={regNo}
-              onChange={(e) =>
-                onChange({ registrationNumber: e.target.value.replace(/\D/g, "") })
-              }
+              onChange={(e) => onChange({ registrationNumber: e.target.value.replace(/\D/g, "") })}
               placeholder="เช่น 0105567012345"
               className={inputCls}
               aria-invalid={regNoInvalid}
@@ -337,18 +324,15 @@ export function CompanyForm({ value, onChange }: Props) {
             {regNoInvalid && <p className={errorCls}>ต้องเป็นตัวเลข 13 หลัก</p>}
           </div>
           <div>
-            <label className={labelCls}>วันที่จดทะเบียนจัดตั้ง</label>
+            <label htmlFor="company-registered-date" className={labelCls}>
+              วันที่จดทะเบียนจัดตั้ง
+            </label>
             <input
+              id="company-registered-date"
               type="date"
               value={value.registeredDate ?? ""}
               max={new Date().toISOString().slice(0, 10)}
-              onChange={(e) => {
-                const years = yearsSince(e.target.value);
-                onChange({
-                  registeredDate: e.target.value,
-                  ...(years != null ? { yearsExperience: years } : {}),
-                });
-              }}
+              onChange={(e) => onChange({ registeredDate: e.target.value })}
               className={inputCls}
             />
             {computedYears != null && (
@@ -356,8 +340,11 @@ export function CompanyForm({ value, onChange }: Props) {
             )}
           </div>
           <div className="md:col-span-2">
-            <label className={labelCls}>ประเภทธุรกิจ</label>
+            <label htmlFor="company-business-type" className={labelCls}>
+              ประเภทธุรกิจ{star}
+            </label>
             <input
+              id="company-business-type"
               type="text"
               value={value.businessType ?? ""}
               onChange={(e) => onChange({ businessType: e.target.value })}
@@ -366,8 +353,11 @@ export function CompanyForm({ value, onChange }: Props) {
             />
           </div>
           <div className="md:col-span-2">
-            <label className={labelCls}>วัตถุประสงค์ตามหนังสือรับรอง</label>
+            <label htmlFor="company-objectives" className={labelCls}>
+              วัตถุประสงค์ตามหนังสือรับรอง
+            </label>
             <textarea
+              id="company-objectives"
               rows={2}
               value={value.businessObjectives ?? ""}
               onChange={(e) => onChange({ businessObjectives: e.target.value })}
@@ -381,13 +371,11 @@ export function CompanyForm({ value, onChange }: Props) {
         </div>
       </Section>
 
-      {/* ── 2. ผู้รับผิดชอบหลัก + สมาชิกในทีม ── */}
+      {/* ── 2. ผู้รับผิดชอบหลัก ── */}
       <Section
         icon={AcademicCapIcon}
         title="ผู้รับผิดชอบหลัก"
-        subtitle={`ชื่อ ตำแหน่ง วุฒิการศึกษา และวันที่เข้าทำงานที่บริษัท${
-          teamMembers.length > 0 ? ` · ทีม ${teamMembers.length} คน` : ""
-        }`}
+        subtitle="ชื่อ ตำแหน่ง วุฒิการศึกษา และวันที่เข้าทำงานที่บริษัท"
         open={open.contactPerson}
         onToggle={() => toggle("contactPerson")}
         badge={contactPersonStatus.badge}
@@ -396,10 +384,6 @@ export function CompanyForm({ value, onChange }: Props) {
         <PrimaryContactFields
           value={value.primaryContact}
           onChange={(primaryContact) => onChange({ primaryContact })}
-        />
-        <TeamMembersFields
-          value={value.teamMembers}
-          onChange={(teamMembers) => onChange({ teamMembers })}
         />
       </Section>
 
@@ -415,8 +399,11 @@ export function CompanyForm({ value, onChange }: Props) {
       >
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <div>
-            <label className={labelCls}>ทุนจดทะเบียน</label>
+            <label htmlFor="company-capital" className={labelCls}>
+              ทุนจดทะเบียน{star}
+            </label>
             <NumberField
+              id="company-capital"
               value={value.registeredCapital}
               onChange={(n) => onChange({ registeredCapital: n })}
               suffix="บาท"
@@ -424,28 +411,24 @@ export function CompanyForm({ value, onChange }: Props) {
             />
           </div>
           <div>
-            <label className={labelCls}>ประสบการณ์</label>
-            <NumberField
-              value={value.yearsExperience}
-              onChange={(n) => onChange({ yearsExperience: n })}
-              suffix="ปี"
-            />
-            {computedYears != null && (
-              <p className={hintCls}>คำนวณจากวันที่จดทะเบียน</p>
-            )}
+            <p className={labelCls}>ประสบการณ์</p>
+            <p className="rounded-2xl border border-[#e8e0d0] bg-[#f5f0e8] px-4 py-3 text-sm text-[#5c5446]">
+              {computedYears != null ? `${computedYears} ปี` : "-"}
+            </p>
+            <p className={hintCls}>คำนวณจากวันที่จดทะเบียน</p>
           </div>
           <div>
-            <label className={labelCls}>ขนาดทีม</label>
-            <NumberField
-              value={value.teamSize}
-              onChange={(n) => onChange({ teamSize: n })}
-              suffix="คน"
-            />
+            <p className={labelCls}>ขนาดทีม</p>
+            <p className="rounded-2xl border border-[#e8e0d0] bg-[#f5f0e8] px-4 py-3 text-sm text-[#5c5446]">
+              {teamCount} คน
+            </p>
+            <p className={hintCls}>นับจากบุคลากรในทีมด้านล่าง</p>
           </div>
           <div className="md:col-span-3">
-            <label className={labelCls}>ช่วงงบประมาณโครงการที่รับได้</label>
+            <p className={labelCls}>ช่วงงบประมาณโครงการที่รับได้</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
               <NumberField
+                id="company-budget-min"
                 value={value.budgetMin}
                 onChange={(n) => onChange({ budgetMin: n })}
                 suffix="บาท"
@@ -453,6 +436,7 @@ export function CompanyForm({ value, onChange }: Props) {
               />
               <span className="hidden text-center text-xs text-[#998f80] sm:block">ถึง</span>
               <NumberField
+                id="company-budget-max"
                 value={value.budgetMax}
                 onChange={(n) => onChange({ budgetMax: n })}
                 suffix="บาท"
@@ -462,9 +446,7 @@ export function CompanyForm({ value, onChange }: Props) {
             {budgetInvalid ? (
               <p className={errorCls}>งบประมาณต่ำสุดต้องไม่มากกว่างบประมาณสูงสุด</p>
             ) : (
-              <p className={hintCls}>
-                ใช้เป็นแนวทางคัดกรอง ไม่นับเป็นเงื่อนไขคุณสมบัติใน TOR
-              </p>
+              <p className={hintCls}>ใช้เป็นแนวทางคัดกรอง ไม่นับเป็นเงื่อนไขคุณสมบัติใน TOR</p>
             )}
           </div>
         </div>
@@ -481,7 +463,7 @@ export function CompanyForm({ value, onChange }: Props) {
         tone={certsStatus.tone}
       >
         <div>
-          <label className={labelCls}>ไฟล์ Certificate / ใบรับรอง</label>
+          <p className={labelCls}>ไฟล์ Certificate / ใบรับรอง</p>
           <CertificateUploader
             files={certificateFiles}
             onChange={(files) => onChange({ certificateFiles: files })}
@@ -504,97 +486,7 @@ export function CompanyForm({ value, onChange }: Props) {
         </label>
       </Section>
 
-      {/* ── 5. ผลงานที่ผ่านมา ── */}
-      <Section
-        icon={BriefcaseIcon}
-        title="ผลงานที่ผ่านมา"
-        subtitle="TOR ส่วนใหญ่กำหนดมูลค่าผลงานขั้นต่ำ ยิ่งกรอกครบ ผลประเมินยิ่งแม่น"
-        open={open.projects}
-        onToggle={() => toggle("projects")}
-        badge={projectsStatus.badge}
-        tone={projectsStatus.tone}
-      >
-        {projects.length === 0 && (
-          <p className="rounded-2xl border border-dashed border-[#ddd5c8] bg-[#faf7f2] p-6 text-center text-xs text-[#7a8b6f]">
-            ยังไม่มีผลงาน กดปุ่มด้านล่างเพื่อเพิ่ม
-          </p>
-        )}
-
-        <div className="space-y-3">
-          {projects.map((p, i) => (
-            <div
-              key={i}
-              className="grid grid-cols-1 gap-3 rounded-2xl border border-[#e8e0d0] bg-white p-4 md:grid-cols-[2fr_1.5fr_1.2fr_90px_auto] md:items-end"
-            >
-              <div>
-                <label className={labelCls}>ชื่อโครงการ</label>
-                <input
-                  type="text"
-                  value={p.name}
-                  onChange={(e) => updateProject(i, { name: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>ผู้ว่าจ้าง</label>
-                <input
-                  type="text"
-                  value={p.client}
-                  onChange={(e) => updateProject(i, { client: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>มูลค่า</label>
-                <NumberField
-                  value={p.valueBaht}
-                  onChange={(n) => updateProject(i, { valueBaht: n })}
-                  suffix="บาท"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>ปี พ.ศ.</label>
-                <NumberField
-                  value={p.year}
-                  onChange={(n) => updateProject(i, { year: n })}
-                  placeholder="2567"
-                  grouping={false}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  onChange({ pastProjects: projects.filter((_, idx) => idx !== i) })
-                }
-                className="grid size-11 place-items-center rounded-full text-[#CC0000] hover:bg-red-50"
-                aria-label="ลบผลงาน"
-              >
-                <TrashIcon className="size-5" />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {projects.length < 20 && (
-          <button
-            type="button"
-            onClick={() =>
-              onChange({
-                pastProjects: [
-                  ...projects,
-                  { name: "", client: "", valueBaht: null, year: null },
-                ],
-              })
-            }
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#ddd5c8] bg-white px-5 py-2.5 text-xs font-medium text-[#5c5446] hover:bg-[#faf7f2]"
-          >
-            <PlusIcon className="size-4" />
-            เพิ่มผลงาน
-          </button>
-        )}
-      </Section>
-
-      {/* ── 6. ข้อมูลติดต่อ ── */}
+      {/* ── 5. ข้อมูลติดต่อ ── */}
       <Section
         icon={PhoneIcon}
         title="ข้อมูลติดต่อ"
@@ -606,8 +498,11 @@ export function CompanyForm({ value, onChange }: Props) {
       >
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <div>
-            <label className={labelCls}>อีเมลติดต่อ</label>
+            <label htmlFor="company-email" className={labelCls}>
+              อีเมลติดต่อ
+            </label>
             <input
+              id="company-email"
               type="email"
               value={value.contactEmail ?? ""}
               onChange={(e) => onChange({ contactEmail: e.target.value })}
@@ -615,8 +510,11 @@ export function CompanyForm({ value, onChange }: Props) {
             />
           </div>
           <div>
-            <label className={labelCls}>เบอร์โทรศัพท์</label>
+            <label htmlFor="company-phone" className={labelCls}>
+              เบอร์โทรศัพท์
+            </label>
             <input
+              id="company-phone"
               type="tel"
               value={value.phone ?? ""}
               onChange={(e) => onChange({ phone: e.target.value })}
@@ -624,8 +522,11 @@ export function CompanyForm({ value, onChange }: Props) {
             />
           </div>
           <div className="md:col-span-2">
-            <label className={labelCls}>ที่อยู่สำนักงาน</label>
+            <label htmlFor="company-address" className={labelCls}>
+              ที่อยู่สำนักงาน
+            </label>
             <textarea
+              id="company-address"
               rows={2}
               value={value.address ?? ""}
               onChange={(e) => onChange({ address: e.target.value })}
@@ -633,8 +534,11 @@ export function CompanyForm({ value, onChange }: Props) {
             />
           </div>
           <div className="md:col-span-2">
-            <label className={labelCls}>เกี่ยวกับบริษัท</label>
+            <label htmlFor="company-about" className={labelCls}>
+              เกี่ยวกับบริษัท
+            </label>
             <textarea
+              id="company-about"
               rows={3}
               value={value.about ?? ""}
               onChange={(e) => onChange({ about: e.target.value })}

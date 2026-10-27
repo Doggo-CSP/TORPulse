@@ -1,8 +1,14 @@
-export interface PastProject {
-  name: string;
-  client: string;
-  valueBaht: number | null;
-  year: number | null; // พ.ศ.
+export interface CompanyQualification {
+  registeredCapitalBaht: number | null;
+  yearsInBusiness: number | null;
+  maxPastContractValueBaht: number | null;
+  certifications: string[];
+  isThaiJuristicPerson: boolean | null;
+  isSme: boolean | null;
+  hasPositiveNetWorth: boolean | null;
+  pastContractAgeYears: number | null;
+  hasBangkokOffice: boolean | null;
+  staffRoles: string[];
 }
 
 export interface UserProfile {
@@ -10,7 +16,7 @@ export interface UserProfile {
   name: string;
   email: string;
   image: string | null;
-  accountType: "personal" | "company" | "agency";
+  accountType: "personal" | "company";
   displayName: string;
   firstName: string;
   lastName: string;
@@ -28,26 +34,15 @@ export interface UserProfile {
   companyName?: string;
   registrationNumber?: string;
   businessType?: string;
-  registeredDate?: string;
-  registeredCapital?: number | null;
-  yearsExperience?: number | null;
-  teamSize?: number | null;
-  budgetMin?: number | null;
-  budgetMax?: number | null;
-  businessObjectives?: string;
-  certifications?: string[];
-  isEgpRegistered?: boolean;
-  pastProjects?: PastProject[];
+  // Registration date, capital, certifications, team and past projects: see bidder-profile.api.ts
 
-  // Agency
-  agencyName?: string;
-  agencyType?: string;
-  agencyCode?: string;
-  ministry?: string;
-  foundedYear?: number | null;
-  staffCount?: number | null;
-  annualBudget?: number | null;
-  procurementMethods?: string[];
+  // Qualifying-TOR email notifications
+  qualification?: CompanyQualification;
+  notificationPrefs?: { emailEnabled: boolean };
+  notificationMissingFields?: string[];
+
+  // null until the onboarding wizard is finished or skipped
+  onboardingStatus?: "completed" | "dismissed" | null;
 }
 
 export interface TorItem {
@@ -177,4 +172,24 @@ export async function fetchUserBookmarks(): Promise<TorItem[]> {
 
   const data = await res.json();
   return data.tors || [];
+}
+
+/**
+ * Records that the onboarding wizard was finished or skipped, so it is not offered again
+ */
+export async function updateOnboardingStatus(
+  status: "completed" | "dismissed",
+): Promise<{ onboardingStatus: "completed" | "dismissed" }> {
+  const res = await fetch(`${apiUrl}/api/v1/user/onboarding`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ status }),
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to update onboarding status");
+  }
+
+  return await res.json();
 }
