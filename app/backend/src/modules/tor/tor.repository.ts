@@ -1,6 +1,9 @@
 import { Types } from 'mongoose'
 
-import type { ProjectSourceMetadata } from '../ingestion/adapters/discovered-project.js'
+import type {
+  ProjectAnnouncement,
+  ProjectSourceMetadata,
+} from '../ingestion/adapters/discovered-project.js'
 import { TorModel } from './tor.model.js'
 import type { UpsertTorInput } from './tor.types.js'
 
@@ -75,10 +78,25 @@ export type TorSourceFields = Pick<
   | 'contractStatusCode'
   | 'fiscalYear'
   | 'announceDate'
+  | 'announcements'
   | 'budgetBaht'
   | 'midPriceBaht'
   | 'awardedPriceBaht'
 >
+
+// Announcements as read back from an ingestion job, where Mongoose marks fields optional.
+type StoredAnnouncement = { sourceId: string } & {
+  [K in Exclude<keyof ProjectAnnouncement, 'sourceId'>]?: ProjectAnnouncement[K] | undefined
+}
+
+const toProjectAnnouncement = (announcement: StoredAnnouncement): ProjectAnnouncement => ({
+  sourceId: announcement.sourceId,
+  title: announcement.title ?? null,
+  hearingStartAt: announcement.hearingStartAt ?? null,
+  hearingEndAt: announcement.hearingEndAt ?? null,
+  fileName: announcement.fileName ?? null,
+  fileUrl: announcement.fileUrl ?? null,
+})
 
 /**
  * TOR fields owned by the discovery source. Null values are left out so a gap in
@@ -86,7 +104,11 @@ export type TorSourceFields = Pick<
  */
 export function torFieldsFromSourceMetadata(
   metadata:
-    { [K in keyof ProjectSourceMetadata]?: ProjectSourceMetadata[K] | null } | null | undefined,
+    | ({
+        [K in Exclude<keyof ProjectSourceMetadata, 'announcements'>]?: ProjectSourceMetadata[K] | null
+      } & { announcements?: ReadonlyArray<StoredAnnouncement> | null })
+    | null
+    | undefined,
 ): Partial<TorSourceFields> {
   if (!metadata) {
     return {}
@@ -101,6 +123,7 @@ export function torFieldsFromSourceMetadata(
     contractStatusCode: metadata.contractStatusCode,
     fiscalYear: metadata.fiscalYear,
     announceDate: metadata.announceDate,
+    announcements: metadata.announcements?.map(toProjectAnnouncement),
     budgetBaht: metadata.budgetBaht,
     midPriceBaht: metadata.midPriceBaht,
     awardedPriceBaht: metadata.awardedPriceBaht,
@@ -133,6 +156,7 @@ export async function updateTorSourceMetadata(
     return 0
   }
 
-  const result = await TorModel.bulkWrite(operations, { ordered: false })
+  // Mongoose types subdocument arrays as DocumentArray; the driver takes plain objects.
+  const result = await TorModel.bulkWrite<Partial<TorSourceFields>>(operations, { ordered: false })
   return result.modifiedCount
 }

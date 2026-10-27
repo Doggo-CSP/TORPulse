@@ -2,10 +2,16 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 import { z } from 'zod'
 
-import type { DiscoveredProcurementProject } from './discovered-project.js'
+import type { DiscoveredProcurementProject, ProjectAnnouncement } from './discovered-project.js'
 
 const BMA_PROJECT_SEARCH_URL = 'https://egp2.bangkok.go.th/appapi/api/Projects/GetProjectFromFilter'
 const BMA_PROJECT_DETAIL_URL = 'https://egp2.bangkok.go.th/appapi/api/Projects/GetProjectDetail'
+const BMA_PROJECT_TORS_URL = 'https://egp2.bangkok.go.th/appapi/api/ProjectTors/GetTorInProject'
+// File links as the BMA project page builds them for TOR hearing documents.
+const BMA_FILE_BASE_URL = 'https://egp2.bangkok.go.th/api/file'
+const BMA_UPLOADS_BASE_URL = 'https://adminapiegp.bangkok.go.th'
+const ANNOUNCEMENT_PAGE_SIZE = 50
+const MAX_ANNOUNCEMENT_PAGES = 5
 
 // Master ids from the BMA project search page filters.
 const INVITATION_ANNOUNCE_TYPE_ID = '705f1ffb-82e2-4beb-bdd2-2746f0783bf0' // ประกาศเชิญชวน
@@ -48,6 +54,21 @@ const detailSchema = z.object({
   masterContractAvailableName: optionalText,
 })
 
+const optionalDate = z
+  .preprocess(
+    (value) => (value === null || value === undefined || value === '' ? null : value),
+    z.coerce.date().nullable(),
+  )
+  .catch(null)
+
+const announcementSchema = z.object({
+  id: z.string().trim().min(1),
+  projectTorTitle: optionalText,
+  projectTorHearingStartDate: optionalDate,
+  projectTorHearingEndDate: optionalDate,
+  projectTorPath: optionalText,
+})
+
 type BmaProject = z.infer<typeof projectSchema>
 type BmaProjectDetail = z.infer<typeof detailSchema>
 
@@ -79,6 +100,7 @@ export interface BmaProjectDetails {
   midPriceBaht: number | null
   contractStatus: string | null
   contractStatusCode: string | null
+  announcements: ProjectAnnouncement[] | null
 }
 
 export interface BmaDiscoveryAdapterOptions {
@@ -108,23 +130,21 @@ export class BmaDiscoveryAdapter {
 
     const page = await this.withRetry(() => this.search(url, input.signal), input.signal)
 
-    // Middle price and contract status are only on the detail endpoint. A failed detail
-    // request leaves those fields null so the sync never erases values already stored.
-    const details = await mapWithConcurrency(page.projects, DETAIL_CONCURRENCY, async (project) => {
+    // Middle price, contract status and hearing announcements are only on per-project
+    // endpoints. A failed request leaves its fields null so the sync never erases values
+    // already stored.
+    const extras = await mapWithConcurrency(page.projects, DETAIL_CONCURRENCY, async (project) => {
       if (!project.projectId) {
-        return null
+        return { detail: null, announcements: null }
       }
-      try {
-        return await this.withRetry(
-          () => this.requestDetail(project.projectId!, input.signal),
-          input.signal,
-        )
-      } catch (error) {
-        if (input.signal?.aborted) {
-          throw error
-        }
-        console.warn('BMA project detail failed', { projectId: project.projectId, error })
-        return null
+      const projectId = project.projectId
+      return {
+        detail: await this.optional('project detail', projectId, input.signal, () =>
+          this.requestDetail(projectId, input.signal),
+        ),
+        announcements: await this.optional('project announcements', projectId, input.signal, () =>
+          this.requestAnnouncements(projectId, input.signal),
+        ),
       }
     })
 
@@ -132,7 +152,12 @@ export class BmaDiscoveryAdapter {
       total: page.total,
       hasNextPage: page.hasNextPage,
       projects: page.projects.map((project, index) =>
-        toDiscoveredProject(project, input.budgetYear, details[index] ?? null),
+        toDiscoveredProject(
+          project,
+          input.budgetYear,
+          extras[index]?.detail ?? null,
+          extras[index]?.announcements ?? null,
+        ),
       ),
       skipped: page.skipped,
     }
@@ -157,8 +182,30 @@ export class BmaDiscoveryAdapter {
       return null
     }
 
-    const detail = await this.withRetry(() => this.requestDetail(project.projectId!, signal), signal)
-    return toProjectDetails(project, detail)
+    const projectId = project.projectId
+    const detail = await this.withRetry(() => this.requestDetail(projectId, signal), signal)
+    const announcements = await this.optional('project announcements', projectId, signal, () =>
+      this.requestAnnouncements(projectId, signal),
+    )
+    return toProjectDetails(project, detail, announcements)
+  }
+
+  /** Runs a retried request; a final failure is logged and becomes null unless aborted. */
+  private async optional<T>(
+    label: string,
+    projectId: string,
+    signal: AbortSignal | undefined,
+    request: () => Promise<T>,
+  ): Promise<T | null> {
+    try {
+      return await this.withRetry(request, signal)
+    } catch (error) {
+      if (signal?.aborted) {
+        throw error
+      }
+      console.warn(`BMA ${label} failed`, { projectId, error })
+      return null
+    }
   }
 
   private async withRetry<T>(request: () => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -232,6 +279,60 @@ export class BmaDiscoveryAdapter {
 
     return parsed.data
   }
+
+  private async requestAnnouncements(
+    projectId: string,
+    signal?: AbortSignal,
+  ): Promise<ProjectAnnouncement[]> {
+    const announcements: ProjectAnnouncement[] = []
+
+    for (let pageNo = 1; pageNo <= MAX_ANNOUNCEMENT_PAGES; pageNo += 1) {
+      const url = new URL(BMA_PROJECT_TORS_URL)
+      url.searchParams.set('projectId', projectId)
+      url.searchParams.set('pageNo', String(pageNo))
+      url.searchParams.set('pageSize', String(ANNOUNCEMENT_PAGE_SIZE))
+
+      const parsed = responseSchema.safeParse(await this.getJson(url, 'project announcements', signal))
+      if (!parsed.success) {
+        throw new Error('BMA returned an invalid project-announcements response')
+      }
+
+      for (const row of parsed.data.data) {
+        const announcement = announcementSchema.safeParse(row)
+        if (announcement.success) {
+          announcements.push(toAnnouncement(announcement.data))
+        }
+      }
+
+      if (!parsed.data.hasNextPage) {
+        break
+      }
+    }
+
+    return announcements
+  }
+}
+
+/** Mirrors the BMA project page: absolute links as-is, Uploads/ on the admin host. */
+export function toBmaFileUrl(id: string, path: string): string {
+  if (/^https?:\/\//.test(path)) {
+    return path
+  }
+  if (path.startsWith('Uploads')) {
+    return `${BMA_UPLOADS_BASE_URL}/${path}`
+  }
+  return `${BMA_FILE_BASE_URL}/${encodeURIComponent(id)}/${encodeURIComponent(path)}`
+}
+
+function toAnnouncement(row: z.infer<typeof announcementSchema>): ProjectAnnouncement {
+  return {
+    sourceId: row.id,
+    title: row.projectTorTitle,
+    hearingStartAt: row.projectTorHearingStartDate,
+    hearingEndAt: row.projectTorHearingEndDate,
+    fileName: row.projectTorPath,
+    fileUrl: row.projectTorPath ? toBmaFileUrl(row.id, row.projectTorPath) : null,
+  }
 }
 
 async function mapWithConcurrency<T, R>(
@@ -253,13 +354,18 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
-function toProjectDetails(project: BmaProject, detail: BmaProjectDetail | null): BmaProjectDetails {
+function toProjectDetails(
+  project: BmaProject,
+  detail: BmaProjectDetail | null,
+  announcements: ProjectAnnouncement[] | null,
+): BmaProjectDetails {
   return {
     sourceProjectId: project.projectId!,
     midPriceBaht: detail?.projectAverageBudget ?? null,
     contractStatus: detail?.masterContractAvailableName ?? null,
     contractStatusCode:
       detail?.masterContractAvailableCode ?? project.masterContractAvailableCode ?? null,
+    announcements,
   }
 }
 
@@ -267,6 +373,7 @@ function toDiscoveredProject(
   project: BmaProject,
   budgetYear: number,
   detail: BmaProjectDetail | null,
+  announcements: ProjectAnnouncement[] | null,
 ): DiscoveredProcurementProject {
   return {
     externalId: project.projectNumber,
@@ -286,6 +393,7 @@ function toDiscoveredProject(
       budgetBaht: project.projectBudget,
       midPriceBaht: detail?.projectAverageBudget ?? null,
       awardedPriceBaht: null,
+      announcements,
     },
   }
 }

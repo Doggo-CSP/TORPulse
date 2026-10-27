@@ -146,6 +146,7 @@ export async function processIngestionJob(
     contractStatusCode: null,
     fiscalYear: null,
     announceDate: null,
+    announcements: null,
     midPriceBaht: null,
     awardedPriceBaht: null,
     summary: extractedTor.summary,

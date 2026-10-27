@@ -441,6 +441,7 @@ export async function getTorByIdHandler(req: Request, res: Response): Promise<vo
     projectStatus: tor.projectStatus ?? null,
     contractStatus: tor.contractStatus ?? null,
     contractStatusCode: tor.contractStatusCode ?? null,
+    announcements: tor.announcements ?? [],
     summary: tor.summary ?? null,
     objectives: tor.objectives,
     requirements: tor.requirements,

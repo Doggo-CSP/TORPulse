@@ -91,6 +91,7 @@ test('enqueue refreshes GovSpending metadata on new and existing jobs', async (c
     budgetBaht: 100,
     midPriceBaht: 90,
     awardedPriceBaht: 80,
+    announcements: null,
   }
 
   await enqueueDiscoveredProjects(new Types.ObjectId(), [

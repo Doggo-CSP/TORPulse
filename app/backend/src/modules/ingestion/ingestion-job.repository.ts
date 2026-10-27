@@ -1,7 +1,10 @@
 import { Types } from 'mongoose'
 
-import { IngestionJobModel } from './ingestion-job.model.js'
-import type { DiscoveredProcurementProject } from './adapters/discovered-project.js'
+import { IngestionJobModel, type IngestionJob } from './ingestion-job.model.js'
+import type {
+  DiscoveredProcurementProject,
+  ProjectSourceMetadata,
+} from './adapters/discovered-project.js'
 
 const MAX_ATTEMPTS = 2
 const LEASE_DURATION_MS = 5 * 60_000
@@ -19,7 +22,10 @@ export async function enqueueDiscoveredProjects(
     return { queued: 0, existing: 0 }
   }
 
-  const result = await IngestionJobModel.bulkWrite(
+  // Mongoose types subdocument arrays as DocumentArray; the driver takes plain objects.
+  const result = await IngestionJobModel.bulkWrite<
+    Omit<IngestionJob, 'sourceMetadata'> & { sourceMetadata: ProjectSourceMetadata }
+  >(
     uniqueProjects.map((project) => ({
       updateOne: {
         filter: {
