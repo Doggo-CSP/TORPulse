@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { CATEGORY_SEED } from '../../category/category.constants.js'
-import { buildSystemPrompt, parseTorAnalysis } from './deepseek-tor-extractor.js'
+import { buildSystemPrompt, parseTorAnalysis } from './tor-analysis.js'
 
 test('parses bidder qualifications and defaults missing lists to empty arrays', () => {
   const analysis = parseTorAnalysis(

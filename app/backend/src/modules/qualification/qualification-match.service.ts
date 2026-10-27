@@ -29,7 +29,6 @@ import {
 // Bump when the prompt or the input shape changes, so cached results are recomputed.
 export const MATCH_PROMPT_VERSION = 'v2'
 
-const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/chat/completions'
 // Gemini counts thinking tokens against this limit, so it needs headroom beyond the JSON.
 const MAX_RESPONSE_TOKENS = 12_000
 const MAX_REQUIREMENTS = 60
@@ -322,46 +321,7 @@ export function isMatchStale(
 }
 
 export function currentAiModel(): string {
-  return env.AI_PROVIDER === 'gemini' ? env.GEMINI_MODEL : env.DEEPSEEK_MODEL
-}
-
-async function callDeepSeek(system: string, user: string): Promise<string> {
-  if (!env.DEEPSEEK_API_KEY) {
-    throw new Error('DEEPSEEK_API_KEY is required for qualification matching')
-  }
-
-  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: env.DEEPSEEK_MODEL,
-      response_format: { type: 'json_object' },
-      thinking: { type: 'disabled' },
-      max_tokens: MAX_RESPONSE_TOKENS,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
-    signal: AbortSignal.timeout(120_000),
-  })
-
-  if (!response.ok) {
-    const errorBody = (await response.text()).slice(0, 500)
-    throw new Error(`DeepSeek qualification match failed (${response.status}): ${errorBody}`)
-  }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string | null } }>
-  }
-  const content = payload.choices?.[0]?.message?.content
-  if (!content) {
-    throw new Error('DeepSeek returned an empty qualification match')
-  }
-  return content
+  return env.GEMINI_MODEL
 }
 
 async function callGemini(system: string, user: string): Promise<string> {
@@ -383,8 +343,7 @@ async function callGemini(system: string, user: string): Promise<string> {
 
 // Kept on an object so tests can replace the LLM call.
 export const matchAi = {
-  judge: (system: string, user: string): Promise<string> =>
-    env.AI_PROVIDER === 'gemini' ? callGemini(system, user) : callDeepSeek(system, user),
+  judge: (system: string, user: string): Promise<string> => callGemini(system, user),
 }
 
 export async function evaluateQualification(

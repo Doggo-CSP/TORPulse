@@ -10,7 +10,7 @@ TORPulse is a full-stack platform designed to automate the discovery, ingestion,
 
 - 🔍 **Automated Procurement Discovery**: Queue producers & ingestion workers continuously poll and index e-GP procurement APIs.
 - 📄 **PDF Extraction & Parsing**: Intelligent parsing of TOR PDF documents to extract budgets, submission deadlines, contact details, project scope, and technological requirements.
-- 🧠 **AI Classification & Analysis**: DeepSeek AI model integrations for classifying procurement scope, evaluating project objectives, and scoring confidence.
+- 🧠 **AI Classification & Analysis**: Gemini (Vertex AI) model integrations for classifying procurement scope, evaluating project objectives, and scoring confidence.
 - 📊 **Analytics Dashboard**: Dynamic charts, budget insights, and keyword tracking powered by Recharts & TanStack React Query.
 - 🔐 **Authentication & User Profiles**: Secure Google OAuth 2.0 single sign-on (SSO) and user profile preferences.
 - 🛠️ **Repair & Maintenance Tooling**: Built-in CLI scripts for repairing missing TOR data and testing ingestion pipelines.
@@ -114,9 +114,9 @@ BMA_SYNC_ENABLED=true
 # BMA_KEYWORDS=ซอฟต์แวร์,ระบบสารสนเทศ,พัฒนาระบบ,โปรแกรมคอมพิวเตอร์,แอปพลิเคชัน,เว็บไซต์,software,application,website
 # BMA_BUDGET_YEAR=2570,2569
 
-# DeepSeek AI Integration (Optional)
-DEEPSEEK_API_KEY=your-deepseek-api-key
-DEEPSEEK_MODEL=deepseek-v4-flash
+# Gemini on Vertex AI (set GOOGLE_API_KEY, or GOOGLE_CLOUD_PROJECT with ADC)
+GEMINI_MODEL=gemini-3-flash-preview
+GOOGLE_API_KEY=your-google-api-key
 ```
 
 ### Frontend Setup (`app/frontend/.env.local`)

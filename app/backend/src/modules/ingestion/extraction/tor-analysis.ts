@@ -1,11 +1,7 @@
 import { z } from 'zod'
 
-import { env } from '../../../config/env.js'
 import type { CategoryItem } from '../../category/category.repository.js'
-import type { ProcurementProject } from '../adapters/procurement-source.adapter.js'
 
-const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/chat/completions'
-const MAX_RESPONSE_TOKENS = 8_000
 export const TOR_ANALYSIS_VERSION = 'v4'
 const stringArraySchema = z.preprocess(
   (value) => (value === null || value === undefined ? [] : value),
@@ -35,80 +31,19 @@ const torAnalysisSchema = z.object({
 
 export type TorAnalysis = z.infer<typeof torAnalysisSchema>
 
-interface DeepSeekResponse {
-  choices?: Array<{
-    message?: { content?: string | null }
-  }>
-}
-
 export type ClassifierCategory = Pick<CategoryItem, 'key' | 'name' | 'description' | 'aiHint'>
-
-export async function analyzeTorWithDeepSeek(
-  markdown: string,
-  project: ProcurementProject,
-  categories: ClassifierCategory[],
-): Promise<TorAnalysis> {
-  if (!env.DEEPSEEK_API_KEY) {
-    throw new Error('DEEPSEEK_API_KEY is required to analyze TOR documents')
-  }
-
-  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: env.DEEPSEEK_MODEL,
-      response_format: { type: 'json_object' },
-      thinking: { type: 'disabled' },
-      max_tokens: MAX_RESPONSE_TOKENS,
-      messages: [
-        {
-          role: 'system',
-          content: buildSystemPrompt(categories),
-        },
-        {
-          role: 'user',
-          content: [
-            `Central eGP project ID: ${project.externalId}`,
-            `Fallback title: ${project.title}`,
-            '',
-            '<tor_document>',
-            markdown,
-            '</tor_document>',
-          ].join('\n'),
-        },
-      ],
-    }),
-    signal: AbortSignal.timeout(120_000),
-  })
-
-  if (!response.ok) {
-    const errorBody = (await response.text()).slice(0, 500)
-    throw new Error(`DeepSeek TOR analysis failed (${response.status}): ${errorBody}`)
-  }
-
-  const payload = (await response.json()) as DeepSeekResponse
-  const content = payload.choices?.[0]?.message?.content
-  if (!content) {
-    throw new Error('DeepSeek returned an empty TOR analysis')
-  }
-
-  return parseTorAnalysis(content)
-}
 
 export function parseTorAnalysis(content: string): TorAnalysis {
   let parsed: unknown
   try {
     parsed = JSON.parse(content)
   } catch {
-    throw new Error('DeepSeek returned invalid JSON for TOR analysis')
+    throw new Error('TOR analysis returned invalid JSON')
   }
 
   const result = torAnalysisSchema.safeParse(parsed)
   if (!result.success) {
-    throw new Error(`DeepSeek returned an invalid TOR shape: ${z.prettifyError(result.error)}`)
+    throw new Error(`TOR analysis returned an invalid shape: ${z.prettifyError(result.error)}`)
   }
 
   return result.data

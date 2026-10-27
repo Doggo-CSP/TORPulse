@@ -19,7 +19,7 @@ flowchart LR
   google[Google OAuth 2.0]
   bma[BMA e-GP<br/>egp2.bangkok.go.th]
   egp[Central e-GP<br/>process5.gprocurement.go.th]
-  ai[AI provider<br/>Gemini on Vertex AI or DeepSeek]
+  ai[AI provider<br/>Gemini on Vertex AI]
 
   user --> fe
   fe -- "/api/v1, /auth (cookie session)" --> api
@@ -65,7 +65,7 @@ flowchart TB
       svc[ingestion.service]
       egpA[CentralEgpAdapter]
       odl[OpenDataLoader<br/>PDF → Markdown]
-      llm[DeepSeek / Gemini extractor]
+      llm[Gemini extractor]
       deadline[egp-submit-deadline<br/>+ thai-date]
     end
     subgraph notifApp[apps/notification-worker]
@@ -97,7 +97,7 @@ sequenceDiagram
   participant DB as MongoDB
   participant W as Ingestion worker
   participant E as Central e-GP
-  participant AI as Gemini / DeepSeek
+  participant AI as Gemini
 
   loop every DISCOVERY_SYNC_INTERVAL_MS
     P->>DB: claim lease on data source (bma-egp)
@@ -278,7 +278,7 @@ New users fill these in through the onboarding wizard (`/onboarding` in the fron
 
 `modules/qualification` compares the logged-in user's bidder profile (§9) with one TOR and gives a percentage plus a per-requirement breakdown.
 
-1. `POST /api/v1/tors/:id/qualification` builds two JSON snapshots and sends them to the AI provider (`AI_PROVIDER`, the same DeepSeek or Gemini settings as ingestion) in one call:
+1. `POST /api/v1/tors/:id/qualification` builds two JSON snapshots and sends them to Gemini (the same settings as ingestion) in one call:
    - the TOR: title, budget, scope, `bidderQualifications`, `requirements`, `evaluationCriteria`, technologies (long text truncated);
    - the bidder: company data with years in business, the bidder's `preferences` (sent as context only: the prompt forbids treating them as requirements, so they never change the score; the summary says whether the TOR's budget is in the preferred range), every person by label (`คนที่ 1`, never by name) with position, roles, experience, years at the company, education and certifications with years held and expiry, and past projects with value, delivery date and the people who worked on them.
 2. The AI lists the TOR's requirements on the bidder (skipping standard legal declarations, conditions for the other kind of bidder, bid bonds and documents to submit) and judges each one `met`, `partial`, `not_met` or `unknown`, with a Thai reason and suggestion, and whether it is a condition to bid (`mandatory`).

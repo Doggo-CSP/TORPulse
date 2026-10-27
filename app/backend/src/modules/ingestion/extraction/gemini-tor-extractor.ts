@@ -7,7 +7,7 @@ import {
   parseTorAnalysis,
   type ClassifierCategory,
   type TorAnalysis,
-} from './deepseek-tor-extractor.js'
+} from './tor-analysis.js'
 
 export interface GeminiClient {
   models: {

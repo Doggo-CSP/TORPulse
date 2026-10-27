@@ -10,9 +10,9 @@ Before running backend commands, copy `app/backend/.env.example` to `.env` and f
 |---|---|
 | `npm run dev` | Starts the REST API (`src/apps/api/server.ts`) on `PORT` (default 8000) with hot reload. Serves `/auth/*` (Google OAuth) and `/api/v1/*`. |
 | `npm run dev:producer` | Starts the queue producer with hot reload. It runs BMA discovery (unless `BMA_SYNC_ENABLED=false`), enqueues ingestion jobs, then sleeps for `DISCOVERY_SYNC_INTERVAL_MS`. |
-| `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with the AI provider (`AI_PROVIDER`), reads the submission deadline from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
+| `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with Gemini, reads the submission deadline from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
 | `npm run dev:notification` | Starts the notification worker with hot reload. It claims queued qualifying-TOR notifications, groups them per user and sends one email per user over SMTP (`SMTP_*`). Failed sends retry with backoff up to 3 attempts. |
-| `npm run dev:qualification` | Starts the qualification worker with hot reload. It precomputes AI qualification scores for TOR cards: every 10 minutes it queues each ready bidder and open TOR pair whose score is missing or stale, then works the queue one job at a time within `QUALIFICATION_DAILY_CALL_LIMIT`. Needs the AI settings (`AI_PROVIDER` and its key). See system-architecture.md §11. |
+| `npm run dev:qualification` | Starts the qualification worker with hot reload. It precomputes AI qualification scores for TOR cards: every 10 minutes it queues each ready bidder and open TOR pair whose score is missing or stale, then works the queue one job at a time within `QUALIFICATION_DAILY_CALL_LIMIT`. Needs the Gemini settings (`GOOGLE_API_KEY` or `GOOGLE_CLOUD_PROJECT`). See system-architecture.md §11. |
 | `npm run build` | Compiles TypeScript to `dist/`. |
 | `npm start` | Runs the compiled API (`dist/apps/api/server.js`). |
 | `npm run start:producer` | Runs the compiled queue producer. |
@@ -29,7 +29,7 @@ A full local pipeline needs three terminals: `dev`, `dev:producer` and `dev:inge
 | `npm test` | Runs every test group below in order and stops at the first failing group. Some route tests need a reachable MongoDB, so use a throwaway local database. CI does this, using a `mongo:7` service container. |
 | `npm run test:central-egp` | Central eGP adapter: archive metadata, ZIP download and TOR file selection, throttling and retries. |
 | `npm run test:producer` | Discovery adapters (eGP announcement search, BMA) and the Thai fiscal year helper. |
-| `npm run test:tor` | TOR model and repository, job queue repository, ingestion report, Thai date parsing, submit deadline extraction, repair and backfill helpers, and the DeepSeek and Gemini extractors. |
+| `npm run test:tor` | TOR model and repository, job queue repository, ingestion report, Thai date parsing, submit deadline extraction, repair and backfill helpers, and the TOR analysis parser and Gemini extractor. |
 | `npm run test:auth` | Auth routes and auth config. |
 | `npm run test:user` | Profile, interests, bookmarks and the bidder profile: model, repository, derived qualification and routes. |
 | `npm run test:homepage` | TOR controller, homepage routes and TOR routes. |
