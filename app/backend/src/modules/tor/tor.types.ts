@@ -1,5 +1,6 @@
 import { Types } from 'mongoose'
 
+import type { ProjectAnnouncement } from '../ingestion/adapters/discovered-project.js'
 import type { TorEligibility } from '../notification/qualification.js'
 
 export interface TorSourceDocumentInput {
@@ -25,6 +26,7 @@ export interface UpsertTorInput {
   contractStatusCode?: string | null
   fiscalYear?: number | null
   announceDate?: Date | null
+  announcements?: ProjectAnnouncement[] | null
   summary: string | null
   objectives: string[]
   requirements: string[]

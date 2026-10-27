@@ -120,6 +120,7 @@ export function toDiscoveredProject(
       budgetBaht: announcement.projectMoney,
       midPriceBaht: announcement.priceBuild,
       awardedPriceBaht: null,
+      announcements: null,
     },
   }
 }

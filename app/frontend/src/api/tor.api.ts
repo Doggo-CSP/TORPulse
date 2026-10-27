@@ -6,6 +6,16 @@ export interface TorDocument {
   sourceUrl: string;
 }
 
+// BMA hearing document (ร่างประกาศ, ร่าง TOR, ...); dates are ISO strings.
+export interface TorAnnouncement {
+  sourceId: string;
+  title: string | null;
+  hearingStartAt: string | null;
+  hearingEndAt: string | null;
+  fileName: string | null;
+  fileUrl: string | null;
+}
+
 export interface TorDetail {
   id: string;
   externalId: string;
@@ -20,6 +30,7 @@ export interface TorDetail {
   // Whether the project is still active (e.g. ระหว่างดำเนินการ); projectStatus is the announcement stage.
   contractStatus: string | null;
   contractStatusCode: string | null;
+  announcements: TorAnnouncement[];
   summary: string | null;
   objectives: string[];
   requirements: string[];

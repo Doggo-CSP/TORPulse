@@ -1060,6 +1060,7 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
     budgetBaht: null,
     midPriceBaht: null,
     awardedPriceBaht: null,
+    announcements: null,
   })
   const knownProject = {
     externalId: `${SEED_PREFIX}known`,

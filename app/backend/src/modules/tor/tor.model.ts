@@ -29,6 +29,19 @@ const sourceDocumentSchema = new Schema(
   { _id: false },
 )
 
+// BMA hearing documents (ร่างประกาศ, ร่าง TOR, ...) from GetTorInProject.
+export const announcementSchema = new Schema(
+  {
+    sourceId: { type: String, required: true, trim: true },
+    title: { type: String, default: null },
+    hearingStartAt: { type: Date, default: null },
+    hearingEndAt: { type: Date, default: null },
+    fileName: { type: String, default: null },
+    fileUrl: { type: String, default: null },
+  },
+  { _id: false },
+)
+
 // Structured bidder qualifications, used to decide whether a company fully qualifies.
 // null on TORs analyzed before eligibility extraction existed.
 const eligibilitySchema = new Schema(
@@ -124,6 +137,11 @@ const torSchema = new Schema(
     announceDate: {
       type: Date,
       default: null,
+    },
+    // Absent until the source has been asked; [] when it lists none.
+    announcements: {
+      type: [announcementSchema],
+      default: undefined,
     },
     summary: {
       type: String,

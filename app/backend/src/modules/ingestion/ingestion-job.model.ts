@@ -1,5 +1,7 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
+import { announcementSchema } from '../tor/tor.model.js'
+
 // Project metadata from the discovery source, refreshed on every producer sync.
 const sourceMetadataSchema = new Schema(
   {
@@ -15,6 +17,7 @@ const sourceMetadataSchema = new Schema(
     budgetBaht: { type: Number, min: 0, default: null },
     midPriceBaht: { type: Number, min: 0, default: null },
     awardedPriceBaht: { type: Number, min: 0, default: null },
+    announcements: { type: [announcementSchema], default: undefined },
   },
   { _id: false },
 )

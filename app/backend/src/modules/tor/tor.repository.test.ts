@@ -165,6 +165,14 @@ test('refreshes existing TORs without creating new ones', async (context) => {
     operations = ops
     return { modifiedCount: 1 }
   })
+  const announcement = {
+    sourceId: 'f3afd7e8-4005-49c9-b39e-7ee8c93cfa88',
+    title: 'เอกสาร(ร่าง) TOR',
+    hearingStartAt: new Date('2026-10-13T17:00:00Z'),
+    hearingEndAt: new Date('2026-10-18T17:00:00Z'),
+    fileName: 'TOR.pdf',
+    fileUrl: 'https://egp2.bangkok.go.th/api/file/f3afd7e8-4005-49c9-b39e-7ee8c93cfa88/TOR.pdf',
+  }
 
   const modified = await updateTorSourceMetadata(dataSourceId, [
     {
@@ -182,6 +190,7 @@ test('refreshes existing TORs without creating new ones', async (context) => {
         budgetBaht: null,
         midPriceBaht: 90,
         awardedPriceBaht: 80,
+        announcements: [announcement],
       },
     },
   ])
@@ -197,6 +206,7 @@ test('refreshes existing TORs without creating new ones', async (context) => {
         fiscalYear: 2568,
         midPriceBaht: 90,
         awardedPriceBaht: 80,
+        announcements: [announcement],
       },
     },
   })
