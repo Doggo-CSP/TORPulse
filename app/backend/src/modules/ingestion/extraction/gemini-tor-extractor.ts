@@ -9,7 +9,7 @@ import {
   type TorAnalysis,
 } from './deepseek-tor-extractor.js'
 
-interface GeminiClient {
+export interface GeminiClient {
   models: {
     generateContent(request: {
       model: string
@@ -23,7 +23,7 @@ interface GeminiClient {
   }
 }
 
-function createGeminiClient(): GeminiClient {
+export function createGeminiClient(): GeminiClient {
   if (env.GOOGLE_API_KEY) {
     return new GoogleGenAI({ vertexai: true, apiKey: env.GOOGLE_API_KEY })
   }

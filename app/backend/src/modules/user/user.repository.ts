@@ -16,7 +16,8 @@ export async function updateUserProfile(
   return User.findByIdAndUpdate(
     userId,
     { $set: fields },
-    { returnDocument: 'after', runValidators: true },)
+    { returnDocument: 'after', runValidators: true },
+  )
 }
 
 export async function updateUserInterests(userId: Types.ObjectId | string, interests: string[]) {

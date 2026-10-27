@@ -1,12 +1,7 @@
-export interface PastProjectInput {
-  name: string
-  client: string
-  valueBaht: number | null
-  year: number | null // พ.ศ.
-}
+import type { CompanyQualification } from '../notification/qualification.js'
 
 export interface UpdateProfileInput {
-  accountType?: 'personal' | 'company' | 'agency'
+  accountType?: 'personal' | 'company'
   displayName?: string
   firstName?: string
   lastName?: string
@@ -19,21 +14,10 @@ export interface UpdateProfileInput {
   companyName?: string
   registrationNumber?: string
   businessType?: string
-  agencyName?: string
-  agencyType?: string
   website?: string
-
-  // company profile (used by qualification matching)
-  registeredDate?: string // YYYY-MM-DD, '' when unset
-  registeredCapital?: number | null
-  yearsExperience?: number | null
-  teamSize?: number | null
-  budgetMin?: number | null
-  budgetMax?: number | null
-  businessObjectives?: string
-  certifications?: string[]
-  isEgpRegistered?: boolean
-  pastProjects?: PastProjectInput[]
+  qualification?: CompanyQualification
+  notificationPrefs?: { emailEnabled: boolean }
+  onboardingStatus?: 'completed' | 'dismissed'
 }
 
 export interface UpdateInterestsInput {

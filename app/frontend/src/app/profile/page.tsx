@@ -3,16 +3,21 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { SiteNav } from "@/app/components/site_nav";
-import { useUserProfile, type UserProfileData } from "@/hooks/use-user-profile";
+import { useUserProfile } from "@/hooks/use-user-profile";
 import { useTorRecommendations } from "@/hooks/use-tors";
 import { useCategories } from "@/hooks/use-categories";
 import { useAuth } from "@/hooks/use-auth";
+import { CompanyForm } from "./forms/company-form";
+import { ProjectsEditor, SelfEditor, TeamEditor } from "./forms/bidder-editors";
+import { PersonalForm } from "./forms/personal-form";
 import {
-  CompanyForm,
-  getCompanyFormError,
-  type CompanyFormData,
-} from "./forms/company-form";
-import type { PrimaryContact, CertificateFile } from "./forms/company-extras";
+  mainFormError,
+  toMainProfileForm,
+  useSaveMainProfile,
+  type MainProfileForm,
+} from "./forms/main-profile";
+import { useBidderProfile } from "@/hooks/use-bidder-profile";
+import { missingFieldLabel } from "@/lib/qualification-labels";
 import {
   GlobeAltIcon,
   ChartBarIcon,
@@ -26,9 +31,9 @@ import {
   CheckCircleIcon,
   ArrowRightIcon,
   UserIcon,
-  CameraIcon,
 } from "@heroicons/react/24/outline";
 import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
+import { NotificationSettings } from "./notification-settings";
 
 // ไอคอนตาม key (ชื่อ/ลำดับ/การซ่อนมาจาก backend)
 const CATEGORY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -66,25 +71,11 @@ const LEGACY_INTEREST_IDS: Record<string, string> = {
   cloud: "cloud_infrastructure",
 };
 
-const inputCls =
-  "w-full rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] px-4 py-3 text-sm text-[#2d2d2d] focus:border-[#4a7c59] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#4a7c59]";
-const labelCls = "block text-xs font-semibold text-[#5c5446] mb-1.5";
+type TabType = "profile" | "interests" | "bookmarks" | "recommended" | "notifications";
+const TABS: TabType[] = ["profile", "interests", "bookmarks", "recommended", "notifications"];
 
-type TabType = "profile" | "interests" | "bookmarks" | "recommended";
-
-// ฟอร์มรวมฟิลด์โปรไฟล์เดิม + ฟิลด์นิติบุคคล (รวมผู้รับผิดชอบหลักและไฟล์ certificate)
-type FormState = Partial<UserProfileData> &
-  Partial<CompanyFormData> & {
-    primaryContact?: PrimaryContact;
-    certificateFiles?: CertificateFile[];
-  };
-
-const EMPTY_PRIMARY_CONTACT: PrimaryContact = {
-  name: "",
-  position: "",
-  education: "",
-  startDate: "",
-};
+// The main form; the same fields onboarding asks for (forms/main-profile.ts)
+type FormState = MainProfileForm;
 
 export default function ProfilePage() {
   const { user: authUser, loading: authLoading } = useAuth();
@@ -98,6 +89,9 @@ export default function ProfilePage() {
     updateInterests,
     toggleBookmark,
   } = useUserProfile(!!authUser);
+  const bidder = useBidderProfile(!!authUser);
+  const bidderProfile = bidder.profile;
+  const saveMainProfile = useSaveMainProfile();
   const { data: recommendedTors = [], refetch: refetchRecommendations } =
     useTorRecommendations(!!authUser);
   // Every active category, whether or not any TOR uses it right now. (/tors/filter-options only
@@ -134,38 +128,15 @@ export default function ProfilePage() {
     return savedInterests.filter((k) => categoryNameByKey.has(k));
   }, [savedInterests, categoryOptions.length, categoryNameByKey]);
 
-  const [activeTab, setActiveTab] = useState<TabType>("profile");
+  // Notification emails link to /profile?tab=notifications. The first render is the loading
+  // spinner on both server and client, so reading the URL here causes no visible mismatch.
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (typeof window === "undefined") return "profile";
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    return tab && (TABS as string[]).includes(tab) ? (tab as TabType) : "profile";
+  });
   const [formData, setFormData] = useState<FormState>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("กรุณาเลือกไฟล์รูปภาพเท่านั้น");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      alert("ขนาดไฟล์ต้องไม่เกิน 5MB");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFormData((prev) => ({ ...prev, image: reader.result as string }));
-    };
-    reader.readAsDataURL(file);
-
-    // allow re-selecting the same file later
-    e.target.value = "";
-  };
-
   // Toggle against everything saved, not just the cards on screen, so interests in hidden
   // categories are kept (the backend accepts hidden keys the user already has).
   const handleInterestToggle = (catKey: string) => {
@@ -177,46 +148,15 @@ export default function ProfilePage() {
     );
   };
 
+  // Load the main form once both are available. Later saves of team members or projects refresh
+  // the bidder profile too, and must not reset what the user is typing here.
+  const formLoaded = useRef(false);
   useEffect(() => {
-    if (profile) {
-      // ฟิลด์นิติบุคคลยังไม่อยู่ใน UserProfileData → อ่านผ่าน record ชั่วคราว
-      // (ลบ cast นี้ได้เมื่อเพิ่มฟิลด์ใน type แล้ว)
-      const p = profile as unknown as Record<string, any>;
-      setFormData({
-        // บัญชีเก่าที่เป็น agency ให้ถือเป็นนิติบุคคล
-        accountType:
-          profile.accountType === "company" || (profile.accountType as string) === "agency"
-            ? "company"
-            : "personal",
-        displayName: profile.displayName || profile.name || "",
-        firstName: profile.firstName || "",
-        lastName: profile.lastName || "",
-        jobTitle: profile.jobTitle || "",
-        contactEmail: profile.contactEmail || profile.email || "",
-        phone: profile.phone || "",
-        image: profile.image || "",
-        address: profile.address || "",
-        about: profile.about || "",
-        website: profile.website || "",
-        // ── นิติบุคคล ──
-        companyName: p.companyName || "",
-        registrationNumber: p.registrationNumber || "",
-        businessType: p.businessType || "",
-        registeredDate: p.registeredDate || "",
-        registeredCapital: p.registeredCapital ?? null,
-        yearsExperience: p.yearsExperience ?? null,
-        teamSize: p.teamSize ?? null,
-        budgetMin: p.budgetMin ?? null,
-        budgetMax: p.budgetMax ?? null,
-        businessObjectives: p.businessObjectives || "",
-        certifications: p.certifications ?? [],
-        isEgpRegistered: p.isEgpRegistered ?? false,
-        pastProjects: p.pastProjects ?? [],
-        primaryContact: p.primaryContact ?? EMPTY_PRIMARY_CONTACT,
-        certificateFiles: p.certificateFiles ?? [],
-      } as FormState);
+    if (profile && bidderProfile && !formLoaded.current) {
+      formLoaded.current = true;
+      setFormData(toMainProfileForm(profile, bidderProfile));
     }
-  }, [profile]);
+  }, [profile, bidderProfile]);
 
   if (authLoading || loading) {
     return (
@@ -255,63 +195,33 @@ export default function ProfilePage() {
   }
 
   const accountTypeLabel =
-    profile?.accountType === "personal" || !profile?.accountType
-      ? "บุคคลทั่วไป"
-      : "นิติบุคคล";
+    profile?.accountType === "company" ? "บริษัท" : "บุคคล / ผู้ใช้งาน";
 
-  // นับเฉพาะฟิลด์ที่เกี่ยวกับประเภทบัญชีที่เลือก
-  const liveCompletionPercentage = (() => {
-    const filled = (v?: string | null) => Boolean(v?.trim());
-    const common = [
-      filled(formData.displayName),
-      filled(formData.contactEmail),
-      filled(formData.phone),
-      filled(formData.image),
-      filled(formData.address),
-      filled(formData.about),
-      selectedInterests.length > 0,
-    ];
+  // Required fields for qualification matching, as saved (UC-07)
+  const completeness = bidderProfile?.completeness;
+  const completionPercentage = completeness?.percentage ?? 0;
 
-    let specific: boolean[];
-    if (formData.accountType === "company") {
-      const pc = formData.primaryContact;
-      specific = [
-        filled(formData.companyName),
-        filled(formData.registrationNumber),
-        filled(formData.businessType),
-        formData.registeredCapital != null,
-        formData.yearsExperience != null,
-        (formData.certificateFiles?.length ?? 0) > 0,
-        (formData.pastProjects?.length ?? 0) > 0,
-        filled(pc?.name),
-        filled(pc?.position),
-      ];
-    } else {
-      specific = [
-        filled(formData.firstName),
-        filled(formData.lastName),
-        filled(formData.jobTitle),
-      ];
-    }
-
-    const fields = [...common, ...specific];
-    const completed = fields.filter(Boolean).length;
-    return Math.round((completed / fields.length) * 100);
-  })();
-
-  const handleFormSubmit = (e: React.FormEvent) => {
+  // Saves the main form; team members and projects are saved by their own editors. Incomplete
+  // profiles are saved as drafts (UC-07): only values in a wrong format stop the save.
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (formData.accountType === "company") {
-      const error = getCompanyFormError(formData);
-      if (error) {
-        setFormError(error);
-        return;
-      }
+    const error = mainFormError(formData);
+    if (error) {
+      setFormError(error);
+      return;
     }
 
     setFormError(null);
-    void updateProfile(formData as Partial<UserProfileData>);
+    try {
+      await saveMainProfile(formData);
+    } catch (error) {
+      setFormError(
+        error instanceof Error && error.message
+          ? `บันทึกไม่สำเร็จ: ${error.message}`
+          : "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+      );
+    }
   };
 
   const tabClass = (tab: TabType) =>
@@ -334,7 +244,7 @@ export default function ProfilePage() {
                 บัญชีผู้ใช้งาน
               </span>
               <h1 className="mt-1 text-2xl font-bold text-[#2d2d2d] md:text-3xl">
-                {profile?.displayName || profile?.name || "Kantapon Hemmadhun"}
+                {profile?.displayName || profile?.name || profile?.email || authUser?.email}
               </h1>
               <p className="mt-1 text-sm text-[#7a8b6f]">
                 {accountTypeLabel}
@@ -349,15 +259,31 @@ export default function ProfilePage() {
               <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-[#5c5446]">
                 <span>ความสมบูรณ์ของโปรไฟล์</span>
                 <span className="font-semibold text-[#4a7c59]">
-                  {liveCompletionPercentage}%
+                  {completionPercentage}%
                 </span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-[#e8e0d0]">
                 <div
                   className="h-full rounded-full bg-[#4a7c59] transition-all duration-500"
-                  style={{ width: `${liveCompletionPercentage}%` }}
+                  style={{ width: `${completionPercentage}%` }}
                 />
               </div>
+              <Link
+                href="/onboarding"
+                className="mt-2 inline-block text-[11px] font-semibold text-[#4a7c59] hover:underline"
+              >
+                กรอกแบบทีละขั้นตอน →
+              </Link>
+              {completeness && !completeness.isComplete && (
+                <div className="mt-2 text-[11px] text-[#7a8b6f]">
+                  <p className="font-medium text-[#5c5446]">กรอกเพิ่มเพื่อประเมินคุณสมบัติกับ TOR:</p>
+                  <ul className="mt-0.5 list-disc pl-4">
+                    {completeness.missing.map((key) => (
+                      <li key={key}>{missingFieldLabel(key)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
 
@@ -374,6 +300,12 @@ export default function ProfilePage() {
             </button>
             <button onClick={() => setActiveTab("recommended")} className={tabClass("recommended")}>
               TOR ที่แนะนำ
+            </button>
+            <button
+              onClick={() => setActiveTab("notifications")}
+              className={tabClass("notifications")}
+            >
+              การแจ้งเตือน
             </button>
           </div>
         </div>
@@ -395,180 +327,42 @@ export default function ProfilePage() {
         {activeTab === "profile" && (
           <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm md:p-8">
             <form onSubmit={handleFormSubmit} className="space-y-6">
-              {/* Top Section */}
-              <div className="grid grid-cols-1 gap-8 md:grid-cols-[1fr_auto] md:items-start">
-                {/* Account Type — Left */}
-                <div>
-                  <h2 className="text-lg font-bold text-[#2d2d2d]">ประเภทบัญชี</h2>
-                  <p className="mt-1 text-sm text-[#7a8b6f]">
-                    เลือกประเภทให้ตรงกับผู้ใช้งาน เพื่อให้เราแสดงข้อมูลที่เกี่ยวข้องได้อย่างถูกต้อง
-                  </p>
+              {/* Account type */}
+              <div>
+                <h2 className="text-lg font-bold text-[#2d2d2d]">ประเภทบัญชี</h2>
+                <p className="mt-1 text-sm text-[#7a8b6f]">
+                  เลือกประเภทให้ตรงกับผู้ใช้งาน เพื่อให้เราแสดงข้อมูลที่เกี่ยวข้องได้อย่างถูกต้อง
+                </p>
 
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {[
-                      { id: "personal", label: "บุคคลทั่วไป" },
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {(
+                    [
+                      { id: "personal", label: "บุคคล / ผู้ใช้งาน" },
                       { id: "company", label: "นิติบุคคล" },
-                    ].map((type) => (
-                      <button
-                        key={type.id}
-                        type="button"
-                        onClick={() =>
-                          setFormData({ ...formData, accountType: type.id as any })
-                        }
-                        className={`rounded-full border px-5 py-2.5 text-sm font-medium transition-all ${
-                          formData.accountType === type.id
-                            ? "border-[#4a7c59] bg-[#4a7c59] text-white shadow-sm"
-                            : "border-[#ddd5c8] bg-white text-[#5c5446] hover:bg-[#faf7f2]"
-                        }`}
-                      >
-                        {type.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Avatar — Right */}
-                <div className="grid grid-cols-1 gap-5 pt-2">
-                  <label className="mb-1.5 block text-xs font-semibold text-[#5c5446]">
-                    Avatar / รูปโปรไฟล์
-                  </label>
-
-                  <div className="flex items-center gap-4">
+                    ] as const
+                  ).map((type) => (
                     <button
+                      key={type.id}
                       type="button"
-                      onClick={handleAvatarClick}
-                      className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-full border border-[#e8e0d0] bg-[#faf7f2] focus:outline-none focus:ring-2 focus:ring-[#4a7c59]"
+                      onClick={() => setFormData({ ...formData, accountType: type.id })}
+                      className={`rounded-full border px-5 py-2.5 text-sm font-medium transition-all ${
+                        formData.accountType === type.id
+                          ? "border-[#4a7c59] bg-[#4a7c59] text-white shadow-sm"
+                          : "border-[#ddd5c8] bg-white text-[#5c5446] hover:bg-[#faf7f2]"
+                      }`}
                     >
-                      {formData.image ? (
-                        <img
-                          src={formData.image}
-                          alt="รูปโปรไฟล์"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="grid h-full w-full place-items-center text-[#b0a898]">
-                          <UserIcon className="size-8" />
-                        </div>
-                      )}
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                        <CameraIcon className="size-6 text-white" />
-                      </div>
+                      {type.label}
                     </button>
-
-                    <div>
-                      <button
-                        type="button"
-                        onClick={handleAvatarClick}
-                        className="rounded-full border border-[#ddd5c8] bg-white px-4 py-2 text-xs font-medium text-[#5c5446] hover:bg-[#faf7f2]"
-                      >
-                        เลือกรูปภาพ
-                      </button>
-
-                      {formData.image && (
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, image: "" })}
-                          className="ml-2 text-xs font-medium text-[#CC0000] hover:underline"
-                        >
-                          ลบรูป
-                        </button>
-                      )}
-
-                      <p className="mt-1.5 text-xs text-[#CC0000]">
-                        รองรับไฟล์ JPG, PNG ขนาดไม่เกิน 5MB
-                      </p>
-                    </div>
-
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageChange}
-                      className="hidden"
-                    />
-                  </div>
+                  ))}
                 </div>
               </div>
 
-              {/* ── บุคคลทั่วไป ── */}
+              {/* ── PERSONAL (forms/personal-form.tsx, shared with onboarding) ── */}
               {formData.accountType === "personal" && (
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 pt-2">
-                  <div>
-                    <label className={labelCls}>ชื่อที่แสดง</label>
-                    <input
-                      type="text"
-                      value={formData.displayName || ""}
-                      onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                      placeholder="เช่น Kantapon Hemmadhun"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>ชื่อ</label>
-                    <input
-                      type="text"
-                      value={formData.firstName || ""}
-                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>นามสกุล</label>
-                    <input
-                      type="text"
-                      value={formData.lastName || ""}
-                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>ตำแหน่งงาน</label>
-                    <input
-                      type="text"
-                      value={formData.jobTitle || ""}
-                      onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
-                      placeholder="เช่น นักพัฒนาซอฟต์แวร์"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>อีเมล</label>
-                    <input
-                      type="email"
-                      value={formData.contactEmail || ""}
-                      onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>เบอร์โทรศัพท์</label>
-                    <input
-                      type="tel"
-                      value={formData.phone || ""}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={labelCls}>ที่อยู่</label>
-                    <textarea
-                      rows={2}
-                      value={formData.address || ""}
-                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={labelCls}>เกี่ยวกับคุณ</label>
-                    <textarea
-                      rows={3}
-                      value={formData.about || ""}
-                      onChange={(e) => setFormData({ ...formData, about: e.target.value })}
-                      placeholder="แนะนำตัวสั้น ๆ เช่น ทักษะ ความถนัด หรือประสบการณ์"
-                      className={inputCls}
-                    />
-                  </div>
-                </div>
+                <PersonalForm
+                  value={formData}
+                  onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+                />
               )}
 
               {/* ── นิติบุคคล (แยกไปที่ forms/company-form.tsx) ── */}
@@ -576,6 +370,7 @@ export default function ProfilePage() {
                 <CompanyForm
                   value={formData}
                   onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch } as FormState))}
+                  teamCount={bidderProfile?.team.length ?? 0}
                 />
               )}
 
@@ -600,6 +395,29 @@ export default function ProfilePage() {
                 </div>
               </div>
             </form>
+
+            {/* Saved one item at a time, separately from the form above */}
+            {bidderProfile && (
+              <div className="mt-8 space-y-4 border-t border-[#f0e8dc] pt-6">
+                <div>
+                  <h2 className="text-lg font-bold text-[#2d2d2d]">ข้อมูลสำหรับประเมินคุณสมบัติ</h2>
+                  <p className="mt-1 text-sm text-[#7a8b6f]">
+                    แต่ละรายการบันทึกทันทีเมื่อกดบันทึก ระบบจะประเมินความเหมาะสมกับ TOR ใหม่ให้อัตโนมัติ
+                  </p>
+                </div>
+                {bidderProfile.accountType !== formData.accountType && (
+                  <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                    กด &quot;บันทึกการเปลี่ยนแปลง&quot; เพื่อเปลี่ยนประเภทบัญชีก่อน แล้วจึงกรอกข้อมูลด้านล่าง
+                  </p>
+                )}
+                {bidderProfile.accountType === "company" ? (
+                  <TeamEditor profile={bidderProfile} />
+                ) : (
+                  <SelfEditor profile={bidderProfile} />
+                )}
+                <ProjectsEditor profile={bidderProfile} />
+              </div>
+            )}
           </div>
         )}
 
@@ -868,6 +686,16 @@ export default function ProfilePage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* ── TAB 5: Qualifying-TOR email notifications ── */}
+        {activeTab === "notifications" && profile && (
+          <NotificationSettings
+            key={JSON.stringify([profile.qualification, profile.notificationPrefs])}
+            profile={profile}
+            saving={saving}
+            onSave={updateProfile}
+          />
         )}
       </main>
     </div>

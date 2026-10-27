@@ -68,7 +68,9 @@ flowchart TB
       llm[DeepSeek / Gemini extractor]
       deadline[egp-submit-deadline<br/>+ thai-date]
     end
-    notif["apps/notification-worker<br/>(placeholder, not implemented)"]
+    subgraph notifApp[apps/notification-worker]
+      notifW[notification.worker<br/>batch per user → SMTP]
+    end
   end
 
   apiClient --> auth
@@ -80,6 +82,9 @@ flowchart TB
   svc --> llm
   egpA --> deadline --> odl
   svc --> torM
+  workerApp -->|enqueueForTor| notifM[notification<br/>tor_notifications]
+  userM -->|enqueueForUser| notifM
+  notifApp --> notifM
 ```
 
 ## 3. Ingestion pipeline
@@ -223,9 +228,9 @@ Every source ends up as an 11-digit Central e-GP project id. That's why one work
 
 | Prefix | Endpoints | Used by |
 |---|---|---|
-| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar` | TOR list and detail pages (`/:id/similar` = similar TORs whose bidding has closed, UC-05) |
+| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar`, `GET/POST /:id/qualification` | TOR list and detail pages (`/:id/similar` = similar TORs whose bidding has closed, UC-05; `/:id/qualification` = AI qualification match for the logged-in user, UC-08, see §10) |
 | `/homepage` | `GET /summary`, `GET /analytics` | Homepage dashboard |
-| `/user` | `GET/PUT /profile`, `PUT /interests`, `GET /bookmarks`, `POST /bookmarks/:torId` | Profile and saved pages |
+| `/user` | `GET/PUT /profile`, `PUT /interests`, `PUT /onboarding` (`{ status: 'completed' | 'dismissed' }`, so the wizard is not offered again), `GET /bookmarks`, `POST /bookmarks/:torId` · `GET /qualification-matches?torIds=` (precomputed scores for TOR cards, §11) · `GET /bidder-profile`, `GET /bidder-profile/options`, `PUT /bidder-profile/organization`, `PUT /bidder-profile/self`, `PUT /bidder-profile/preferences`, `POST /bidder-profile/team`, `PATCH/DELETE /bidder-profile/team/:memberId`, `POST /bidder-profile/projects`, `PATCH/DELETE /bidder-profile/projects/:projectId` | Profile and saved pages (bidder profile not called by the frontend yet, see §9) |
 | `/reports` | `GET /price-overview`, `/savings-distribution`, `/category-comparison`, `/timeline`, `/procurement-list`, `/filters/departments` | Reports page (mock awarded price, see §8) |
 | `/admin` | `GET /stats` · `GET /users`, `GET/PATCH /users/:userId`, `PATCH /users/:userId/role`, `PATCH /users/:userId/status` · `GET /activity` · `GET/PATCH /settings` · `GET /tors`, `GET/PATCH/DELETE /tors/:torId`, `POST /tors/:torId/verify`, `POST /tors/:torId/archive` · `GET /ingestion/status`, `POST /ingestion/sync` · `GET/POST /categories`, `PATCH/DELETE /categories/:categoryId`, `PATCH /categories/:categoryId/status` | Admin page (admin role only) |
 | `/ingestion` | `GET /report` | Not called by the frontend yet (ops, job status report) |
@@ -247,3 +252,76 @@ Every page reads `tors`. Price reports (`/reports/*`, the homepage price chart a
 The mock is never written to the database and never returned by `/tors` or `/tors/:id`, so a TOR still open for bids shows no winning price anywhere. It is deterministic (an md5 hash of `externalId`) and its savings % follows the bands seen in 563 real finished software projects: 1% above the mid price, 59% saving 0–5%, 12% saving 5–10%, 7% saving 10–15%, 21% saving 15–30%. Each report response carries `source` (`collection`, `as_of`, `project_count`, `mock_awarded_count`) and every row carries `awarded_is_mock`, for developers. The pages deliberately do not show which prices are mock, so the frontend needs no change when real prices arrive; only the mock in `finished-tors.ts` goes away. Results are cached in memory for 60 seconds. Report dates use `announceDate`, then `submissionDeadlineAt`, then `analyzedAt`. The report maths is in `report.calculations.ts` and is unit tested without a database.
 
 When ingestion starts storing real awarded prices, they replace the mock automatically, TOR by TOR.
+
+## 9. Bidder profile and the derived qualification
+
+The bidder profile (`bidder_profiles`, one document per user, in `modules/user`) holds what qualification matching needs in detail: the organization (juristic type, registration date, capital, SME/net worth/Bangkok office, company certifications), the individual bidder's own record (`self`) or a company's `team`, and past `projects` (name, contract value, delivery date `endDate`, …). Each person has a position, roles, years of experience, the date they joined the company (`joinedAt`), education and certifications. Roles, education levels and other enums come from fixed lists (`GET /user/bidder-profile/options`, defined in `bidder-profile.constants.ts`). Certifications are stored by name (e.g. "ISO/IEC 27001:2022", "PMP") with issuer, issue date and expiry; responses add `yearsHeld` (since `issuedAt`) and `isExpired`, and team members get `yearsAtCompany`. Certification names are judged by the AI matcher, not by keys.
+
+`accountType` on the user picks the kind of bidder: `personal` is an individual (บุคคลธรรมดา) and edits `self`; `company` is a juristic person (นิติบุคคล) and edits `organization` and `team`. Both can add projects and set `preferences` (`PUT /user/bidder-profile/preferences`: `budgetMinBaht`, `budgetMaxBaht`, `businessObjectives`), which say what the bidder is looking for rather than what they qualify for.
+
+Every write to the bidder profile, and every `accountType` change, rewrites `users.qualification` from it (`deriveQualification` in `bidder-profile.qualification.ts`), then re-queues notifications for the user:
+
+| `users.qualification` field | Derived from |
+|---|---|
+| `registeredCapitalBaht`, `isSme`, `hasPositiveNetWorth`, `hasBangkokOffice` | organization (company only) |
+| `yearsInBusiness` | calendar years since `organization.registeredDate` |
+| `maxPastContractValueBaht`, `pastContractAgeYears` | the project with the highest contract value; a project with no end date counts as current |
+| `certifications` | names of company certifications that have not expired. The key-based notification matcher no longer recognizes them, so a TOR with `requiredCertifications` does not notify until notifications move to the AI matcher |
+| `isThaiJuristicPerson` | `accountType === 'company'` |
+| `staffRoles` | roles of the team (company) or of `self` (individual) |
+
+So `notification/eligibility.ts` keeps reading the same flat `qualification`. Users who have no bidder profile keep the qualification they entered by hand through `PUT /user/profile`. `GET /user/bidder-profile` also returns `completeness` (UC-07): the fields still missing before matching can give a full result. Saving is never blocked by it. Required fields follow the agreed profile spec: a company needs `companyName`, `businessType`, `organization.registeredCapitalBaht` and at least one project with a contract value; an individual needs a name (`displayName`, or `firstName` and `lastName`), a contact (`contactEmail` or `phone`) and the same project. The team is optional.
+
+New users fill these in through the onboarding wizard (`/onboarding` in the frontend), which opens after login while the profile is incomplete and `users.onboardingStatus` is null. Finishing or skipping it calls `PUT /user/onboarding`, so it is not offered again; the profile page and the homepage banner link back to it.
+
+## 10. AI qualification match (UC-08)
+
+`modules/qualification` compares the logged-in user's bidder profile (§9) with one TOR and gives a percentage plus a per-requirement breakdown.
+
+1. `POST /api/v1/tors/:id/qualification` builds two JSON snapshots and sends them to the AI provider (`AI_PROVIDER`, the same DeepSeek or Gemini settings as ingestion) in one call:
+   - the TOR: title, budget, scope, `bidderQualifications`, `requirements`, `evaluationCriteria`, technologies (long text truncated);
+   - the bidder: company data with years in business, the bidder's `preferences` (sent as context only: the prompt forbids treating them as requirements, so they never change the score; the summary says whether the TOR's budget is in the preferred range), every person by label (`คนที่ 1`, never by name) with position, roles, experience, years at the company, education and certifications with years held and expiry, and past projects with value, delivery date and the people who worked on them.
+2. The AI lists the TOR's requirements on the bidder (skipping standard legal declarations, conditions for the other kind of bidder, bid bonds and documents to submit) and judges each one `met`, `partial`, `not_met` or `unknown`, with a Thai reason and suggestion, and whether it is a condition to bid (`mandatory`).
+3. The score is computed in code, not by the AI, so the same judgments always give the same number: met = 1, partial = 0.5, not_met and unknown = 0, percentage = points / requirements × 100. `allMandatoryMet` is true when every mandatory requirement is met.
+4. The result is stored in `qualification_matches` (one per user and TOR). Its `inputVersion` is the prompt version (`MATCH_PROMPT_VERSION`) plus a hash of the exact bidder and TOR snapshots the AI is shown, so edits the AI never sees (phone, interests, a person's name) do not invalidate it. A result is also stale after 30 days (`MAX_MATCH_AGE_DAYS`), because durations such as years held or certificate expiry move with time. `GET` returns the stored result and `isStale: true` when it is stale; `POST` reuses the stored result unless it is stale or `?force=true` is passed, so viewing a TOR again costs no AI call.
+
+| Response | When |
+|---|---|
+| `200 { match, isStale, completeness }` | `match` is null on `GET` until the first `POST` |
+| `401` | not logged in |
+| `400` / `404` | invalid or unknown (or hidden) TOR id |
+| `409` | account type is not personal or company, or no bidder profile yet (`completeness` says what to fill in) |
+| `422` | the TOR has no extracted requirement text |
+| `502` | the AI call failed; the previous result is kept |
+
+## 11. Precomputed qualification scores for TOR cards
+
+So a user sees on every TOR card whether they qualify, the qualification worker (`apps/qualification-worker`, `npm run dev:qualification`) computes matches ahead of time. To limit AI calls it only works on **candidate TORs**: public, still open for bids (`submissionDeadlineAt` empty or in the future) and with requirement text. It only works for **ready bidders**: a `personal` or `company` account whose bidder profile is complete (§9).
+
+```mermaid
+flowchart LR
+  edit[Profile saved<br/>PUT /user/profile, /user/bidder-profile/*] -->|"enqueue, run after 5 min"| jobs[(qualification_match_jobs)]
+  sweep[Sweep every 10 min<br/>missing or stale pairs] -->|enqueue, run now| jobs
+  jobs --> worker[qualification worker<br/>one job at a time]
+  worker -->|"input unchanged: no AI call"| matches[(qualification_matches)]
+  worker -->|"AI call (§10)"| matches
+  cards[TOR list page] -->|"GET /user/qualification-matches?torIds=…"| matches
+```
+
+- **Jobs** (`qualification_match_jobs`): one row per user and TOR, `queued → processing → done | skipped | failed`. Queueing a pair again moves its row back to queued and pushes `runAfter` later, so a user editing a form field by field causes one AI call per TOR once they stop (`QUALIFICATION_PROFILE_DELAY_MS`, default 5 minutes).
+- **Sweep** (`QUALIFICATION_SWEEP_INTERVAL_MS`, default 10 minutes): queues every ready bidder and candidate TOR pair whose result is missing or stale and that has no waiting job. This is how newly ingested TORs get scored; ingestion itself is not changed.
+- **Worker**: skips a job whose bidder is no longer ready or whose TOR closed; finishes without an AI call when the stored result is still current (same input hash, §10); otherwise calls the AI and stores the result. Failures retry after 1 and 10 minutes, then the job is `failed`. When `QUALIFICATION_DAILY_CALL_LIMIT` (default 200) results were computed in the last 24 hours, jobs wait an hour without using an attempt. The count is approximate: a pair recomputed twice in a day counts once.
+- **Cards** (`GET /user/qualification-matches?torIds=a,b,c`, up to 50 ids, never calls the AI): returns `completeness` and, per TOR, `status` with `percentage`, `allMandatoryMet` and `evaluatedAt`.
+
+| `status` | Card shows |
+|---|---|
+| `ready` | the score |
+| `stale` | the previous score while a new one is computed |
+| `pending` | queued or running, no score yet |
+| `failed` | the AI failed three times |
+| `not_evaluated` | no score, for example a closed TOR; the detail page can still `POST /tors/:id/qualification` |
+| `profile_incomplete` | a prompt to finish the profile |
+| `no_requirements` | the TOR has no extracted requirements |
+
+For testing on a database whose TORs have all closed, set `QUALIFICATION_TEST_LATEST_TORS=N` to treat the N latest TORs as open. Leave it empty in production.
+

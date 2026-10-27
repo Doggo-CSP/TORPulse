@@ -85,7 +85,7 @@ export function fetchAdminStats(): Promise<AdminStats> {
 
 export type UserRole = "admin" | "user";
 export type UserStatus = "active" | "suspended";
-export type AccountType = "personal" | "company" | "agency";
+export type AccountType = "personal" | "company";
 
 export interface AdminUserItem {
   _id: string;
@@ -95,7 +95,6 @@ export interface AdminUserItem {
   role: UserRole;
   status: UserStatus;
   accountType: AccountType;
-  agencyName?: string;
   companyName?: string;
   jobTitle?: string;
   image?: string | null;
@@ -105,7 +104,6 @@ export interface AdminUserItem {
 export interface AdminUserUpdateInput {
   name?: string;
   jobTitle?: string;
-  agencyName?: string;
   companyName?: string;
   accountType?: AccountType;
 }

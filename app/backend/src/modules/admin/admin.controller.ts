@@ -182,13 +182,7 @@ export const getAdminUsers = async (req: Request, res: Response): Promise<void> 
     if (typeof q === 'string' && q.trim()) {
       const regex = new RegExp(escapeRegex(q.trim()), 'i')
       conditions.push({
-        $or: [
-          { name: regex },
-          { displayName: regex },
-          { email: regex },
-          { agencyName: regex },
-          { companyName: regex },
-        ],
+        $or: [{ name: regex }, { displayName: regex }, { email: regex }, { companyName: regex }],
       })
     }
 
@@ -204,7 +198,6 @@ export const getAdminUsers = async (req: Request, res: Response): Promise<void> 
       role: u.role || 'user',
       status: u.status || 'active',
       accountType: u.accountType || 'personal',
-      agencyName: u.agencyName,
       companyName: u.companyName,
       jobTitle: u.jobTitle,
       image: u.image ?? null,
@@ -312,7 +305,6 @@ export const getAdminUserById = async (req: Request, res: Response): Promise<voi
         role: u.role || 'user',
         status: u.status || 'active',
         accountType: u.accountType || 'personal',
-        agencyName: u.agencyName,
         companyName: u.companyName,
         jobTitle: u.jobTitle,
         firstName: u.firstName,

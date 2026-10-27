@@ -6,7 +6,7 @@ import type { ProcurementProject } from '../adapters/procurement-source.adapter.
 
 const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/chat/completions'
 const MAX_RESPONSE_TOKENS = 8_000
-export const TOR_ANALYSIS_VERSION = 'v3'
+export const TOR_ANALYSIS_VERSION = 'v4'
 const stringArraySchema = z.preprocess(
   (value) => (value === null || value === undefined ? [] : value),
   z.array(z.string()),
@@ -151,7 +151,7 @@ Return one JSON object with exactly this shape:
 
 For "submissionDeadline", return the bid/proposal submission deadline (วันยื่นข้อเสนอ / ปิดรับข้อเสนอ) as YYYY-MM-DD in the Gregorian calendar. Convert Buddhist-era years by subtracting 543 (2569 -> 2026). Return null when the document does not state an exact day, and never use the document's own issue or approval date.
 
-For "bidderQualifications", extract each explicit qualification for the bidder or offeror (คุณสมบัติผู้ยื่นเสนอ) as a separate concise, source-grounded item. Do not infer qualifications. Use [] when the section is absent.
+For "bidderQualifications", extract each explicit qualification for the bidder or offeror (คุณสมบัติผู้ยื่นเสนอ) as a separate concise, source-grounded item, including financial requirements (registered capital, net worth), past-work requirements, required personnel and office location. Do not infer qualifications. Use [] when the section is absent.
 
 Project categories. Use only these keys:
 ${formatCategoryList(categories)}
