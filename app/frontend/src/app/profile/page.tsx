@@ -137,6 +137,9 @@ export default function ProfilePage() {
   });
   const [formData, setFormData] = useState<FormState>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; text: string } | null>(null);
+
   // Toggle against everything saved, not just the cards on screen, so interests in hidden
   // categories are kept (the backend accepts hidden keys the user already has).
   const handleInterestToggle = (catKey: string) => {
@@ -157,6 +160,13 @@ export default function ProfilePage() {
       setFormData(toMainProfileForm(profile, bidderProfile));
     }
   }, [profile, bidderProfile]);
+
+  // ซ่อนข้อความ "บันทึกสำเร็จ" เองหลัง 4 วินาที
+  useEffect(() => {
+    if (!saveResult?.ok) return;
+    const t = setTimeout(() => setSaveResult(null), 4000);
+    return () => clearTimeout(t);
+  }, [saveResult]);
 
   if (authLoading || loading) {
     return (
@@ -205,6 +215,7 @@ export default function ProfilePage() {
   // profiles are saved as drafts (UC-07): only values in a wrong format stop the save.
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveResult(null);
 
     const error = mainFormError(formData);
     if (error) {
@@ -213,14 +224,18 @@ export default function ProfilePage() {
     }
 
     setFormError(null);
+    setSubmitting(true);
     try {
       await saveMainProfile(formData);
+      setSaveResult({ ok: true, text: "บันทึกสำเร็จ" });
     } catch (error) {
       setFormError(
         error instanceof Error && error.message
           ? `บันทึกไม่สำเร็จ: ${error.message}`
           : "บันทึกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
       );
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -326,7 +341,7 @@ export default function ProfilePage() {
         {/* ── TAB 1: Profile CRUD ── */}
         {activeTab === "profile" && (
           <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm md:p-8">
-            <form onSubmit={handleFormSubmit} className="space-y-6">
+            <form id="profile-main-form" onSubmit={handleFormSubmit} className="space-y-6">
               {/* Account type */}
               <div>
                 <h2 className="text-lg font-bold text-[#2d2d2d]">ประเภทบัญชี</h2>
@@ -373,27 +388,6 @@ export default function ProfilePage() {
                   teamCount={bidderProfile?.team.length ?? 0}
                 />
               )}
-
-              {/* Form Footer */}
-              <div className="border-t border-[#f0e8dc] pt-6">
-                {formError && (
-                  <p role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {formError}
-                  </p>
-                )}
-                <div className="flex flex-col items-center gap-4 sm:flex-row">
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="rounded-full bg-[#4a7c59] px-8 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#3b6647] disabled:opacity-50"
-                  >
-                    {saving ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
-                  </button>
-                  <span className="text-xs text-[#998f80]">
-                    ข้อมูลส่วนบุคคลของคุณเป็นความลับ ผู้ใช้อื่นมองไม่เห็น
-                  </span>
-                </div>
-              </div>
             </form>
 
             {/* Saved one item at a time, separately from the form above */}
@@ -418,6 +412,38 @@ export default function ProfilePage() {
                 <ProjectsEditor profile={bidderProfile} />
               </div>
             )}
+
+            {/* Save bar: stays at the bottom of the screen while the card is in view */}
+            <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-8 flex flex-col gap-3 rounded-b-3xl border-t border-[#f0e8dc] bg-white/95 px-6 py-4 backdrop-blur sm:flex-row-reverse sm:items-center md:-mx-8 md:-mb-8 md:px-8">
+              <button
+                type="submit"
+                form="profile-main-form"
+                disabled={submitting}
+                className="rounded-full bg-[#4a7c59] px-8 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#3b6647] disabled:opacity-50"
+              >
+                {submitting ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}
+              </button>
+
+              <div aria-live="polite" className="min-w-0 flex-1 text-sm sm:text-right">
+                {formError ? (
+                  <p
+                    role="alert"
+                    className="rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-red-700"
+                  >
+                    {formError}
+                  </p>
+                ) : saveResult ? (
+                  <p className="flex items-center gap-1.5 font-medium text-[#2d5a37]">
+                    <CheckCircleIcon className="size-5" />
+                    {saveResult.text}
+                  </p>
+                ) : (
+                  <span className="text-xs text-[#998f80]">
+                    ข้อมูลส่วนบุคคลของคุณเป็นความลับ ผู้ใช้อื่นมองไม่เห็น
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
