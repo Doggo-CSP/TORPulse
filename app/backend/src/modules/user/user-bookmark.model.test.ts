@@ -17,6 +17,12 @@ test('validates a bookmark and exposes its unique (userId, torId) index', async 
 })
 
 test('requires both userId and torId', async () => {
-  await assert.rejects(() => new UserBookmarkModel({ torId: new Types.ObjectId() }).validate(), /userId/)
-  await assert.rejects(() => new UserBookmarkModel({ userId: new Types.ObjectId() }).validate(), /torId/)
+  await assert.rejects(
+    () => new UserBookmarkModel({ torId: new Types.ObjectId() }).validate(),
+    /userId/,
+  )
+  await assert.rejects(
+    () => new UserBookmarkModel({ userId: new Types.ObjectId() }).validate(),
+    /torId/,
+  )
 })

@@ -1,0 +1,80 @@
+# Commands
+
+Every command for running, testing and maintaining TORPulse. Backend commands run from `app/backend`, frontend commands from `app/frontend`. Arguments after `--` go to the script.
+
+Before running backend commands, copy `app/backend/.env.example` to `.env` and fill it in. Commands that touch the database use `MONGODB_URI` / `MONGODB_DATABASE` from that file, so check which database it points at (local or shared Atlas) before running anything that writes.
+
+## Backend: run the services
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Starts the REST API (`src/apps/api/server.ts`) on `PORT` (default 8000) with hot reload. Serves `/auth/*` (Google OAuth) and `/api/v1/*`. |
+| `npm run dev:producer` | Starts the queue producer with hot reload. It runs BMA discovery (unless `BMA_SYNC_ENABLED=false`), enqueues ingestion jobs, then sleeps for `DISCOVERY_SYNC_INTERVAL_MS`. |
+| `npm run dev:ingestion` | Starts the ingestion worker with hot reload. It claims queued jobs one at a time, downloads the TOR PDFs from Central eGP, extracts the text, classifies it with Gemini, reads the submission deadline from the announcement PDF and stores the TOR. Needs Java (for OpenDataLoader) and AI credentials. |
+| `npm run dev:notification` | Starts the notification worker with hot reload. It claims queued qualifying-TOR notifications, groups them per user and sends one email per user over SMTP (`SMTP_*`). Failed sends retry with backoff up to 3 attempts. |
+| `npm run dev:qualification` | Starts the qualification worker with hot reload. It precomputes AI qualification scores for TOR cards: every 10 minutes it queues each ready bidder and open TOR pair whose score is missing or stale, then works the queue one job at a time within `QUALIFICATION_DAILY_CALL_LIMIT`. Needs the Gemini settings (`GOOGLE_API_KEY` or `GOOGLE_CLOUD_PROJECT`). See system-architecture.md §11. |
+| `npm run build` | Compiles TypeScript to `dist/`. |
+| `npm start` | Runs the compiled API (`dist/apps/api/server.js`). |
+| `npm run start:producer` | Runs the compiled queue producer. |
+| `npm run start:ingestion` | Runs the compiled ingestion worker. |
+| `npm run start:notification` | Runs the compiled notification worker. |
+| `npm run start:qualification` | Runs the compiled qualification worker. |
+
+A full local pipeline needs three terminals: `dev`, `dev:producer` and `dev:ingestion`, plus `dev:notification` to send qualifying-TOR emails. More than one producer or worker can run at once. Producers share a lease per data source, and workers lease jobs, so no work is done twice.
+
+## Backend: tests and code quality
+
+| Command | What it does |
+|---|---|
+| `npm test` | Runs every test group below in order and stops at the first failing group. Some route tests need a reachable MongoDB, so use a throwaway local database. CI does this, using a `mongo:7` service container. |
+| `npm run test:central-egp` | Central eGP adapter: archive metadata, ZIP download and TOR file selection, throttling and retries. |
+| `npm run test:producer` | Discovery adapters (eGP announcement search, BMA) and the Thai fiscal year helper. |
+| `npm run test:tor` | TOR model and repository, job queue repository, ingestion report, Thai date parsing, submit deadline extraction, repair and backfill helpers, and the TOR analysis parser and Gemini extractor. |
+| `npm run test:auth` | Auth routes and auth config. |
+| `npm run test:user` | Profile, interests, bookmarks and the bidder profile: model, repository, derived qualification and routes. |
+| `npm run test:homepage` | TOR controller, homepage routes and TOR routes. |
+| `npm run test:qualification` | AI qualification match: bidder and TOR snapshots, prompt, parsing, scoring, caching, routes, and the precompute queue, worker and card endpoint. The AI call is mocked, so no API key is used. Route tests need MongoDB. |
+| `npm run test:report` | Report maths and the mock awarded price rules (open TORs get none). Pure unit tests, no database. |
+| `npm run test:queue-upsert` | Manual check against the configured database. Upserts one test job twice and confirms the queue stays idempotent. |
+| `npm run type-check` | `tsc --noEmit`. CI runs it. |
+| `npm run format` | Formats the code with Prettier. |
+| `npm run format:check` | Checks formatting without writing. CI runs it. |
+
+## Backend: data and maintenance scripts
+
+These scripts write to the configured database unless they are marked read-only.
+
+| Command | What it does |
+|---|---|
+| `npm run seed:categories` | Inserts any of the 8 default TOR categories that is missing from `categories`, including one an admin deleted. Existing rows are never overwritten. The API and the worker seed only when the collection is empty. |
+| `npm run set-admin -- <email>` | Makes a user an active admin. The user must have signed in with Google once first, so that their record exists. |
+| `npm run requeue:jobs -- [--dry-run] [--status=failed,rejected]` | Resets finished jobs to `queued`, so a running worker processes them again. With no `--status`, it resets every finished status (`completed`, `failed`, `rejected`, `review_required`, `skipped`). Jobs held by a worker are never touched. |
+| `npm run report:job-failures` | **Read-only.** Shows job counts by status and stage, then error messages grouped by both. |
+| `npm run repair:missing-tors` | Finds jobs marked `completed` whose TOR record is missing and queues them again. |
+| `npm run backfill:deadlines -- [--dry-run]` | Parses the stored `submissionDeadline` text into `submissionDeadlineAt` on existing TORs. No LLM calls. |
+| `npm run backfill:eligibility -- [--all] [--dry-run]` | Maps each TOR's stored `bidderQualifications` onto structured `eligibility` (one small LLM call per TOR), then queues notifications for users who now fully qualify. Default scope is public TORs still open for bidding. |
+| `npm run seed:notify-user -- <contactEmail> [--clean]` | Dev only. Creates or refreshes a mock company user (`mock-notify-user@example.com`) whose qualification meets every open TOR's eligibility, prints which TORs it fully qualifies for, and queues the emails to `<contactEmail>`. `--clean` removes the user and its notifications. |
+| `npm run backfill:egp-details` | Fills department, status and prices on TORs with `sourceAdapter: central_egp` (not `bma_egp`) from the eGP project-detail endpoints. Exits with code 1 if any project fails. |
+| `npm run backfill:bma-details -- [--dry-run] [--all]` | Fills BMA project id, middle price (`projectAverageBudget`) and contract status on `bma_egp` TORs and their ingestion jobs from the BMA project-detail API. Default visits only TORs without `midPriceBaht`; `--all` revisits every BMA TOR to refresh contract status. About 3s per project. Exits with code 1 if any project fails. |
+| `npm run discover:egp -- [--announce-type 1,2,3] [--budget-year 2570] [--max-pages 50] [--dry-run]` | One-off discovery of projects still open for bidding, from the Central eGP announcement search. Needs `EGP_ANNOUNCEMENT_TOKEN`: copy the `X-Announcement-Token` header from a browser search on process5.gprocurement.go.th. The token expires after about 20 minutes. |
+| `npm run sandbox:egp -- [--project <id>] [--download] ...` | **Experiment.** Lists eGP announcements, or reads one project, and resolves each submit deadline from its announcement PDF. Writes to `sandbox-output/`, not to the database. |
+| `npx tsx src/scripts/seed-homepage-tors.ts` | Seeds sample TORs (`seed-homepage-*` data sources) for the homepage. |
+| `npx tsx src/scripts/seed-procurement-reports.ts` | **Outdated, do not run on a shared database.** Seeds made-up priced TORs into `tors`, which then mix with real TORs on every page. Reports already work on real TORs (with a labelled mock awarded price; see system-architecture.md §8). |
+
+## Frontend
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Starts the Next.js dev server on http://localhost:3000. Set `NEXT_PUBLIC_API_URL` (for example `http://localhost:8000`) in `.env.local`. |
+| `npm run build` | Production build. CI runs it. |
+| `npm start` | Serves the production build. |
+| `npm run lint` | ESLint. CI runs it. |
+
+## Queue producer environment
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DISCOVERY_SYNC_INTERVAL_MS` | `600000` | Pause between producer rounds. Also shown read-only in admin settings. |
+| `BMA_SYNC_ENABLED` | `true` | Set to `false` to turn off BMA discovery. |
+| `BMA_KEYWORDS` | software-related Thai and English terms | Keywords sent to the BMA search as `projectSearchText`. BMA titles are Thai. |
+| `BMA_BUDGET_YEAR` | current Thai fiscal year | Comma-separated BMA `masterBudgetYearId` values, for example `2570,2569`. Every listed year is synced. |

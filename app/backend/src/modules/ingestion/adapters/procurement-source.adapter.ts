@@ -3,6 +3,11 @@ export interface ProcurementProject {
   title: string
   detailUrl: string
   agencyName?: string
+  departmentName?: string
+  departmentSubName?: string
+  projectStatus?: string | null
+  midPriceBaht?: number | null
+  awardedPriceBaht?: number | null
 }
 
 export interface DownloadDocument {

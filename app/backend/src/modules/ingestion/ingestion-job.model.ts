@@ -1,5 +1,27 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
+import { announcementSchema } from '../tor/tor.model.js'
+
+// Project metadata from the discovery source, refreshed on every producer sync.
+const sourceMetadataSchema = new Schema(
+  {
+    title: { type: String, default: null },
+    departmentName: { type: String, default: null },
+    departmentSubName: { type: String, default: null },
+    projectStatus: { type: String, default: null },
+    sourceProjectId: { type: String, default: null },
+    contractStatus: { type: String, default: null },
+    contractStatusCode: { type: String, default: null },
+    fiscalYear: { type: Number, default: null },
+    announceDate: { type: Date, default: null },
+    budgetBaht: { type: Number, min: 0, default: null },
+    midPriceBaht: { type: Number, min: 0, default: null },
+    awardedPriceBaht: { type: Number, min: 0, default: null },
+    announcements: { type: [announcementSchema], default: undefined },
+  },
+  { _id: false },
+)
+
 const ingestionJobSchema = new Schema(
   {
     dataSourceId: {
@@ -29,7 +51,15 @@ const ingestionJobSchema = new Schema(
     status: {
       type: String,
       required: true,
-      enum: ['queued', 'processing', 'completed', 'failed', 'rejected', 'review_required'],
+      enum: [
+        'queued',
+        'processing',
+        'completed',
+        'failed',
+        'rejected',
+        'review_required',
+        'skipped',
+      ],
       default: 'queued',
     },
 
@@ -48,6 +78,11 @@ const ingestionJobSchema = new Schema(
         'completed',
       ],
       default: 'queued',
+    },
+
+    sourceMetadata: {
+      type: sourceMetadataSchema,
+      default: null,
     },
 
     attempCount: {

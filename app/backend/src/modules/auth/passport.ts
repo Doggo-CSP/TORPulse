@@ -13,6 +13,8 @@ declare global {
       name: string
       email: string
       image: string | null
+      role?: 'admin' | 'user'
+      status?: 'active' | 'suspended'
     }
   }
 }
@@ -45,10 +47,19 @@ export const createPassport = (config: ApiAuthConfig): passport.Authenticator =>
                   email,
                   image: profile.photos?.[0]?.value ?? null,
                 },
-                $setOnInsert: { googleId: profile.id },
+                $setOnInsert: {
+                  googleId: profile.id,
+                  role: 'user',
+                  status: 'active',
+                },
               },
               { upsert: true, returnDocument: 'after', runValidators: true },
             )
+
+            if (!user || user.status === 'suspended') {
+              done(null, false)
+              return
+            }
 
             done(null, user)
           } catch (error) {
@@ -65,7 +76,9 @@ export const createPassport = (config: ApiAuthConfig): passport.Authenticator =>
 
   authPassport.deserializeUser((id: string, done) => {
     void User.findById(id)
-      .then((user: UserDocument | null) => done(null, user ?? false))
+      .then((user: UserDocument | null) =>
+        done(null, user && user.status !== 'suspended' ? user : false),
+      )
       .catch((error: unknown) => done(error as Error))
   })
 

@@ -1,9 +1,13 @@
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
+// Counts over `tors`, the TORs still open for bidding
 export interface HomepageSummary {
   total_tors: number;
   total_sources: number;
   total_budget: number;
+  // Average budget over the TORs that state one
+  avg_budget: number | null;
+  // TORs that entered the system this week (Monday start, Bangkok time)
   new_this_week: number;
   last_updated: string | null;
 }
@@ -20,9 +24,37 @@ export interface CategoryMetric {
   percentage: number;
 }
 
+// Prices come from TORs in `tors` with a mid and an awarded price. The awarded price is a mock
+// for TORs whose bidding has closed (priceSource.mock_awarded_count). Every active category is
+// listed; averages are null when a category has no such TOR.
+export interface PriceComparisonMetric {
+  category: string;
+  label: string;
+  projectCount: number;
+  avgMidPriceBaht: number | null;
+  avgAwardedPriceBaht: number | null;
+}
+
+export interface PriceSummary {
+  projectCount: number;
+  avgMidPriceBaht: number | null;
+  avgAwardedPriceBaht: number | null;
+  avgDiscountPct: number | null;
+}
+
 export interface HomepageAnalytics {
   topTechnologies: TechnologyMetric[];
   categoryDistribution: CategoryMetric[];
+  priceComparison: PriceComparisonMetric[];
+  priceSummary: PriceSummary;
+  // Where the prices come from
+  priceSource: {
+    collection: string;
+    as_of: string;
+    project_count: number;
+    // How many of project_count use a mock awarded price
+    mock_awarded_count: number;
+  } | null;
 }
 
 /**

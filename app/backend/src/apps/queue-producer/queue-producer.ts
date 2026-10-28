@@ -1,55 +1,76 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 
+import type { Types } from 'mongoose'
+
 import { env } from '../../config/env.js'
+import { createAuditLog } from '../../modules/admin/audit-log.repository.js'
+import { getSettings } from '../../modules/admin/settings.repository.js'
+import { BmaDiscoveryAdapter } from '../../modules/ingestion/adapters/bma-discovery.adapter.js'
 import {
-  getThaiFiscalYear,
-  GovSpendingDiscoveryAdapter,
-} from '../../modules/ingestion/adapters/govspending-discovery.adapter.js'
+  expireStaleCollectionRuns,
+  finishCollectionRun,
+  startCollectionRun,
+} from '../../modules/ingestion/collection-run.repository.js'
 import { DataSourceModel } from '../../modules/ingestion/data-source.model.js'
 import {
   claimProducerLease,
-  ensureGovSpendingDataSource,
+  ensureBmaDataSource,
   releaseProducerLease,
   renewProducerLease,
 } from '../../modules/ingestion/data-source.repository.js'
 import { IngestionJobModel } from '../../modules/ingestion/ingestion-job.model.js'
 import { enqueueDiscoveredProjects } from '../../modules/ingestion/ingestion-job.repository.js'
+import { getThaiFiscalYear } from '../../modules/ingestion/thai-date.js'
+import { updateTorSourceMetadata } from '../../modules/tor/tor.repository.js'
 
-const PAGE_SIZE = 1_000
+const BMA_PAGE_SIZE = 100
+
+type DataSourceId = typeof DataSourceModel.prototype._id
 
 interface SyncTotals {
   pages: number
   discovered: number
   queued: number
   existing: number
+  torsUpdated: number
   failedKeywords: string[]
+}
+
+export interface DiscoverySource {
+  label: string
+  ensureDataSource: () => ReturnType<typeof ensureBmaDataSource>
+  sync: (dataSourceId: DataSourceId, producerId: string, signal: AbortSignal) => Promise<SyncTotals>
 }
 
 class ProducerLeaseLostError extends Error {}
 
 export async function startQueueProducer(signal: AbortSignal): Promise<void> {
-  if (!env.GOVSPENDING_API_KEY) {
-    throw new Error('GOVSPENDING_API_KEY is required to start the queue producer')
+  const sources = configuredSources()
+  if (sources.length === 0) {
+    throw new Error('No discovery source is configured: set BMA_SYNC_ENABLED=true')
   }
 
   const producerId = `queue-producer-${randomUUID()}`
-  const adapter = new GovSpendingDiscoveryAdapter({ apiKey: env.GOVSPENDING_API_KEY })
 
   await Promise.all([DataSourceModel.init(), IngestionJobModel.init()])
-  console.log(`Queue producer started: ${producerId}`)
+  console.log(
+    `Queue producer started: ${producerId} (${sources.map(({ label }) => label).join(', ')})`,
+  )
 
   while (!signal.aborted) {
-    try {
-      await runScheduledSync(producerId, adapter, signal)
-    } catch (error) {
-      if (!signal.aborted) {
-        console.error('Queue producer sync failed', error)
+    for (const source of sources) {
+      try {
+        await runScheduledSync(source, producerId, signal)
+      } catch (error) {
+        if (!signal.aborted) {
+          console.error(`${source.label} sync failed`, error)
+        }
       }
     }
 
     try {
-      await delay(env.GOVSPENDING_SYNC_INTERVAL_MS, undefined, { signal })
+      await delay(env.DISCOVERY_SYNC_INTERVAL_MS, undefined, { signal })
     } catch (error) {
       if (!(error instanceof Error && error.name === 'AbortError')) {
         throw error
@@ -60,41 +81,115 @@ export async function startQueueProducer(signal: AbortSignal): Promise<void> {
   console.log('Queue producer stopped')
 }
 
-async function runScheduledSync(
+function bmaSource(adapter: BmaDiscoveryAdapter): DiscoverySource {
+  return {
+    label: 'BMA',
+    ensureDataSource: ensureBmaDataSource,
+    sync: (dataSourceId, producerId, signal) =>
+      syncBmaProjects(
+        dataSourceId,
+        producerId,
+        adapter,
+        env.BMA_BUDGET_YEARS ?? [getThaiFiscalYear()],
+        env.BMA_KEYWORDS,
+        signal,
+      ),
+  }
+}
+
+function configuredSources(): DiscoverySource[] {
+  return env.BMA_SYNC_ENABLED ? [bmaSource(new BmaDiscoveryAdapter())] : []
+}
+
+export async function runScheduledSync(
+  source: DiscoverySource,
   producerId: string,
-  adapter: GovSpendingDiscoveryAdapter,
   signal: AbortSignal,
 ): Promise<void> {
-  const dataSource = await ensureGovSpendingDataSource()
-  if (!dataSource) {
-    throw new Error('Could not initialize the GovSpending data source')
-  }
-
-  if (!(await claimProducerLease(dataSource._id, producerId))) {
-    console.log('GovSpending sync skipped because another producer owns the lease')
+  // Only scheduled runs honour the admin switch; a manual "sync now" always runs.
+  const { ingestionEnabled } = await getSettings()
+  if (!ingestionEnabled) {
+    console.log(`${source.label} sync skipped because automatic ingestion is turned off`)
     return
   }
 
+  const begin = await beginSync(source, producerId, { trigger: 'scheduled' })
+  if (!begin.claim) {
+    console.log(
+      begin.reason === 'disabled'
+        ? `${source.label} sync skipped because the data source is disabled`
+        : `${source.label} sync skipped because another producer owns the lease`,
+    )
+    return
+  }
+
+  await completeSync(begin.claim, source, producerId, signal, { trigger: 'scheduled' })
+}
+
+export interface SyncTrigger {
+  trigger: 'scheduled' | 'manual'
+  triggeredBy?: Types.ObjectId | null
+  triggeredByName?: string | null
+}
+
+export interface SyncClaim {
+  dataSourceId: Types.ObjectId
+  runId: Types.ObjectId
+}
+
+// No claim means the sync must not start: the source is switched off, or another sync holds the lease
+export type SyncBegin = { claim: SyncClaim } | { claim: null; reason: 'disabled' | 'busy' }
+
+// Claims the source's shared lease and records a running CollectionRun. Returns no claim when
+// the source is disabled or another run (scheduled or manual, in any process) holds the lease.
+async function beginSync(
+  source: Pick<DiscoverySource, 'label' | 'ensureDataSource'>,
+  producerId: string,
+  trigger: SyncTrigger,
+): Promise<SyncBegin> {
+  const dataSource = await source.ensureDataSource()
+  if (!dataSource) {
+    throw new Error(`Could not initialize the ${source.label} data source`)
+  }
+
+  if (!dataSource.enabled) {
+    return { claim: null, reason: 'disabled' }
+  }
+
+  // The lease filter re-checks enabled, so a source disabled after the read above still wins
+  if (!(await claimProducerLease(dataSource._id, producerId))) {
+    return { claim: null, reason: 'busy' }
+  }
+
+  // We hold the lease now, so any run still marked running belongs to a process that died
+  await expireStaleCollectionRuns()
+
+  const run = await startCollectionRun({
+    trigger: trigger.trigger,
+    triggeredBy: trigger.triggeredBy ?? null,
+  })
+  return { claim: { dataSourceId: dataSource._id, runId: run._id } }
+}
+
+async function completeSync(
+  claim: SyncClaim,
+  source: DiscoverySource,
+  producerId: string,
+  signal: AbortSignal,
+  trigger: SyncTrigger,
+): Promise<void> {
   const startedAt = Date.now()
   let syncError: unknown
+  let totals = emptyTotals()
 
   try {
-    const fiscalYear = env.GOVSPENDING_FISCAL_YEAR ?? getThaiFiscalYear()
-    const totals = await syncGovSpendingProjects(
-      dataSource._id,
-      producerId,
-      adapter,
-      fiscalYear,
-      env.GOVSPENDING_KEYWORDS,
-      signal,
-    )
+    totals = await source.sync(claim.dataSourceId, producerId, signal)
 
     if (totals.failedKeywords.length > 0) {
-      throw new Error(`GovSpending keywords failed: ${totals.failedKeywords.join(', ')}`)
+      throw new Error(`${source.label} keywords failed: ${totals.failedKeywords.join(', ')}`)
     }
 
-    console.log('GovSpending sync completed', {
-      fiscalYear,
+    console.log(`${source.label} sync completed`, {
       ...totals,
       durationMs: Date.now() - startedAt,
     })
@@ -102,61 +197,129 @@ async function runScheduledSync(
     syncError = error
     throw error
   } finally {
-    await releaseProducerLease(dataSource._id, producerId, syncError)
+    await releaseProducerLease(claim.dataSourceId, producerId, syncError)
+    await recordRunResult(claim, source, trigger, totals, syncError)
   }
 }
 
-async function syncGovSpendingProjects(
-  dataSourceId: typeof DataSourceModel.prototype._id,
+// Manual "sync now" from the admin panel (BMA only). Shares the scheduled lease.
+export function beginBmaSync(producerId: string, trigger: SyncTrigger): Promise<SyncBegin> {
+  return beginSync({ label: 'BMA', ensureDataSource: ensureBmaDataSource }, producerId, trigger)
+}
+
+export function completeBmaSync(
+  claim: SyncClaim,
   producerId: string,
-  adapter: GovSpendingDiscoveryAdapter,
-  fiscalYear: number,
-  keywords: string[],
+  adapter: BmaDiscoveryAdapter,
   signal: AbortSignal,
-): Promise<SyncTotals> {
-  const totals: SyncTotals = {
+  trigger: SyncTrigger,
+): Promise<void> {
+  return completeSync(claim, bmaSource(adapter), producerId, signal, trigger)
+}
+
+// Closes the CollectionRun and writes ingestion.completed / ingestion.failed so the run shows
+// up in the admin activity feed. Failures here are logged, never thrown over the sync result.
+async function recordRunResult(
+  claim: SyncClaim,
+  source: DiscoverySource,
+  trigger: SyncTrigger,
+  totals: SyncTotals,
+  syncError: unknown,
+): Promise<void> {
+  const errorMessage = syncError
+    ? syncError instanceof Error
+      ? syncError.message
+      : 'Unknown producer error'
+    : null
+  const counts = {
+    fetchedCount: totals.discovered,
+    createdCount: totals.queued,
+    existingCount: totals.existing,
+  }
+
+  try {
+    await finishCollectionRun(claim.runId, {
+      status: syncError ? 'failed' : 'success',
+      ...counts,
+      errorMessage,
+    })
+    await createAuditLog({
+      actorType: trigger.trigger === 'manual' ? 'user' : 'system',
+      actorId: trigger.triggeredBy ?? null,
+      actorName: trigger.triggeredByName ?? null,
+      action: syncError ? 'ingestion.failed' : 'ingestion.completed',
+      targetType: 'ingestion',
+      targetId: claim.runId,
+      targetLabel: 'e-GP',
+      metadata: { trigger: trigger.trigger, source: source.label, ...counts, errorMessage },
+    })
+  } catch (error) {
+    console.error(`Could not record the ${source.label} sync result`, error)
+  }
+}
+
+function emptyTotals(): SyncTotals {
+  return {
     pages: 0,
     discovered: 0,
     queued: 0,
     existing: 0,
+    torsUpdated: 0,
     failedKeywords: [],
   }
+}
+
+async function syncBmaProjects(
+  dataSourceId: DataSourceId,
+  producerId: string,
+  adapter: BmaDiscoveryAdapter,
+  budgetYears: number[],
+  keywords: string[],
+  signal: AbortSignal,
+): Promise<SyncTotals> {
+  const totals = emptyTotals()
 
   for (const keyword of keywords) {
-    try {
-      let offset = 0
+    for (const budgetYear of budgetYears) {
+      try {
+        for (let pageNo = 1; !signal.aborted; pageNo += 1) {
+          const page = await adapter.listProjects({
+            budgetYear,
+            keyword,
+            pageNo,
+            pageSize: BMA_PAGE_SIZE,
+            signal,
+          })
+          const queueResult = await enqueueDiscoveredProjects(
+            dataSourceId,
+            page.projects,
+            'bma_egp',
+          )
+          totals.torsUpdated += await updateTorSourceMetadata(dataSourceId, page.projects)
 
-      while (!signal.aborted) {
-        const page = await adapter.listProjects({
-          fiscalYear,
-          keyword,
-          offset,
-          limit: PAGE_SIZE,
-          signal,
-        })
-        const queueResult = await enqueueDiscoveredProjects(dataSourceId, page.projects)
+          totals.pages += 1
+          totals.discovered += page.projects.length
+          totals.queued += queueResult.queued
+          totals.existing += queueResult.existing
 
-        totals.pages += 1
-        totals.discovered += page.projects.length
-        totals.queued += queueResult.queued
-        totals.existing += queueResult.existing
+          if (!(await renewProducerLease(dataSourceId, producerId))) {
+            throw new ProducerLeaseLostError('Queue producer lost the BMA lease')
+          }
 
-        if (!(await renewProducerLease(dataSourceId, producerId))) {
-          throw new ProducerLeaseLostError('Queue producer lost the GovSpending lease')
+          if (!page.hasNextPage || page.projects.length + page.skipped === 0) {
+            break
+          }
+        }
+      } catch (error) {
+        if (error instanceof ProducerLeaseLostError || signal.aborted) {
+          throw error
         }
 
-        offset += page.projects.length
-        if (page.projects.length === 0 || offset >= page.total) {
-          break
+        if (!totals.failedKeywords.includes(keyword)) {
+          totals.failedKeywords.push(keyword)
         }
+        console.error('BMA keyword sync failed', { keyword, budgetYear, error })
       }
-    } catch (error) {
-      if (error instanceof ProducerLeaseLostError || signal.aborted) {
-        throw error
-      }
-
-      totals.failedKeywords.push(keyword)
-      console.error('GovSpending keyword sync failed', { keyword, error })
     }
   }
 

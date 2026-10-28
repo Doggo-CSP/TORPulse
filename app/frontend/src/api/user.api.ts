@@ -1,9 +1,22 @@
+export interface CompanyQualification {
+  registeredCapitalBaht: number | null;
+  yearsInBusiness: number | null;
+  maxPastContractValueBaht: number | null;
+  certifications: string[];
+  isThaiJuristicPerson: boolean | null;
+  isSme: boolean | null;
+  hasPositiveNetWorth: boolean | null;
+  pastContractAgeYears: number | null;
+  hasBangkokOffice: boolean | null;
+  staffRoles: string[];
+}
+
 export interface UserProfile {
   id: string;
   name: string;
   email: string;
   image: string | null;
-  accountType: "personal" | "company" | "agency";
+  accountType: "personal" | "company";
   displayName: string;
   firstName: string;
   lastName: string;
@@ -16,15 +29,20 @@ export interface UserProfile {
   bookmarkedCount: number;
   completionPercentage: number;
 
-  // Organization
+  // Organization / Company
   website?: string;
   companyName?: string;
   registrationNumber?: string;
   businessType?: string;
+  // Registration date, capital, certifications, team and past projects: see bidder-profile.api.ts
 
-  // Agency
-  agencyName?: string;
-  agencyType?: string;
+  // Qualifying-TOR email notifications
+  qualification?: CompanyQualification;
+  notificationPrefs?: { emailEnabled: boolean };
+  notificationMissingFields?: string[];
+
+  // null until the onboarding wizard is finished or skipped
+  onboardingStatus?: "completed" | "dismissed" | null;
 }
 
 export interface TorItem {
@@ -38,6 +56,20 @@ export interface TorItem {
   classificationReason?: string;
   detailUrl?: string;
   createdAt?: string;
+  updatedAt?: string;
+  externalId?: string;
+  sourceAdapter?: string;
+  sourceVersion?: string;
+  objectives?: string[];
+  requirements?: string[];
+  bidderQualifications?: string[];
+  contactInformation?: string[];
+  confidence?: number;
+  documents?: Array<{
+    fileName: string;
+    mimeType: string;
+    sourceUrl: string;
+  }>;
 }
 
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
@@ -140,4 +172,24 @@ export async function fetchUserBookmarks(): Promise<TorItem[]> {
 
   const data = await res.json();
   return data.tors || [];
+}
+
+/**
+ * Records that the onboarding wizard was finished or skipped, so it is not offered again
+ */
+export async function updateOnboardingStatus(
+  status: "completed" | "dismissed",
+): Promise<{ onboardingStatus: "completed" | "dismissed" }> {
+  const res = await fetch(`${apiUrl}/api/v1/user/onboarding`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ status }),
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to update onboarding status");
+  }
+
+  return await res.json();
 }

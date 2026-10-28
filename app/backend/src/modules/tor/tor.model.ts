@@ -1,5 +1,13 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
 
+export const TOR_REVIEW_STATUSES = ['unverified', 'verified', 'archived', 'deleted'] as const
+export type TorReviewStatus = (typeof TOR_REVIEW_STATUSES)[number]
+
+// Archived and soft-deleted TORs stay in the database but are hidden from public endpoints.
+// Records created before reviewStatus existed have no value and stay visible.
+export const HIDDEN_TOR_REVIEW_STATUSES: TorReviewStatus[] = ['archived', 'deleted']
+export const PUBLIC_TOR_FILTER = { reviewStatus: { $nin: HIDDEN_TOR_REVIEW_STATUSES } }
+
 const sourceDocumentSchema = new Schema(
   {
     fileName: {
@@ -17,6 +25,38 @@ const sourceDocumentSchema = new Schema(
       required: true,
       trim: true,
     },
+  },
+  { _id: false },
+)
+
+// BMA hearing documents (ร่างประกาศ, ร่าง TOR, ...) from GetTorInProject.
+export const announcementSchema = new Schema(
+  {
+    sourceId: { type: String, required: true, trim: true },
+    title: { type: String, default: null },
+    hearingStartAt: { type: Date, default: null },
+    hearingEndAt: { type: Date, default: null },
+    fileName: { type: String, default: null },
+    fileUrl: { type: String, default: null },
+  },
+  { _id: false },
+)
+
+// Structured bidder qualifications, used to decide whether a company fully qualifies.
+// null on TORs analyzed before eligibility extraction existed.
+const eligibilitySchema = new Schema(
+  {
+    minRegisteredCapitalBaht: { type: Number, min: 0, default: null },
+    minYearsInBusiness: { type: Number, min: 0, default: null },
+    minPastContractValueBaht: { type: Number, min: 0, default: null },
+    requiredCertifications: { type: [String], default: [] },
+    requiresThaiJuristicPerson: { type: Boolean, default: null },
+    smeOnly: { type: Boolean, default: null },
+    requiresPositiveNetWorth: { type: Boolean, default: null },
+    maxPastWorkAgeYears: { type: Number, min: 0, default: null },
+    requiresBangkokOffice: { type: Boolean, default: null },
+    requiredStaffRoles: { type: [String], default: [] },
+    unmappedQualifications: { type: [String], default: [] },
   },
   { _id: false },
 )
@@ -63,6 +103,46 @@ const torSchema = new Schema(
       type: String,
       default: null,
     },
+    departmentName: {
+      type: String,
+      default: null,
+    },
+    departmentSubName: {
+      type: String,
+      default: null,
+    },
+    projectStatus: {
+      type: String,
+      default: null,
+    },
+    // BMA's own project UUID (egp2.bangkok.go.th), separate from the eGP externalId.
+    sourceProjectId: {
+      type: String,
+      default: null,
+    },
+    // Whether the project is still active (e.g. ระหว่างดำเนินการ / S1), unlike projectStatus
+    // which tracks the announcement stage.
+    contractStatus: {
+      type: String,
+      default: null,
+    },
+    contractStatusCode: {
+      type: String,
+      default: null,
+    },
+    fiscalYear: {
+      type: Number,
+      default: null,
+    },
+    announceDate: {
+      type: Date,
+      default: null,
+    },
+    // Absent until the source has been asked; [] when it lists none.
+    announcements: {
+      type: [announcementSchema],
+      default: undefined,
+    },
     summary: {
       type: String,
       default: null,
@@ -87,13 +167,87 @@ const torSchema = new Schema(
       required: true,
       default: [],
     },
+    eligibility: {
+      type: eligibilitySchema,
+      default: null,
+    },
+    // Keys of the categories collection, set by the AI classifier or an admin override. Checked
+    // by the admin API, not by an enum, because admins can add categories.
+    category: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    categories: {
+      type: [String],
+      required: true,
+      default: [],
+      index: true,
+    },
     budgetBaht: {
       type: Number,
       min: 0,
       default: null,
     },
+    midPriceBaht: {
+      type: Number,
+      min: 0,
+      default: null,
+      alias: 'referencePriceBaht',
+    },
+    awardedPriceBaht: {
+      type: Number,
+      min: 0,
+      default: null,
+      alias: 'winningPriceBaht',
+    },
+    // Raw deadline text from the TOR, as the AI returned it.
     submissionDeadline: {
       type: String,
+      default: null,
+    },
+    // submissionDeadline parsed to a date (midnight UTC); null when no exact day.
+    submissionDeadlineAt: {
+      type: Date,
+      default: null,
+    },
+    scope: {
+      type: String,
+      default: null,
+    },
+    deliverables: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    timeline: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    evaluationCriteria: {
+      type: [String],
+      required: true,
+      default: [],
+    },
+    reviewStatus: {
+      type: String,
+      required: true,
+      enum: TOR_REVIEW_STATUSES,
+      default: 'unverified',
+    },
+    categoryOverridden: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+    lastEditedAt: {
+      type: Date,
+      default: null,
+    },
+    // Last time ingestion saw this project at the source
+    lastSeenAt: {
+      type: Date,
       default: null,
     },
     contactInformation: {
@@ -146,6 +300,9 @@ torSchema.index(
   },
   { unique: true },
 )
+
+torSchema.index({ awardedPriceBaht: 1, analyzedAt: -1 })
+torSchema.index({ awardedPriceBaht: 1, agencyName: 1 })
 
 export type Tor = InferSchemaType<typeof torSchema>
 

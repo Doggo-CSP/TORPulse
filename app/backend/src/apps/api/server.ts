@@ -2,9 +2,11 @@ import { createApiApp } from './app.js'
 import { env } from '../../config/env.js'
 import { database } from '../../config/mongoose.js'
 import { getApiAuthConfig } from '../../modules/auth/auth.config.js'
+import { seedCategoriesIfEmpty } from '../../scripts/seed-categories.js'
 
 const startServer = async (): Promise<void> => {
   await database.connect()
+  await seedCategoriesIfEmpty()
   const app = createApiApp(getApiAuthConfig())
 
   const server = app.listen(env.PORT, '0.0.0.0', () => {
