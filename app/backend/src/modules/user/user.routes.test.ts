@@ -80,12 +80,28 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
   await t.test('PUT /user/profile updates allowed fields, including the new org fields', async () => {
     const response = await request(app)
       .put('/user/profile')
-      .send({ displayName: 'Updated Name', website: 'https://example.com', companyName: 'Acme' })
+      .send({
+        displayName: 'Updated Name',
+        website: 'https://example.com',
+        companyName: 'Acme',
+        primaryContact: {
+          name: 'Somchai Jaidee',
+          position: 'Project Manager',
+          education: 'ปริญญาโท',
+          startDate: '2022-05-15',
+        },
+      })
 
     assert.equal(response.status, 200)
     assert.equal(response.body.user.displayName, 'Updated Name')
     assert.equal(response.body.user.website, 'https://example.com')
     assert.equal(response.body.user.companyName, 'Acme')
+    assert.deepEqual(response.body.user.primaryContact, {
+      name: 'Somchai Jaidee',
+      position: 'Project Manager',
+      education: 'ปริญญาโท',
+      startDate: '2022-05-15',
+    })
   })
 
   await t.test('PUT /user/profile saves qualification and notification preferences', async () => {

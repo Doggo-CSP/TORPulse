@@ -10,6 +10,7 @@ import {
   ChevronDownIcon,
   AcademicCapIcon,
 } from "@heroicons/react/24/outline";
+import type { CertificationInput } from "@/api/bidder-profile.api";
 import {
   PrimaryContactFields,
   primaryContactProgress,
@@ -33,7 +34,10 @@ export interface CompanyFormData {
   budgetMin: number | null;
   budgetMax: number | null;
   businessObjectives: string;
-  certifications: string[]; // legacy: ข้อความเดิม (ไม่แสดงในฟอร์มแล้ว แต่ยังส่งกลับไปตามเดิม)
+  isSme: boolean | null;
+  hasPositiveNetWorth: boolean | null;
+  hasBangkokOffice: boolean | null;
+  certifications: CertificationInput[];
   certificateFiles: CertificateFile[]; // ไฟล์ใบรับรอง (PDF/รูป)
   primaryContact: PrimaryContact; // ผู้รับผิดชอบหลัก
   isEgpRegistered: boolean;
@@ -51,6 +55,8 @@ interface Props {
   onChange: (patch: Partial<CompanyFormData>) => void;
   /** จำนวนบุคลากรในทีมที่บันทึกแล้ว (จาก TeamEditor) ใช้แสดงเป็น "ขนาดทีม" */
   teamCount?: number;
+  strict?: boolean;
+  defaultOpen?: boolean;
 }
 
 /* ───────────── Shared styles (same tokens as the profile page) ───────────── */

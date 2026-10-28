@@ -11,6 +11,13 @@ export interface CompanyQualification {
   staffRoles: string[];
 }
 
+export interface UserPrimaryContact {
+  name: string;
+  position: string;
+  education: string;
+  startDate: string;
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -34,6 +41,7 @@ export interface UserProfile {
   companyName?: string;
   registrationNumber?: string;
   businessType?: string;
+  primaryContact?: UserPrimaryContact;
   // Registration date, capital, certifications, team and past projects: see bidder-profile.api.ts
 
   // Qualifying-TOR email notifications
