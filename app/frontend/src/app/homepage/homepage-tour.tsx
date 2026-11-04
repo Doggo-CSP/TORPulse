@@ -164,8 +164,8 @@ const tourCss = `
 .tour-actions { display: flex; align-items: center; gap: 8px; }
 .tour-skip { padding: 8px 16px; border-radius: 10px; border: 1px solid #e4e4e7; background: #fff; font-size: 13px; font-weight: 600; color: #27272a; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
 .tour-skip:hover { background: #fafafa; }
-.tour-next { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 10px; border: none; background: #3730d4; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer; }
-.tour-next:hover { background: #2f28b8; }
+.tour-next { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 10px; border: none; background: #38a169; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer; }
+.tour-next:hover { background: #0e9116ff; }
 @keyframes tour-pulse {
   0%   { stroke-opacity: 1;   stroke-width: 2; }
   70%  { stroke-opacity: .25; stroke-width: 8; }
@@ -232,7 +232,7 @@ export function HomepageTourProvider({
           border: "2px solid transparent",
           // white card with a pink → indigo gradient border
           background:
-            "linear-gradient(#ffffff, #ffffff) padding-box, linear-gradient(135deg, #f472b6 0%, #8b5cf6 55%, #4f46e5 100%) border-box",
+            "linear-gradient(#ffffff, #f1f1e6ff) padding-box, linear-gradient(135deg, #efb88eff 0%, #4a7c59  55%, #3b7a4eff 100%) border-box",
           boxShadow: "0 24px 60px rgba(30, 27, 75, 0.18), 0 4px 16px rgba(0,0,0,0.06)",
           maxWidth: 400,
         }),
@@ -247,7 +247,7 @@ export function HomepageTourProvider({
         highlightedArea: (base) => ({
           ...base,
           rx: 14,
-          stroke: "#4338ca",
+          stroke: "#38ca83ff",
           strokeWidth: 2,
           fill: "rgba(99, 102, 241, 0.10)",
           animation: "tour-pulse 1.6s ease-out infinite",
