@@ -376,7 +376,7 @@ export default function HomePage() {
 
   return (
     <HomepageTourProvider
-      isOpen={tourOpen}
+      isOpen={tourOpen && !!profile && !!bidderProfile && !shouldOnboard}
       onClose={() => { if (user?.email) markTourSeen(user.email); }}
     >
     <div className="min-h-screen">
@@ -905,6 +905,7 @@ export default function HomePage() {
               </h2>
             </div>
             <Link
+              id="tour-profile-link"
               href="/profile"
               className="rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
