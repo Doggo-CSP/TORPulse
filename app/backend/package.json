@@ -35,6 +35,7 @@
     "seed:mock": "tsx src/scripts/seed-homepage-tors.ts && tsx src/scripts/seed-procurement-reports.ts",
     "seed:categories": "tsx src/scripts/seed-categories.ts",
     "backfill:deadlines": "tsx src/scripts/backfill-deadlines.ts",
+    "backfill:auto-verify": "tsx src/scripts/backfill-auto-verify.ts",
     "requeue:jobs": "tsx src/scripts/requeue-jobs.ts",
     "report:job-failures": "tsx src/scripts/report-job-failures.ts",
     "repair:missing-tors": "tsx src/scripts/repair-missing-tors.ts",

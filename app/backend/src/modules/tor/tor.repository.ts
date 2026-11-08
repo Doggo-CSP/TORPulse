@@ -4,17 +4,31 @@ import type {
   ProjectAnnouncement,
   ProjectSourceMetadata,
 } from '../ingestion/adapters/discovered-project.js'
-import { TorModel } from './tor.model.js'
+import { autoReviewFields, TorModel } from './tor.model.js'
 import type { UpsertTorInput } from './tor.types.js'
+
+type ExistingReview = {
+  lastEditedAt?: Date | null
+  reviewStatus?: string | null
+  autoVerified?: boolean | null
+  categoryOverridden?: boolean | null
+}
 
 // A TOR an admin edited, verified or re-categorised keeps its AI-extracted fields when the
 // same project is ingested again; only collection metadata from the source is refreshed.
-const isProtected = (tor: {
-  lastEditedAt?: Date | null
-  reviewStatus?: string | null
-  categoryOverridden?: boolean | null
-}): boolean =>
-  Boolean(tor.lastEditedAt) || tor.reviewStatus === 'verified' || tor.categoryOverridden === true
+// A TOR verified automatically is not protected: it was never checked by a person.
+const isProtected = (tor: ExistingReview): boolean =>
+  Boolean(tor.lastEditedAt) ||
+  (tor.reviewStatus === 'verified' && tor.autoVerified !== true) ||
+  tor.categoryOverridden === true
+
+// The confidence rule decides the status of a new TOR, and of one still waiting for review or
+// verified only by the rule. An admin's archive or delete is kept.
+const isAutoReviewable = (tor: ExistingReview | null): boolean =>
+  !tor ||
+  !tor.reviewStatus ||
+  tor.reviewStatus === 'unverified' ||
+  (tor.reviewStatus === 'verified' && tor.autoVerified === true)
 
 // Fields that come from the procurement source itself rather than from AI extraction
 const pickSourceFields = (input: UpsertTorInput) => ({
@@ -43,6 +57,7 @@ export async function upsertTor(input: UpsertTorInput) {
   const existing = await TorModel.findOne(identity, {
     lastEditedAt: 1,
     reviewStatus: 1,
+    autoVerified: 1,
     categoryOverridden: 1,
   }).lean()
 
@@ -57,7 +72,11 @@ export async function upsertTor(input: UpsertTorInput) {
   return TorModel.findOneAndUpdate(
     identity,
     {
-      $set: { ...input, lastSeenAt },
+      $set: {
+        ...input,
+        ...(isAutoReviewable(existing) && autoReviewFields(input.confidence)),
+        lastSeenAt,
+      },
     },
     {
       upsert: true,

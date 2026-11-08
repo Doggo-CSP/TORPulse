@@ -48,7 +48,13 @@ test('upserts by source identity and returns the persisted TOR', async (context)
     sourceVersion: input.sourceVersion,
   })
   const { lastSeenAt, ...rest } = calls[1]!.update.$set!
-  assert.deepEqual(rest, { ...input, summary: 'Updated summary' })
+  // The fixture's confidence (0.95) passes the auto-verify rule
+  assert.deepEqual(rest, {
+    ...input,
+    summary: 'Updated summary',
+    reviewStatus: 'verified',
+    autoVerified: true,
+  })
   assert.ok(lastSeenAt instanceof Date)
   assert.deepEqual(calls[1]?.options, {
     upsert: true,
@@ -100,6 +106,48 @@ for (const [reason, existing] of [
     assert.equal(set.awardedPriceBaht, 900)
     assert.ok(set.lastSeenAt instanceof Date)
     assert.deepEqual(calls[0]?.options, { returnDocument: 'after', runValidators: true })
+  })
+}
+
+for (const [confidence, expected] of [
+  [0.95, { reviewStatus: 'verified', autoVerified: true }],
+  [0.9, { reviewStatus: 'verified', autoVerified: true }],
+  [0.89, { reviewStatus: 'unverified', autoVerified: false }],
+] as const) {
+  test(`a new TOR with confidence ${confidence} is ${expected.reviewStatus}`, async (context) => {
+    mockExisting(context, null)
+    const calls = mockUpsert(context, new Types.ObjectId())
+
+    await upsertTor({ ...createTorInput(), confidence })
+
+    const { reviewStatus, autoVerified } = calls[0]!.update.$set!
+    assert.deepEqual({ reviewStatus, autoVerified }, expected)
+  })
+}
+
+test('re-checks a TOR verified only by the rule against the new confidence', async (context) => {
+  mockExisting(context, { reviewStatus: 'verified', autoVerified: true })
+  const calls = mockUpsert(context, new Types.ObjectId())
+
+  await upsertTor({ ...createTorInput(), summary: 'New AI summary', confidence: 0.6 })
+
+  const set = calls[0]!.update.$set!
+  // Not protected: the AI fields are refreshed, and the status follows the new confidence
+  assert.equal(set.summary, 'New AI summary')
+  assert.equal(set.reviewStatus, 'unverified')
+  assert.equal(set.autoVerified, false)
+})
+
+for (const reviewStatus of ['archived', 'deleted'] as const) {
+  test(`keeps an admin's ${reviewStatus} status on re-ingestion`, async (context) => {
+    mockExisting(context, { reviewStatus })
+    const calls = mockUpsert(context, new Types.ObjectId())
+
+    await upsertTor(createTorInput())
+
+    const set = calls[0]!.update.$set!
+    assert.equal('reviewStatus' in set, false)
+    assert.equal('autoVerified' in set, false)
   })
 }
 

@@ -614,6 +614,8 @@ const toAdminTorListItem = (tor: AdminTorLean, categoryNames: Map<string, string
     categoryLabel: categoryNames.get(category) ?? category,
     confidence: tor.confidence,
     reviewStatus: tor.reviewStatus ?? 'unverified',
+    // Verified by the confidence rule (AUTO_VERIFY_MIN_CONFIDENCE), not by an admin
+    autoVerified: tor.autoVerified === true,
     // The table shows the budget, falling back to the mid (reference) price when it is missing
     budgetBaht: tor.budgetBaht ?? tor.midPriceBaht ?? null,
     budgetSource: tor.budgetBaht != null ? 'budget' : tor.midPriceBaht != null ? 'mid_price' : null,
@@ -884,7 +886,8 @@ const changeTorReviewStatus = async (
 
         await TorModel.updateOne(
           { _id: tor._id },
-          { $set: { reviewStatus: nextStatus } },
+          // Decided by a person from here on, so re-ingestion keeps it
+          { $set: { reviewStatus: nextStatus, autoVerified: false } },
           { session },
         )
         await createAuditLog(

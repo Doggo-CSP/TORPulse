@@ -8,6 +8,15 @@ export type TorReviewStatus = (typeof TOR_REVIEW_STATUSES)[number]
 export const HIDDEN_TOR_REVIEW_STATUSES: TorReviewStatus[] = ['archived', 'deleted']
 export const PUBLIC_TOR_FILTER = { reviewStatus: { $nin: HIDDEN_TOR_REVIEW_STATUSES } }
 
+// An extraction the AI is this confident about is verified automatically; anything lower waits
+// for an admin. The value is the AI's own confidence, taken as is for now.
+export const AUTO_VERIFY_MIN_CONFIDENCE = 0.9
+
+export const autoReviewFields = (confidence: number) =>
+  confidence >= AUTO_VERIFY_MIN_CONFIDENCE
+    ? { reviewStatus: 'verified' as const, autoVerified: true }
+    : { reviewStatus: 'unverified' as const, autoVerified: false }
+
 const sourceDocumentSchema = new Schema(
   {
     fileName: {
@@ -235,6 +244,13 @@ const torSchema = new Schema(
       required: true,
       enum: TOR_REVIEW_STATUSES,
       default: 'unverified',
+    },
+    // Verified by the confidence rule rather than by an admin; such a TOR is not protected
+    // from re-ingestion, and is re-checked with the new confidence
+    autoVerified: {
+      type: Boolean,
+      required: true,
+      default: false,
     },
     categoryOverridden: {
       type: Boolean,

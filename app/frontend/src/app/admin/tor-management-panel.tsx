@@ -495,11 +495,22 @@ export function TorManagementPanel({
                         {Math.round(tor.confidence * 100)}%
                       </td> */}
                       <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${status.badge}`}
-                        >
-                          {status.label}
-                        </span>
+                        {/* The note sits centred under the badge */}
+                        <div className="inline-flex flex-col items-center">
+                          <span
+                            className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${status.badge}`}
+                          >
+                            {status.label}
+                          </span>
+                          {tor.autoVerified && (
+                            <span
+                              className="mt-1 text-[10px] text-[#998f80]"
+                              title="AI มั่นใจตั้งแต่ 90% ขึ้นไป ระบบจึงตรวจผ่านให้อัตโนมัติ"
+                            >
+                              (อัตโนมัติ)
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-4 text-right">
                         {!isDeleted && (

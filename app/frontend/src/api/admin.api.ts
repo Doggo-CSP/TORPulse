@@ -278,6 +278,8 @@ export interface AdminTorItem {
   categoryLabel: string;
   confidence: number;
   reviewStatus: TorReviewStatus;
+  // Verified by the system because the AI confidence was high enough, not by an admin
+  autoVerified: boolean;
   // Falls back to the mid (reference) price when the budget is missing; see budgetSource
   budgetBaht: number | null;
   budgetSource: "budget" | "mid_price" | null;
