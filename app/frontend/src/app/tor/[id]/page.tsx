@@ -339,7 +339,12 @@ export default function TorDetailPage({
                                 </div>
                             )}
 
-                            <QualificationMatchCard tor={tor} profile={profile} isLoggedIn={!!user} />
+                            <QualificationMatchCard
+                                tor={tor}
+                                profile={profile}
+                                isLoggedIn={!!user}
+                                autoStartTour={tour.finished}
+                            />
 
                             {tor.contactInformation.length > 0 && (
                                 <div className="panel p-5">

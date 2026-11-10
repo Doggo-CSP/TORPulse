@@ -3,13 +3,13 @@
 import { TourProvider, useTour as useReactour } from "@reactour/tour";
 import type { PopoverContentProps, StepType } from "@reactour/tour";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 /* ------------------------------------------------------------------ */
 /*  Tour steps (Thai UI) — TOR detail page (app/tor/[id])               */
 /* ------------------------------------------------------------------ */
 
-function Step({ title, children }: { title: string; children: ReactNode }) {
+export function Step({ title, children }: { title: string; children: ReactNode }) {
   return (
     <>
       <h3 className="tour-title">{title}</h3>
@@ -74,35 +74,7 @@ export const torDetailTourSteps: StepType[] = [
       <Step title="คะแนนความเหมาะสมของบริษัท">
         AI เทียบเงื่อนไขใน TOR กับข้อมูลและผลงานในโปรไฟล์บริษัทของคุณ
         แล้วสรุปเป็นคะแนนและผลการประเมินโดยรวม
-      </Step>
-    ),
-  },
-  {
-    selector: "#tour-qualification-tiles",
-    position: "left",
-    content: (
-      <Step title="สรุปตามสถานะ">
-        แสดงจำนวนเงื่อนไขที่ตรง ตรงบางส่วน ยังไม่ตรง และไม่มีข้อมูล
-        คลิกที่ช่องเพื่อกรองรายการด้านล่าง
-      </Step>
-    ),
-  },
-  {
-    selector: "#tour-qualification-list",
-    position: "left",
-    content: (
-      <Step title="รายการเงื่อนไข">
-        เงื่อนไขที่ยังต้องแก้ไขจะแสดงก่อน คลิกที่รายการเพื่อดูเหตุผลของการประเมิน
-        และคำแนะนำในการเพิ่มโอกาส
-      </Step>
-    ),
-  },
-  {
-    selector: "#tour-qualification-detail",
-    position: "left",
-    content: (
-      <Step title="ดูการเปรียบเทียบทั้งหมด">
-        เปิดหน้าต่างเปรียบเทียบแบบเต็ม เห็นทุกเงื่อนไขพร้อมเหตุผลและคำแนะนำในมุมมองเดียว
+        เมื่อจบทัวร์นี้ จะมีทัวร์อธิบายการ์ดนี้โดยละเอียดต่อให้ทันที
       </Step>
     ),
   },
@@ -122,7 +94,7 @@ export const torDetailTourSteps: StepType[] = [
 /*  Popover content: title/desc, "n จาก N", Skip + Next                 */
 /* ------------------------------------------------------------------ */
 
-function TourContent({
+export function TourContent({
   currentStep,
   setCurrentStep,
   setIsOpen,
@@ -179,7 +151,7 @@ function TourContent({
   );
 }
 
-const tourCss = `
+export const tourCss = `
 .tour-card { min-width: 280px; max-width: 360px; font-family: inherit; }
 .tour-title { margin: 0 0 10px; font-size: 18px; font-weight: 700; color: #18181b; line-height: 1.3; }
 .tour-desc { margin: 0; font-size: 14px; line-height: 1.65; color: #3f3f46; }
@@ -203,6 +175,37 @@ const tourCss = `
 /*  Persistence: show once per browser, can be replayed manually        */
 /* ------------------------------------------------------------------ */
 
+// Shared look for every tour popover / mask (also used by qualification-tour.tsx)
+export const tourStyles: ComponentProps<typeof TourProvider>["styles"] = {
+  popover: (base) => ({
+    ...base,
+    borderRadius: 20,
+    padding: 24,
+    color: "#18181b",
+    border: "2px solid transparent",
+    background:
+      "linear-gradient(#ffffff, #f1f1e6ff) padding-box, linear-gradient(135deg, #efb88eff 0%, #4a7c59  55%, #3b7a4eff 100%) border-box",
+    boxShadow: "0 24px 60px rgba(30, 27, 75, 0.18), 0 4px 16px rgba(0,0,0,0.06)",
+    maxWidth: 400,
+  }),
+  maskWrapper: (base) => ({
+    ...base,
+    color: "rgba(244, 244, 245, 0.78)",
+  }),
+  maskArea: (base) => ({
+    ...base,
+    rx: 14,
+  }),
+  highlightedArea: (base) => ({
+    ...base,
+    rx: 14,
+    stroke: "#38ca83ff",
+    strokeWidth: 2,
+    fill: "rgba(99, 102, 241, 0.10)",
+    animation: "tour-pulse 1.6s ease-out infinite",
+  }),
+};
+
 const STORAGE_KEY = "torpulse:tor-detail-tour-seen";
 
 /**
@@ -212,6 +215,9 @@ const STORAGE_KEY = "torpulse:tor-detail-tour-seen";
  */
 export function useTorDetailTour(enabled: boolean) {
   const [isOpen, setIsOpen] = useState(false);
+  // true once the page tour was seen before or has just been closed
+  // (the qualification card tour waits for this before it auto-starts)
+  const [finished, setFinished] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -221,7 +227,10 @@ export function useTorDetailTour(enabled: boolean) {
     } catch {
       /* storage blocked: treat as not seen */
     }
-    if (seen) return;
+    if (seen) {
+      setFinished(true);
+      return;
+    }
     // wait a moment so the AI-match card & sidebar have rendered
     const t = setTimeout(() => setIsOpen(true), 800);
     return () => clearTimeout(t);
@@ -234,11 +243,12 @@ export function useTorDetailTour(enabled: boolean) {
       /* ignore */
     }
     setIsOpen(false);
+    setFinished(true);
   }, []);
 
   const restart = useCallback(() => setIsOpen(true), []);
 
-  return { isOpen, onClose, restart };
+  return { isOpen, onClose, restart, finished };
 }
 
 /* ------------------------------------------------------------------ */
@@ -297,35 +307,7 @@ export function TorDetailTourProvider({
       scrollSmooth
       padding={{ mask: 6, popover: [12, 12] }}
       ContentComponent={TourContent}
-      styles={{
-        popover: (base) => ({
-          ...base,
-          borderRadius: 20,
-          padding: 24,
-          color: "#18181b",
-          border: "2px solid transparent",
-          background:
-            "linear-gradient(#ffffff, #f1f1e6ff) padding-box, linear-gradient(135deg, #efb88eff 0%, #4a7c59  55%, #3b7a4eff 100%) border-box",
-          boxShadow: "0 24px 60px rgba(30, 27, 75, 0.18), 0 4px 16px rgba(0,0,0,0.06)",
-          maxWidth: 400,
-        }),
-        maskWrapper: (base) => ({
-          ...base,
-          color: "rgba(244, 244, 245, 0.78)",
-        }),
-        maskArea: (base) => ({
-          ...base,
-          rx: 14,
-        }),
-        highlightedArea: (base) => ({
-          ...base,
-          rx: 14,
-          stroke: "#38ca83ff",
-          strokeWidth: 2,
-          fill: "rgba(99, 102, 241, 0.10)",
-          animation: "tour-pulse 1.6s ease-out infinite",
-        }),
-      }}
+      styles={tourStyles}
     >
       <style dangerouslySetInnerHTML={{ __html: tourCss }} />
       <TourSync isOpen={isOpen} onClose={onClose} />
