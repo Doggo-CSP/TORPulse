@@ -312,7 +312,12 @@ export default function TorDetailPage({
                                 </p> */}
                             </section>
 
-                            <SimilarProjects torId={tor.id} budgetBaht={tor.budgetBaht} />
+                            <SimilarProjects
+                                torId={tor.id}
+                                budgetBaht={tor.budgetBaht}
+                                userEmail={user?.email}
+                                autoStartTour={tour.finished}
+                            />
                         </div>
 
                         <aside className="space-y-5">

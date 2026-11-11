@@ -68,6 +68,16 @@ export const torDetailTourSteps: StepType[] = [
     ),
   },
   {
+    selector: "#tour-similar-projects",
+    position: "top",
+    content: (
+      <Step title="TOR คล้ายกันที่ปิดรับข้อเสนอแล้ว">
+        เทียบงบประมาณกับราคาที่งานลักษณะเดียวกันเคยชนะการประมูล
+        เพื่อประเมินความคุ้มค่าและโอกาสในการแข่งขัน
+      </Step>
+    ),
+  },
+  {
     selector: "#tour-qualification-score",
     position: "left",
     content: (
