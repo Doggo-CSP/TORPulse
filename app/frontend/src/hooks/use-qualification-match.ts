@@ -17,7 +17,8 @@ export type QualificationMatchState =
   | { state: "evaluating"; previous: QualificationMatch | null }
   | { state: "no-profile"; missing: string[] } // required profile fields missing (UC-08)
   | { state: "error"; message: string; canRetry: boolean }
-  | { state: "ready"; data: QualificationMatch; isStale: boolean };
+  // limitReached: the daily AI limit stopped a new evaluation; data is the previous result
+  | { state: "ready"; data: QualificationMatch; isStale: boolean; limitReached: boolean };
 
 const queryKey = (torId: string) => ["torQualification", torId] as const;
 
@@ -28,6 +29,13 @@ function errorState(error: unknown): QualificationMatchState {
       const missing =
         (error.body as Partial<QualificationMatchResponse> | null)?.completeness?.missing ?? [];
       return { state: "no-profile", missing };
+    }
+    if (error.status === 429) {
+      return {
+        state: "error",
+        message: "วันนี้ระบบประเมินด้วย AI ครบโควตาแล้ว กรุณากลับมาดูใหม่ภายหลัง",
+        canRetry: false,
+      };
     }
     if (error.status === 422) {
       return {
@@ -96,7 +104,12 @@ export function useQualificationMatch(torId: string | undefined, isLoggedIn: boo
   } else if (evaluation.error) {
     result = errorState(evaluation.error);
   } else if (data.match) {
-    result = { state: "ready", data: data.match, isStale: data.isStale };
+    result = {
+      state: "ready",
+      data: data.match,
+      isStale: data.isStale,
+      limitReached: data.limitReached === true,
+    };
   } else {
     result = { state: "evaluating", previous: null };
   }

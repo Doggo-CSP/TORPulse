@@ -208,6 +208,8 @@ export interface QualificationMatchResponse {
   match: QualificationMatch | null;
   isStale: boolean;
   completeness: ProfileCompleteness;
+  // POST only: the daily AI limit was reached, so this is the previous result, not a new one
+  limitReached?: boolean;
 }
 
 /** The stored result for one TOR; never calls the AI. */

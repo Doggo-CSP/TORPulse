@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { Types, isObjectIdOrHexString } from 'mongoose'
 
+import { env } from '../../config/env.js'
 import {
   enqueueForUser,
   enqueueInBackground,
@@ -23,7 +24,7 @@ import {
   isMatchStale,
   matchInputVersion,
 } from './qualification-match.service.js'
-import { isBidderReady } from './qualification-precompute.service.js'
+import { countRecentAiCalls, isBidderReady } from './qualification-precompute.service.js'
 
 const toMatchResponse = (match: QualificationMatchDocument) => ({
   percentage: match.percentage,
@@ -116,6 +117,20 @@ export const evaluateQualificationMatchHandler = async (
 
   if (match && !isStale && req.query.force !== 'true') {
     res.json({ match: toMatchResponse(match), isStale: false, completeness })
+    return
+  }
+
+  // The daily AI budget covers on-demand evaluations too, so opening TOR pages or pressing
+  // re-evaluate again and again cannot run up the AI bill. The previous result is kept.
+  if ((await countRecentAiCalls()) >= env.QUALIFICATION_DAILY_CALL_LIMIT) {
+    if (match) {
+      res.json({ match: toMatchResponse(match), isStale, completeness, limitReached: true })
+      return
+    }
+    res.status(429).json({
+      error: 'The daily AI evaluation limit has been reached. Try again later.',
+      completeness,
+    })
     return
   }
 

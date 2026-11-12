@@ -284,10 +284,17 @@ export function QualificationMatchCard({
           {match.summary || verdict.description}
         </p>
 
-        {result.isStale && (
+        {result.limitReached ? (
+          // Re-evaluating would not run today, so do not ask the user to press it
           <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200/70 px-2 py-1.5 text-[11px] text-amber-800">
-            ข้อมูลโปรไฟล์หรือ TOR เปลี่ยนไปหลังการประเมินครั้งนี้ กด &quot;ประเมินใหม่&quot; เพื่ออัปเดต
+            วันนี้ระบบประเมินด้วย AI ครบโควตาแล้ว แสดงผลการประเมินครั้งล่าสุดแทน
           </p>
+        ) : (
+          result.isStale && (
+            <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200/70 px-2 py-1.5 text-[11px] text-amber-800">
+              ข้อมูลโปรไฟล์หรือ TOR เปลี่ยนไปหลังการประเมินครั้งนี้ กด &quot;ประเมินใหม่&quot; เพื่ออัปเดต
+            </p>
+          )
         )}
 
         {/* Metric Badges (Clickable Filters) */}
