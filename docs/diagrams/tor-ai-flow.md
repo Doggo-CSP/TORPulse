@@ -136,9 +136,7 @@ flowchart TD
   mail -->|success| sent["sent"]
   mail -->|error| nf["failed (up to 3 attempts)"]
 
-  mock["GET /tors/recommendations<br/>MOCK, not AI: md5(torId) score,<br/>top 5 of 50 newest TORs<br/>shown on /homepage and /profile"]:::mock
-
-  classDef mock fill:#fff3cd,stroke:#d4a017,stroke-dasharray: 4 3,color:#000
+  save --> reco["GET /tors/recommendations<br/>top 5: open TORs first, closed ones only to fill<br/>score = 0.7 × match % + 0.3 × (interest category ? 100 : 0)<br/>mandatory requirement missed → after the scored ones<br/>no match yet → last, interest category first, then newest<br/>shown on /homepage and /profile"]
 ```
 
 ## Notes

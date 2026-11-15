@@ -1009,9 +1009,12 @@ export default function HomePage() {
                   >
                     <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
                       <span>{t.id}</span>
-                      <span className="rounded-full bg-success/15 px-2 py-0.5 text-success">
-                        คะแนน {t.interestScore}
-                      </span>
+                      {/* No score until the user has a qualification match for this TOR */}
+                      {t.interestScore !== null && (
+                        <span className="rounded-full bg-success/15 px-2 py-0.5 text-success">
+                          คะแนน {t.interestScore}
+                        </span>
+                      )}
                     </div>
                     <p className="mt-2 text-sm font-medium leading-snug">
                       {t.title}

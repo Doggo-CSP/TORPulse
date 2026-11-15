@@ -1,12 +1,14 @@
-import { createHash } from 'node:crypto'
 
 import type { Request, Response } from 'express'
 import { isObjectIdOrHexString } from 'mongoose'
 
+import { User } from '../auth/user.model.js'
 import { DEFAULT_CATEGORY_KEY } from '../category/category.constants.js'
 import { getVisibleCategoryNameMap, listCategories } from '../category/category.repository.js'
 import { cleanDateText, parseThaiDate, toIsoDateString } from '../ingestion/thai-date.js'
+import { QualificationMatchModel } from '../qualification/qualification-match.model.js'
 import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from './tor.model.js'
+import { rankRecommendations } from './tor-recommendation.js'
 
 // ---------------------------------------------------------------------------
 // Category resolution (pure, no DB) — shared with homepage and report
@@ -160,30 +162,6 @@ export function resolveTorCategory(tor: {
   technologies?: string[] | null
 }): TorCategory {
   return tor.category || deriveCategory(tor.technologies ?? [])
-}
-
-// ---------------------------------------------------------------------------
-// Interest scoring (pure, no DB) — used by getRecommendationsHandler below
-// ---------------------------------------------------------------------------
-
-const SCORE_MIN = 50
-const SCORE_RANGE = 46 // 50..95 inclusive
-
-export interface UserInterestProfile {
-  userId: string
-  // TODO: preferredCategories, preferredTechnologies, viewedTorIds later
-}
-
-export function calculateInterestScore(
-  tor: { _id: unknown },
-  profile: UserInterestProfile,
-): number {
-  void profile // unused until real per-user matching lands; kept for a stable call site
-
-  const hash = createHash('md5').update(String(tor._id)).digest('hex')
-  const hashInt = parseInt(hash.slice(0, 8), 16)
-
-  return SCORE_MIN + (hashInt % SCORE_RANGE)
 }
 
 // `submissionDeadline` in API responses is always YYYY-MM-DD or null, so
@@ -469,28 +447,61 @@ export async function getTorByIdHandler(req: Request, res: Response): Promise<vo
 // GET /api/v1/tors/recommendations (auth required)
 // ---------------------------------------------------------------------------
 
-const CANDIDATE_POOL_SIZE = 50
 const RECOMMENDATION_COUNT = 5
+// Newest TORs ranked in each group; enough to hold every open TOR in practice
+const CANDIDATE_POOL_SIZE = 200
 
+// Open TORs come first. Closed ones only fill the list when too few TORs are open, so the
+// section is never empty; their items carry recommendation.isOpen = false.
 export async function getRecommendationsHandler(req: Request, res: Response): Promise<void> {
   if (!req.user) {
     res.status(401).json({ error: 'Unauthorized' })
     return
   }
 
-  const profile: UserInterestProfile = { userId: req.user._id.toString() }
-  const [candidates, categoryNames] = await Promise.all([
-    TorModel.find(PUBLIC_TOR_FILTER).sort({ createdAt: -1 }).limit(CANDIDATE_POOL_SIZE).lean(),
+  const now = new Date()
+  const [user, openTors, categoryNames] = await Promise.all([
+    User.findById(req.user._id).select({ interests: 1 }).lean(),
+    TorModel.find({
+      ...PUBLIC_TOR_FILTER,
+      $or: [{ submissionDeadlineAt: null }, { submissionDeadlineAt: { $gt: now } }],
+    })
+      .sort({ createdAt: -1 })
+      .limit(CANDIDATE_POOL_SIZE)
+      .lean(),
     getVisibleCategoryNameMap(),
   ])
+  const closedTors =
+    openTors.length < RECOMMENDATION_COUNT
+      ? await TorModel.find({ ...PUBLIC_TOR_FILTER, submissionDeadlineAt: { $lte: now } })
+          .sort({ createdAt: -1 })
+          .limit(CANDIDATE_POOL_SIZE)
+          .lean()
+      : []
 
-  const items = candidates
-    .map((tor) => ({
-      ...toTorListItem(tor, categoryNames),
-      score: calculateInterestScore(tor, profile),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, RECOMMENDATION_COUNT)
+  const matches = await QualificationMatchModel.find({
+    userId: req.user._id,
+    torId: { $in: [...openTors, ...closedTors].map((tor) => tor._id) },
+  })
+    .select({ torId: 1, percentage: 1, allMandatoryMet: 1 })
+    .lean()
+  const matchesByTorId = new Map(matches.map((match) => [String(match.torId), match]))
+  const interests = new Set(user?.interests ?? [])
+
+  const ranked = [
+    ...rankRecommendations(openTors, matchesByTorId, interests).map((r) => ({ ...r, isOpen: true })),
+    ...rankRecommendations(closedTors, matchesByTorId, interests).map((r) => ({
+      ...r,
+      isOpen: false,
+    })),
+  ].slice(0, RECOMMENDATION_COUNT)
+
+  const items = ranked.map(({ tor, recommendation, isOpen }) => ({
+    ...toTorListItem(tor, categoryNames),
+    // null until the user has a qualification match for this TOR
+    score: recommendation.score,
+    recommendation: { ...recommendation, isOpen },
+  }))
 
   res.json({ items })
 }
