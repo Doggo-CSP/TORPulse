@@ -119,6 +119,8 @@ New users fill these in through the onboarding wizard (`/onboarding` in the fron
 | `400` / `404` | invalid or unknown (or hidden) TOR id |
 | `409` | account type is not personal or company, or no bidder profile yet (`completeness` says what to fill in) |
 | `422` | the TOR has no extracted requirement text |
+| `200 { …, limitReached: true }` | `POST` when the daily AI limit (`QUALIFICATION_DAILY_CALL_LIMIT`, shared with the worker, §11) is reached: the previous result, without an AI call |
+| `429` | the same, when there is no previous result |
 | `502` | the AI call failed; the previous result is kept |
 
 ## 11. Precomputed qualification scores for TOR cards

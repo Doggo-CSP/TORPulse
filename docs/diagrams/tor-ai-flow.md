@@ -97,7 +97,7 @@ flowchart TD
   guard -->|wrong account type /<br/>profile incomplete| e409["409"]
   guard -->|TOR has no requirement text| e422["422"]
   guard -->|"fresh and not force"| showCache
-  guard -->|ok| eval
+  guard -->|ok| d4
 
   q[("qualification_match_jobs")] --> claim["qualification-worker<br/>poll 10 s · claimNextJob()"]
   claim --> d1{"bidder ready?<br/>isBidderReady()"}
@@ -107,7 +107,9 @@ flowchart TD
   d2 -->|yes| d3{"match still fresh?"}
   d3 -->|yes| dn1["done (no AI call)"]
   d3 -->|no| d4{"AI calls in last 24 h<br/>at least 200?"}
-  d4 -->|yes| pp["postponeJob +1 h<br/>(attempt not used)"]
+  d4 -->|yes| capSrc{"source"}
+  capSrc -->|worker| pp["postponeJob +1 h<br/>(attempt not used)"]
+  capSrc -->|POST| capKept["previous result, limitReached: true<br/>(429 when there is none)"]
   d4 -->|no| eval
 
   subgraph evalS["evaluateQualification()"]
