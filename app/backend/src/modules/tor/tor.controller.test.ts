@@ -6,7 +6,6 @@ import { Types } from 'mongoose'
 import request from 'supertest'
 
 import {
-  calculateInterestScore,
   compareByDeadline,
   deriveCategory,
   getRecommendationsHandler,
@@ -14,7 +13,9 @@ import {
   resolveTorCategory,
   toTorListItem,
 } from './tor.controller.js'
+import { User } from '../auth/user.model.js'
 import { CategoryModel } from '../category/category.model.js'
+import { QualificationMatchModel } from '../qualification/qualification-match.model.js'
 import { TorModel } from './tor.model.js'
 
 // --- deriveCategory (pure) -------------------------------------------------
@@ -112,32 +113,6 @@ for (const { name, technologies, expected } of categoryCases) {
   })
 }
 
-// --- calculateInterestScore (pure) -----------------------------------------
-
-test('calculateInterestScore is deterministic for the same tor and profile', () => {
-  const tor = { _id: new Types.ObjectId() }
-  const profile = { userId: 'user-1' }
-
-  assert.equal(calculateInterestScore(tor, profile), calculateInterestScore(tor, profile))
-})
-
-test('calculateInterestScore always returns a value within [50, 95]', () => {
-  for (let i = 0; i < 50; i++) {
-    const score = calculateInterestScore({ _id: new Types.ObjectId() }, { userId: 'user-1' })
-    assert.ok(score >= 50 && score <= 95, `score ${score} out of range`)
-  }
-})
-
-test('calculateInterestScore typically differs across different tor ids', () => {
-  const scores = new Set(
-    Array.from({ length: 20 }, () =>
-      calculateInterestScore({ _id: new Types.ObjectId() }, { userId: 'user-1' }),
-    ),
-  )
-
-  assert.ok(scores.size > 1, 'expected scores to vary across different tor ids')
-})
-
 test('GET /tors/:id returns authoritative e-GP details', async (context) => {
   const id = new Types.ObjectId()
   context.mock.method(TorModel, 'findById', () => ({
@@ -190,43 +165,48 @@ test('GET /tors/:id returns authoritative e-GP details', async (context) => {
 
 // --- getRecommendationsHandler (mocked TorModel.find) -----------------------
 
-test('GET /recommendations requires auth, then returns deterministic scored items', async (context) => {
-  const fakeTors = [
-    {
-      _id: new Types.ObjectId(),
-      projectTitle: 'Project A',
-      agencyName: 'Agency A',
-      budgetBaht: 1000,
-      submissionDeadline: null,
-      technologies: ['React'],
-    },
-    {
-      _id: new Types.ObjectId(),
-      projectTitle: 'Project B',
-      agencyName: 'Agency B',
-      budgetBaht: 2000,
-      submissionDeadline: null,
-      technologies: ['Python'],
-    },
-    {
-      _id: new Types.ObjectId(),
-      projectTitle: 'Project C',
-      agencyName: null,
-      budgetBaht: null,
-      submissionDeadline: null,
-      technologies: [],
-    },
+test('GET /recommendations requires auth, then ranks open TORs by match and interest', async (context) => {
+  const tor = (title: string, extra: Record<string, unknown> = {}) => ({
+    _id: new Types.ObjectId(),
+    externalId: title,
+    sourceAdapter: 'bma_egp',
+    projectTitle: title,
+    agencyName: null,
+    budgetBaht: null,
+    submissionDeadline: null,
+    technologies: [],
+    category: 'data_bi',
+    categories: ['data_bi'],
+    createdAt: new Date('2026-11-01T00:00:00Z'),
+    ...extra,
+  })
+  // A: 90% in an interest category; B: 100% outside; C: no score yet, in an interest category
+  const tors = [
+    tor('B'),
+    tor('C', { category: 'web_application', categories: ['web_application'] }),
+    tor('A', { category: 'web_application', categories: ['web_application'] }),
   ]
+  const [b, , a] = tors
 
   context.mock.method(TorModel, 'find', () => ({
-    sort: () => ({
-      limit: () => ({
-        lean: async () => fakeTors,
-      }),
-    }),
+    sort: () => ({ limit: () => ({ lean: async () => tors }) }),
   }))
   context.mock.method(CategoryModel, 'find', () => ({
-    lean: async () => [{ key: 'web_application', name: 'งานพัฒนาเว็บไซต์' }],
+    lean: async () => [
+      { key: 'web_application', name: 'งานพัฒนาเว็บไซต์' },
+      { key: 'data_bi', name: 'งานข้อมูลและวิเคราะห์' },
+    ],
+  }))
+  context.mock.method(User, 'findById', () => ({
+    select: () => ({ lean: async () => ({ interests: ['web_application'] }) }),
+  }))
+  context.mock.method(QualificationMatchModel, 'find', () => ({
+    select: () => ({
+      lean: async () => [
+        { torId: a!._id, percentage: 90, allMandatoryMet: true },
+        { torId: b!._id, percentage: 100, allMandatoryMet: true },
+      ],
+    }),
   }))
 
   const guestApp = express()
@@ -248,19 +228,30 @@ test('GET /recommendations requires auth, then returns deterministic scored item
   })
   authedApp.get('/recommendations', getRecommendationsHandler)
 
-  const firstResponse = await request(authedApp).get('/recommendations')
-  const secondResponse = await request(authedApp).get('/recommendations')
+  const response = await request(authedApp).get('/recommendations')
 
-  assert.equal(firstResponse.status, 200)
-  assert.equal(firstResponse.body.items.length, 3)
-  for (const item of firstResponse.body.items) {
-    assert.ok(item.score >= 50 && item.score <= 95, `score ${item.score} out of range`)
-  }
-  assert.deepEqual(firstResponse.body, secondResponse.body)
-  const reactItem = firstResponse.body.items.find(
-    (item: { projectTitle: string }) => item.projectTitle === 'Project A',
+  assert.equal(response.status, 200)
+  // Three open TORs are fewer than five, so closed ones are looked up too; the mock returns the
+  // same three, which come after the open ones
+  assert.deepEqual(
+    response.body.items.slice(0, 3).map((item: { projectTitle: string }) => item.projectTitle),
+    ['A', 'B', 'C'],
   )
-  assert.equal(reactItem?.categoryName, 'งานพัฒนาเว็บไซต์')
+  const [first, second, third] = response.body.items
+  assert.equal(first.score, 93) // 0.7 × 90 + 0.3 × 100
+  assert.equal(second.score, 70) // 0.7 × 100
+  assert.equal(third.score, null)
+  assert.deepEqual(first.recommendation, {
+    score: 93,
+    qualificationPercentage: 90,
+    allMandatoryMet: true,
+    matchesInterest: true,
+    isOpen: true,
+  })
+  assert.equal(third.recommendation.matchesInterest, true)
+  assert.equal(response.body.items.length, 5)
+  assert.equal(response.body.items[3].recommendation.isOpen, false)
+  assert.equal(first.categoryName, 'งานพัฒนาเว็บไซต์')
 })
 
 test('list items expose an ISO deadline and the raw deadline text', () => {

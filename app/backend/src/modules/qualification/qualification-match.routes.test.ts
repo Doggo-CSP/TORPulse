@@ -5,6 +5,7 @@ import express from 'express'
 import request from 'supertest'
 import { Types } from 'mongoose'
 
+import { env } from '../../config/env.js'
 import { database } from '../../config/mongoose.js'
 import { User } from '../auth/user.model.js'
 import torRouter from '../tor/tor.routes.js'
@@ -69,6 +70,13 @@ test('qualification match routes: evaluate, cache, stale and errors', async (t) 
     bidderQualifications: ['ทุนจดทะเบียนไม่น้อยกว่า 2 ล้านบาท'],
     requirements: ['ผู้จัดการโครงการต้องมี PMP'],
   })
+  // Never evaluated: the daily limit test needs a TOR with no previous result
+  const otherTor = await TorModel.create({
+    ...torFields,
+    externalId: `${SEED_PREFIX}tor-2`,
+    projectTitle: 'จ้างพัฒนาแอปพลิเคชัน',
+    bidderQualifications: ['ทุนจดทะเบียนไม่น้อยกว่า 1 ล้านบาท'],
+  })
   const emptyTor = await TorModel.create({
     ...torFields,
     externalId: `${SEED_PREFIX}tor-empty`,
@@ -85,7 +93,7 @@ test('qualification match routes: evaluate, cache, stale and errors', async (t) 
   t.after(async () => {
     await QualificationMatchModel.deleteMany({ userId: testUser._id })
     await BidderProfileModel.deleteMany({ userId: testUser._id })
-    await TorModel.deleteMany({ _id: { $in: [tor._id, emptyTor._id] } })
+    await TorModel.deleteMany({ _id: { $in: [tor._id, otherTor._id, emptyTor._id] } })
     await User.deleteOne({ _id: testUser._id })
     await database.disconnect()
   })
@@ -189,6 +197,26 @@ test('qualification match routes: evaluate, cache, stale and errors', async (t) 
     const kept = await request(app).get(url)
     assert.equal(kept.body.match.percentage, 50)
     aiAnswer = async () => AI_ANSWER
+  })
+
+  await t.test('the daily AI limit also stops on-demand evaluations', async () => {
+    const original = env.QUALIFICATION_DAILY_CALL_LIMIT
+    env.QUALIFICATION_DAILY_CALL_LIMIT = 0
+    try {
+      const calls = aiCalls
+      // With a previous result: kept and flagged, no AI call
+      const kept = await request(app).post(`${url}?force=true`)
+      assert.equal(kept.status, 200)
+      assert.equal(kept.body.limitReached, true)
+      assert.equal(kept.body.match.percentage, 50)
+
+      // Without one: 429
+      const none = await request(app).post(`/tors/${otherTor._id.toString()}/qualification`)
+      assert.equal(none.status, 429)
+      assert.equal(aiCalls, calls)
+    } finally {
+      env.QUALIFICATION_DAILY_CALL_LIMIT = original
+    }
   })
 
   await t.test('a TOR without requirement text answers 422 without calling the AI', async () => {

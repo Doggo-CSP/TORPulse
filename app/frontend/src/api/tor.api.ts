@@ -80,7 +80,17 @@ export interface TorListItem {
 }
 
 export interface RecommendedTorItem extends TorListItem {
-  score: number;
+  // 0.7 × qualification match % + 0.3 × interest category; null until the user has a
+  // qualification match for this TOR
+  score: number | null;
+  recommendation: {
+    score: number | null;
+    qualificationPercentage: number | null;
+    allMandatoryMet: boolean | null;
+    matchesInterest: boolean;
+    // false when a closed TOR fills the list because too few TORs are open
+    isOpen: boolean;
+  };
 }
 
 export interface TorFilterOptions {

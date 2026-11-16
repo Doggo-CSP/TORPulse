@@ -175,6 +175,29 @@ npm run dev:ingestion
 npm run dev:producer
 ```
 
+### 3. Run with Docker (Optional)
+
+Two images: `app/backend/Dockerfile` (API + workers, includes Java for PDF extraction) and `app/frontend/Dockerfile` (Next.js standalone).
+
+```bash
+# Full stack: MongoDB, API, 4 workers, frontend (reads app/backend/.env)
+docker compose up --build
+# Web App http://localhost:3000, API http://localhost:8000
+```
+
+Build images separately:
+
+```bash
+docker build -t doggo-backend app/backend
+docker build -t doggo-frontend --build-arg NEXT_PUBLIC_API_URL=https://api.example.com app/frontend
+
+# Backend API (default command) or a worker (override command)
+docker run --env-file app/backend/.env -p 8000:8000 doggo-backend
+docker run --env-file app/backend/.env doggo-backend node dist/apps/ingestion-worker/main.js
+```
+
+> `NEXT_PUBLIC_API_URL` is inlined at build time, so rebuild the frontend image for each API URL. Backend image defaults to `NODE_ENV=production` (secure session cookie), so serve it over HTTPS; compose uses `development` for plain-http localhost.
+
 ---
 
 ## 🧪 Testing & Utility Scripts
