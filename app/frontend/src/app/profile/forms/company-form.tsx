@@ -10,6 +10,8 @@ import {
   ChevronDownIcon,
   AcademicCapIcon,
 } from "@heroicons/react/24/outline";
+import type { CertificationInput } from "@/api/bidder-profile.api";
+import { OrganizationFlagFields } from "./form-ui";
 import {
   PrimaryContactFields,
   primaryContactProgress,
@@ -33,7 +35,11 @@ export interface CompanyFormData {
   budgetMin: number | null;
   budgetMax: number | null;
   businessObjectives: string;
-  certifications: string[]; // legacy: ข้อความเดิม (ไม่แสดงในฟอร์มแล้ว แต่ยังส่งกลับไปตามเดิม)
+  // Organization conditions TORs often set on the bidder (saved with the organization)
+  isSme: boolean | null;
+  hasPositiveNetWorth: boolean | null;
+  hasBangkokOffice: boolean | null;
+  certifications: CertificationInput[]; // saved with the organization; not edited in this form
   certificateFiles: CertificateFile[]; // ไฟล์ใบรับรอง (PDF/รูป)
   primaryContact: PrimaryContact; // ผู้รับผิดชอบหลัก
   isEgpRegistered: boolean;
@@ -51,6 +57,13 @@ interface Props {
   onChange: (patch: Partial<CompanyFormData>) => void;
   /** จำนวนบุคลากรในทีมที่บันทึกแล้ว (จาก TeamEditor) ใช้แสดงเป็น "ขนาดทีม" */
   teamCount?: number;
+  /**
+   * Onboarding: the fields the qualification score needs are required. The red * is always shown
+   * on those fields; the onboarding page blocks saving until they are filled (missingMainFields).
+   */
+  strict?: boolean;
+  /** Open every section at first, instead of only the first one. */
+  defaultOpen?: boolean;
 }
 
 /* ───────────── Shared styles (same tokens as the profile page) ───────────── */
@@ -182,7 +195,7 @@ function yearsSince(isoDate?: string): number | null {
 
 /* ───────────── Main component ───────────── */
 
-export function CompanyForm({ value, onChange, teamCount = 0 }: Props) {
+export function CompanyForm({ value, onChange, teamCount = 0, defaultOpen = false }: Props) {
   const certificateFiles = value.certificateFiles ?? [];
 
   const regNo = value.registrationNumber ?? "";
@@ -196,10 +209,10 @@ export function CompanyForm({ value, onChange, teamCount = 0 }: Props) {
   // ── collapsible state ──
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({
     entity: true,
-    contactPerson: false,
-    size: false,
-    certs: false,
-    contact: false,
+    contactPerson: defaultOpen,
+    size: defaultOpen,
+    certs: defaultOpen,
+    contact: defaultOpen,
   });
   const toggle = (k: SectionKey) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const setAll = (v: boolean) =>
@@ -369,6 +382,7 @@ export function CompanyForm({ value, onChange, teamCount = 0 }: Props) {
             </p>
           </div>
         </div>
+        <OrganizationFlagFields idPrefix="company" value={value} onChange={onChange} />
       </Section>
 
       {/* ── 2. ผู้รับผิดชอบหลัก ── */}
