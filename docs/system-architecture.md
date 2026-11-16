@@ -12,7 +12,7 @@ See [diagrams/architecture.md](diagrams/architecture.md) for all Docker services
 
 ## 3. Ingestion pipeline
 
-The full sequence diagram (discovery + processing, every branch, both Gemini calls) is in [diagrams/ingestion-sequence.md](diagrams/ingestion-sequence.md). How TOR data flows from source to screen is in [diagrams/tor-ai-flow.md](diagrams/tor-ai-flow.md) §1.
+The sequence diagram (discovery + processing) is in [diagrams/ingestion-sequence.md](diagrams/ingestion-sequence.md). How TOR data flows from source to screen is in [diagrams/tor-ai-flow.md](diagrams/tor-ai-flow.md) §1.
 
 ## 4. Ingestion job lifecycle
 
@@ -40,7 +40,7 @@ Stages inside `processing`: `fetching_details` → `downloading` → `extracting
 
 ## 5. Data model
 
-The full ER diagram (all 14 collections, every field) is in [diagrams/er-diagram.md](diagrams/er-diagram.md).
+The ER diagram (all 14 collections, keys and relations) is in [diagrams/er-diagram.md](diagrams/er-diagram.md).
 
 ## 6. Discovery sources
 
