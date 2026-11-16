@@ -9,7 +9,8 @@ These are the TORPulse system diagrams, written in Mermaid so that GitHub and th
 | [er-diagram.md](er-diagram.md) | ER | All 14 MongoDB collections with every field, plus their relations and unique keys |
 | [class-diagram.md](class-diagram.md) | Class | Simplified domain model: main classes, key attributes, multiplicities, embedded parts as composition |
 | [architecture.md](architecture.md) | Architecture | The Docker Compose services, backend processes, MongoDB and external services |
+| [state-machines.md](state-machines.md) | State ×7 | The status life cycle of every worker: producer loop, data source lease, collection runs, ingestion jobs (status and stages), qualification jobs and notifications, plus gaps found |
 
-The plan these diagrams were built from is in [PLAN.md](PLAN.md). For the job state machine, the API surface and other detail, see [../system-architecture.md](../system-architecture.md).
+The plan these diagrams were built from is in [PLAN.md](PLAN.md). For the API surface and other detail, see [../system-architecture.md](../system-architecture.md).
 
 **Render check:** `npx -y @mermaid-js/mermaid-cli -i docs/diagrams/<file>.md -o /tmp/out.md`

@@ -16,6 +16,8 @@ The full sequence diagram (discovery + processing, every branch, both Gemini cal
 
 ## 4. Ingestion job lifecycle
 
+State machines for every worker (producer, ingestion, qualification, notification) are in [diagrams/state-machines.md](diagrams/state-machines.md). The ingestion job summary is below.
+
 ```mermaid
 stateDiagram-v2
   [*] --> queued: producer upsert (new project)
