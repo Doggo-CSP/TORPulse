@@ -511,9 +511,20 @@ docker compose -f pentest/docker-compose.yml run --rm zap zap.sh -cmd -autorun /
 
 **No injection, XSS, path-traversal or access-control alert was raised.** This matches the code review: Mongoose object queries, the Express 5 simple query parser, Zod validation, `escapeRegex` and JSON-only responses. ZAP's log contained only "check for updates" / telemetry failures, which are expected because the network has no internet.
 
-**Limits of the automated scan:** ZAP does not detect business-logic issues such as IDOR or the missing OAuth `state`, and it does not flag error-message leaks in JSON. We covered those with the manual tests in §7.4. The frontend was not scanned because `next build` currently fails on `develop` (TypeScript errors in `onboarding/page.tsx` and `profile/forms/main-profile.ts`). The baseline command for it is in the manual.
+**Limits of the automated scan:** ZAP does not detect business-logic issues such as IDOR or the missing OAuth `state`, and it does not flag error-message leaks in JSON. We covered those with the manual tests in §7.4. 
 
-Full reports: `pentest/zap/reports/zap-api-report.html` and `zap-api-report.md` (generated, gitignored).
+**Frontend baseline scan (16 Nov 2026):** `zap-baseline.py -t http://frontend:3000` on the same isolated stack. Result: 0 High, 56 checks passed, and these warnings:
+
+| ZAP alert | Risk | Where | Valid? | Fix |
+|---|---|---|---|---|
+| Content Security Policy (CSP) Header Not Set (10038) | Medium | 4 pages | **Valid** | `headers()` in `next.config.ts` with a CSP (R7) |
+| Missing Anti-clickjacking Header (10020) | Medium | 4 pages | **Valid** | CSP `frame-ancestors 'none'` / `X-Frame-Options: DENY` (R7) |
+| X-Content-Type-Options Header Missing (10021) | Low | 5 responses | **Valid** | `nosniff` header (R7) |
+| Server Leaks Information via `X-Powered-By` (10037) | Low | 5 responses | **Valid** | `poweredByHeader: false` (R7) |
+| Big Redirect Detected (10044) | Low | `/` (307 redirect) | False positive. The redirect body is Next.js's own page shell with no user data. | — |
+| Modern Web Application (10109) | Info | 4 pages | Informational. Tells ZAP to use the AJAX spider. | — |
+
+Full reports: `pentest/zap/reports/zap-api-report.{html,md}` and `zap-frontend-baseline.{html,md}` (generated, gitignored).
 
 > 📷 _TODO: screenshot of the ZAP HTML report summary for the presentation._
 
