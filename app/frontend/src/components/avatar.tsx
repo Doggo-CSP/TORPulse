@@ -18,11 +18,9 @@ export function Avatar({
   className,
   ...props
 }: AvatarProps & React.ComponentPropsWithoutRef<'span'>) {
-  const [hasError, setHasError] = React.useState(false)
-
-  React.useEffect(() => {
-    setHasError(false)
-  }, [src])
+  // Remember which src failed to load, so a new src is tried again without an effect
+  const [failedSrc, setFailedSrc] = React.useState<string | null>(null)
+  const hasError = src !== null && failedSrc === src
 
   const showImage = Boolean(src && src.trim() && !hasError)
 
@@ -64,7 +62,7 @@ export function Avatar({
           className="size-full object-cover"
           src={src!}
           alt={alt}
-          onError={() => setHasError(true)}
+          onError={() => setFailedSrc(src)}
         />
       )}
     </span>

@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExternalUrl } from "@/lib/safe-url";
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { SiteNav } from "@/app/components/site_nav";
@@ -646,7 +647,7 @@ export default function SavedTorPage() {
 
                       {/* Project Title */}
                       <h3 className="mt-3 text-base font-bold leading-snug text-card-foreground group-hover:text-primary transition-colors line-clamp-2">
-                        <Link href={`/tor/${tor._id}`}>{tor.projectTitle}</Link>
+                        <Link href={`/tor/${encodeURIComponent(tor._id)}`}>{tor.projectTitle}</Link>
                       </h3>
 
                       {/* Agency Name */}
@@ -728,7 +729,7 @@ export default function SavedTorPage() {
 
                       {/* View Full Detail Link */}
                       <Link
-                        href={`/tor/${tor._id}`}
+                        href={`/tor/${encodeURIComponent(tor._id)}`}
                         className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-all"
                       >
                         <span>ดูรายละเอียด</span>
@@ -770,7 +771,7 @@ export default function SavedTorPage() {
                           </td>
                           <td className="px-3 py-4 max-w-xs sm:max-w-md">
                             <Link
-                              href={`/tor/${tor._id}`}
+                              href={`/tor/${encodeURIComponent(tor._id)}`}
                               className="font-semibold text-foreground hover:text-primary transition-colors line-clamp-1"
                             >
                               {tor.projectTitle}
@@ -816,7 +817,7 @@ export default function SavedTorPage() {
                                 <EyeIcon className="size-4" />
                               </button>
                               <Link
-                                href={`/tor/${tor._id}`}
+                                href={`/tor/${encodeURIComponent(tor._id)}`}
                                 className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
                               >
                                 รายละเอียด
@@ -951,7 +952,7 @@ export default function SavedTorPage() {
                     {previewTor.documents.map((doc, idx) => (
                       <a
                         key={idx}
-                        href={doc.sourceUrl}
+                        href={safeExternalUrl(doc.sourceUrl)}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center gap-2.5 rounded-xl border border-border bg-surface p-3 text-xs text-foreground hover:bg-surface-2 transition-colors"
@@ -970,7 +971,7 @@ export default function SavedTorPage() {
             <div className="flex items-center justify-between border-t border-border bg-surface-2/70 px-6 py-4">
               {previewTor.detailUrl ? (
                 <a
-                  href={previewTor.detailUrl}
+                  href={safeExternalUrl(previewTor.detailUrl)}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
@@ -990,7 +991,7 @@ export default function SavedTorPage() {
                   ปิด
                 </button>
                 <Link
-                  href={`/tor/${previewTor._id}`}
+                  href={`/tor/${encodeURIComponent(previewTor._id)}`}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 shadow-xs"
                 >
                   <span>เปิดหน้ารายละเอียดเต็ม</span>

@@ -6,18 +6,18 @@ import type passport from 'passport'
 
 import { env } from '../../config/env.js'
 import { errorHandler, notFoundHandler } from '../../middleware/error.middleware.js'
+import { createOriginCheck, createSecurityHeaders } from '../../middleware/security.middleware.js'
 import { createApiLimiter, createLoginLimiter } from '../../middleware/rate-limit.middleware.js'
 import { createSessionTimeout } from '../../middleware/session-timeout.middleware.js'
 import {
   DEFAULT_SESSION_ABSOLUTE_TIMEOUT_MS,
   DEFAULT_SESSION_IDLE_TIMEOUT_MS,
+  sessionCookieName,
   type ApiAuthConfig,
 } from '../../modules/auth/auth.config.js'
 import { createAuthRouter } from '../../modules/auth/auth.routes.js'
 import { createPassport } from '../../modules/auth/passport.js'
 import r from './r.route.js'
-
-const SESSION_COOKIE = 'torpulse.sid'
 
 interface RateLimitOverrides {
   windowMs?: number
@@ -36,6 +36,7 @@ export const createApiApp = (authConfig: ApiAuthConfig, options: CreateApiAppOpt
   const app = express()
   const authPassport = options.authPassport ?? createPassport(authConfig)
   const frontendOrigin = new URL(authConfig.frontendUrl).origin
+  const cookieName = sessionCookieName(authConfig.isProduction)
   const idleMs = authConfig.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS
   const absoluteMs = authConfig.sessionAbsoluteTimeoutMs ?? DEFAULT_SESSION_ABSOLUTE_TIMEOUT_MS
   const rateLimitWindowMs = options.rateLimit?.windowMs ?? env.RATE_LIMIT_WINDOW_MS
@@ -55,6 +56,7 @@ export const createApiApp = (authConfig: ApiAuthConfig, options: CreateApiAppOpt
     app.set('trust proxy', 1)
   }
 
+  app.use(createSecurityHeaders({ isProduction: authConfig.isProduction }))
   app.use(
     cors({
       origin: (requestOrigin, callback) => {
@@ -63,8 +65,10 @@ export const createApiApp = (authConfig: ApiAuthConfig, options: CreateApiAppOpt
       credentials: true,
     }),
   )
-  app.use(express.json({ limit: '8mb' }))
-  app.use(express.urlencoded({ extended: true, limit: '8mb' }))
+  app.use(createOriginCheck(frontendOrigin))
+  // The largest real payload (a bidder profile) is a few KB; a small limit blunts body-size DoS
+  app.use(express.json({ limit: '1mb' }))
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }))
   const cookieOptions = {
     httpOnly: true,
     sameSite: 'lax' as const,
@@ -73,7 +77,7 @@ export const createApiApp = (authConfig: ApiAuthConfig, options: CreateApiAppOpt
   }
   app.use(
     session({
-      name: SESSION_COOKIE,
+      name: cookieName,
       secret: authConfig.sessionSecret,
       resave: false,
       saveUninitialized: false,
@@ -86,7 +90,7 @@ export const createApiApp = (authConfig: ApiAuthConfig, options: CreateApiAppOpt
   )
   app.use(authPassport.initialize())
   app.use(authPassport.session())
-  app.use(createSessionTimeout({ idleMs, absoluteMs, cookieName: SESSION_COOKIE, cookieOptions }))
+  app.use(createSessionTimeout({ idleMs, absoluteMs, cookieName, cookieOptions }))
 
   const loginLimiter = createLoginLimiter({
     windowMs: rateLimitWindowMs,

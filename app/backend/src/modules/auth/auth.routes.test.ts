@@ -94,6 +94,23 @@ test('POST /auth/logout clears the named session cookie', async () => {
   assert.match(response.headers['set-cookie']?.[0] ?? '', /^torpulse\.sid=;/)
   assert.match(response.headers['set-cookie']?.[0] ?? '', /HttpOnly/)
   assert.match(response.headers['set-cookie']?.[0] ?? '', /SameSite=Lax/)
+  assert.equal(response.headers['clear-site-data'], '"cache", "storage"')
+})
+
+test('production uses a Secure __Host- session cookie', async () => {
+  const app = createApiApp(
+    { ...config, isProduction: true },
+    { sessionStore: new session.MemoryStore(), authPassport: new passport.Passport() },
+  )
+
+  const response = await request(app).post('/auth/logout')
+  const cookie = response.headers['set-cookie']?.[0] ?? ''
+
+  assert.equal(response.status, 204)
+  assert.match(cookie, /^__Host-torpulse\.sid=;/)
+  assert.match(cookie, /Secure/)
+  assert.match(cookie, /Path=\//)
+  assert.doesNotMatch(cookie, /Domain=/)
 })
 
 const deserialize = (authPassport: passport.Authenticator, id: string) =>

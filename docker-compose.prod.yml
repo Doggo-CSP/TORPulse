@@ -1,0 +1,66 @@
+# Production overlay: HTTPS through Caddy, production mode, nothing but 80/443 published.
+#
+#   APP_DOMAIN=torpulse.example.com \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# DNS: point both APP_DOMAIN and api.APP_DOMAIN at this host, with ports 80 and 443 open, so
+# Caddy can get Let's Encrypt certificates. In the Google Cloud console, add
+# https://api.APP_DOMAIN/auth/google/callback as an authorised redirect URI.
+# Local test: APP_DOMAIN=localhost (Caddy's local CA; *.localhost resolves to 127.0.0.1).
+
+x-prod-env: &prod-env
+  MONGODB_URI: mongodb://mongo:27017
+  # Secure + __Host- session cookie, trust proxy (Caddy), HSTS
+  NODE_ENV: production
+  FRONTEND_URL: https://${APP_DOMAIN:?set APP_DOMAIN}
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+      - frontend
+    restart: unless-stopped
+
+  # Only Caddy is reachable from outside; the app containers talk over the compose network
+  mongo:
+    ports: !reset []
+
+  api:
+    ports: !reset []
+    environment:
+      <<: *prod-env
+      PORT: 8000
+      GOOGLE_CALLBACK_URL: https://api.${APP_DOMAIN}/auth/google/callback
+
+  ingestion-worker:
+    environment: *prod-env
+
+  queue-producer:
+    environment: *prod-env
+
+  notification-worker:
+    environment: *prod-env
+
+  qualification-worker:
+    environment: *prod-env
+
+  frontend:
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: https://api.${APP_DOMAIN}
+    ports: !reset []
+
+volumes:
+  caddy-data:
+  caddy-config:

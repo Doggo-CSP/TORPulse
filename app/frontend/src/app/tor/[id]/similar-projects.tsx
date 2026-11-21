@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExternalUrl } from "@/lib/safe-url";
 import Link from "next/link";
 import { useSimilarProjects } from "@/hooks/use-tors";
 import { formatBahtCurrency, formatThaiDate, formatThaiMonth } from "@/api/reports.api";
@@ -119,7 +120,7 @@ export function SimilarProjects({ torId, budgetBaht }: { torId: string; budgetBa
 
                   {project.detail_url && (
                     <a
-                      href={project.detail_url}
+                      href={safeExternalUrl(project.detail_url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mt-2 inline-block text-xs font-medium text-primary hover:underline"

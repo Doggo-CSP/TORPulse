@@ -1,6 +1,12 @@
 import mongoose, { Schema, model, type HydratedDocument, type Model } from 'mongoose'
 
-export const TOR_NOTIFICATION_STATUSES = ['pending', 'sending', 'sent', 'failed', 'skipped'] as const
+export const TOR_NOTIFICATION_STATUSES = [
+  'pending',
+  'sending',
+  'sent',
+  'failed',
+  'skipped',
+] as const
 export type TorNotificationStatus = (typeof TOR_NOTIFICATION_STATUSES)[number]
 
 // One row per (user, TOR) pair the user fully qualifies for. The unique index is what
@@ -30,10 +36,7 @@ const torNotificationSchema = new Schema<TorNotificationRecord>(
     lockedBy: { type: String, default: null },
     lockedUntil: { type: Date, default: null },
     lastError: {
-      type: new Schema(
-        { code: String, message: String, occurredAt: Date },
-        { _id: false },
-      ),
+      type: new Schema({ code: String, message: String, occurredAt: Date }, { _id: false }),
       default: null,
     },
     emailBatchId: { type: String, default: null },

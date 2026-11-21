@@ -31,7 +31,10 @@ test('a recent scheduled run means the scheduler is ok', () => {
 })
 
 test('no scheduled run for longer than the stale window means stalled', () => {
-  assert.equal(schedulerHealth({ ...base, lastScheduledStartedAt: minutesAgo(36) }).state, 'stalled')
+  assert.equal(
+    schedulerHealth({ ...base, lastScheduledStartedAt: minutesAgo(36) }).state,
+    'stalled',
+  )
   assert.equal(schedulerHealth({ ...base, lastScheduledStartedAt: minutesAgo(35) }).state, 'ok')
 })
 

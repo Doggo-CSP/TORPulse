@@ -26,22 +26,26 @@ test('tor list + filter-options routes, against a deterministic seeded dataset',
   const app = express()
   app.use('/tors', router)
 
-  await t.test('GET /tors/filter-options lists fiscal years, departments, statuses, categories', async () => {
-    const seededTor = await TorModel.findOne({ externalId: 'seed-homepage-004' }).lean()
-    assert.ok(seededTor?.category)
+  await t.test(
+    'GET /tors/filter-options lists fiscal years, departments, statuses, categories',
+    async () => {
+      const seededTor = await TorModel.findOne({ externalId: 'seed-homepage-004' }).lean()
+      assert.ok(seededTor?.category)
 
-    const response = await request(app).get('/tors/filter-options')
+      const response = await request(app).get('/tors/filter-options')
 
-    assert.equal(response.status, 200)
-    assert.ok(response.body.years.includes(2568))
-    assert.deepEqual(response.body.years, [...response.body.years].sort((a, b) => b - a))
-    assert.ok(response.body.departments.includes('กรมบัญชีกลาง'))
-    assert.ok(response.body.statuses.includes('ระหว่างดำเนินการ'))
-    assert.ok(
-      response.body.categories.some((c: { key: string }) => c.key === seededTor.category),
-    )
-    assert.equal(response.body.technologies, undefined)
-  })
+      assert.equal(response.status, 200)
+      assert.ok(response.body.years.includes(2568))
+      assert.deepEqual(
+        response.body.years,
+        [...response.body.years].sort((a, b) => b - a),
+      )
+      assert.ok(response.body.departments.includes('กรมบัญชีกลาง'))
+      assert.ok(response.body.statuses.includes('ระหว่างดำเนินการ'))
+      assert.ok(response.body.categories.some((c: { key: string }) => c.key === seededTor.category))
+      assert.equal(response.body.technologies, undefined)
+    },
+  )
 
   await t.test('GET /tors filters by category key and accepts all', async () => {
     const seededTor = await TorModel.findOne({ externalId: 'seed-homepage-004' }).lean()
@@ -64,10 +68,10 @@ test('tor list + filter-options routes, against a deterministic seeded dataset',
     assert.equal(allResponse.body.total, 1)
   })
 
-  await t.test('GET /tors filters by title, fiscal year, department, status, and budget', async () => {
-    const response = await request(app)
-      .get('/tors')
-      .query({
+  await t.test(
+    'GET /tors filters by title, fiscal year, department, status, and budget',
+    async () => {
+      const response = await request(app).get('/tors').query({
         q: 'seed project seed-homepage-',
         year: 2568,
         department: 'กรมบัญชีกลาง',
@@ -76,17 +80,18 @@ test('tor list + filter-options routes, against a deterministic seeded dataset',
         budget_max: 350000,
       })
 
-    assert.equal(response.status, 200)
-    assert.equal(response.body.total, 1)
-    assert.equal(response.body.items[0].externalId, 'seed-homepage-004')
-    assert.equal(response.body.items[0].sourceAdapter, 'central_egp')
-    assert.ok(response.body.items[0].createdAt)
+      assert.equal(response.status, 200)
+      assert.equal(response.body.total, 1)
+      assert.equal(response.body.items[0].externalId, 'seed-homepage-004')
+      assert.equal(response.body.items[0].sourceAdapter, 'central_egp')
+      assert.ok(response.body.items[0].createdAt)
 
-    const wrongYear = await request(app)
-      .get('/tors')
-      .query({ q: 'seed project seed-homepage-004', year: 2567 })
-    assert.equal(wrongYear.body.total, 0)
-  })
+      const wrongYear = await request(app)
+        .get('/tors')
+        .query({ q: 'seed project seed-homepage-004', year: 2567 })
+      assert.equal(wrongYear.body.total, 0)
+    },
+  )
 
   await t.test('GET /tors paginates', async () => {
     const response = await request(app)

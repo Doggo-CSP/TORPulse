@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExternalUrl } from "@/lib/safe-url";
 import { useMemo, useState } from "react";
 import { useDebounce } from "use-debounce";
 import Link from "next/link";
@@ -1096,7 +1097,7 @@ export default function ReportsDashboardPage() {
                             <td className="px-4 py-4 text-center print:hidden">
                               {item.detail_url ? (
                                 <a
-                                  href={item.detail_url}
+                                  href={safeExternalUrl(item.detail_url)}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium hover:bg-surface-2 hover:border-primary transition-colors text-foreground"

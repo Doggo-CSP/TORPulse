@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { clearLocalDrafts } from "@/hooks/use-local-draft";
+
 export interface AuthUser {
   id: string;
   name: string;
@@ -57,6 +59,15 @@ export function useAuth() {
   }, []);
 
   const signOut = useCallback(async () => {
+    // Clear what this browser keeps about the account even if the API cannot be reached
+    // (ASVS V14.3.1): saved form drafts hold profile data, and session flags are per login.
+    clearLocalDrafts("");
+    try {
+      window.sessionStorage.clear();
+    } catch {
+      // Storage blocked: nothing was stored
+    }
+
     const response = await fetch(`${apiUrl}/auth/logout`, {
       method: "POST",
       credentials: "include",

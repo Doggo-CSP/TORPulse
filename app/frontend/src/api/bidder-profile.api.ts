@@ -159,19 +159,19 @@ export const addTeamMember = (body: PersonInput) =>
   request<ProfileResponse>("/user/bidder-profile/team", { method: "POST", body: json(body) }).then(profileOf);
 
 export const updateTeamMember = (id: string, body: PersonInput) =>
-  request<ProfileResponse>(`/user/bidder-profile/team/${id}`, { method: "PATCH", body: json(body) }).then(profileOf);
+  request<ProfileResponse>(`/user/bidder-profile/team/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body) }).then(profileOf);
 
 export const removeTeamMember = (id: string) =>
-  request<ProfileResponse>(`/user/bidder-profile/team/${id}`, { method: "DELETE" }).then(profileOf);
+  request<ProfileResponse>(`/user/bidder-profile/team/${encodeURIComponent(id)}`, { method: "DELETE" }).then(profileOf);
 
 export const addProject = (body: PastProjectInput) =>
   request<ProfileResponse>("/user/bidder-profile/projects", { method: "POST", body: json(body) }).then(profileOf);
 
 export const updateProject = (id: string, body: PastProjectInput) =>
-  request<ProfileResponse>(`/user/bidder-profile/projects/${id}`, { method: "PATCH", body: json(body) }).then(profileOf);
+  request<ProfileResponse>(`/user/bidder-profile/projects/${encodeURIComponent(id)}`, { method: "PATCH", body: json(body) }).then(profileOf);
 
 export const removeProject = (id: string) =>
-  request<ProfileResponse>(`/user/bidder-profile/projects/${id}`, { method: "DELETE" }).then(profileOf);
+  request<ProfileResponse>(`/user/bidder-profile/projects/${encodeURIComponent(id)}`, { method: "DELETE" }).then(profileOf);
 
 /* ───────────── Qualification match ───────────── */
 
@@ -214,11 +214,11 @@ export interface QualificationMatchResponse {
 
 /** The stored result for one TOR; never calls the AI. */
 export const fetchTorQualification = (torId: string) =>
-  request<QualificationMatchResponse>(`/tors/${torId}/qualification`);
+  request<QualificationMatchResponse>(`/tors/${encodeURIComponent(torId)}/qualification`);
 
 /** Runs the AI (about 10 seconds) unless a current result is stored, or force is set. */
 export const evaluateTorQualification = (torId: string, force = false) =>
-  request<QualificationMatchResponse>(`/tors/${torId}/qualification${force ? "?force=true" : ""}`, {
+  request<QualificationMatchResponse>(`/tors/${encodeURIComponent(torId)}/qualification${force ? "?force=true" : ""}`, {
     method: "POST",
   });
 

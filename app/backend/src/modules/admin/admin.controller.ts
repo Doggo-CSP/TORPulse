@@ -23,6 +23,7 @@ import {
 import { schedulerHealth } from '../ingestion/ingestion-health.js'
 import mongoose, { isObjectIdOrHexString, type ClientSession, type Types } from 'mongoose'
 import { User, type UserDocument } from '../auth/user.model.js'
+import { revokeUserSessions } from '../auth/session-revocation.js'
 import { DEFAULT_CATEGORY_KEY } from '../category/category.constants.js'
 import { CategoryModel } from '../category/category.model.js'
 import {
@@ -328,6 +329,11 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
     const { userId } = req.params
     const { role } = req.body
 
+    if (!isObjectIdOrHexString(userId)) {
+      res.status(400).json({ success: false, message: 'รหัสผู้ใช้งานไม่ถูกต้อง' })
+      return
+    }
+
     if (!['admin', 'user'].includes(role)) {
       res.status(400).json({ success: false, message: 'บทบาทไม่ถูกต้อง' })
       return
@@ -514,6 +520,12 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
     if (outcome === 'unchanged') {
       res.status(400).json({ success: false, message: 'ผู้ใช้งานมีสถานะนี้อยู่แล้ว' })
       return
+    }
+
+    // A suspended account is already refused on every request (deserializeUser), but its stored
+    // sessions are deleted too, so nothing can be revived if the account is reactivated later
+    if (status === 'suspended') {
+      await revokeUserSessions(String(userId))
     }
 
     const statusMap: Record<string, string> = {

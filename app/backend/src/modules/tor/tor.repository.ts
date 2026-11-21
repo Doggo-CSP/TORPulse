@@ -105,7 +105,8 @@ const toProjectAnnouncement = (announcement: StoredAnnouncement): ProjectAnnounc
 export function torFieldsFromSourceMetadata(
   metadata:
     | ({
-        [K in Exclude<keyof ProjectSourceMetadata, 'announcements'>]?: ProjectSourceMetadata[K] | null
+        [K in Exclude<keyof ProjectSourceMetadata, 'announcements'>]?:
+          ProjectSourceMetadata[K] | null
       } & { announcements?: ReadonlyArray<StoredAnnouncement> | null })
     | null
     | undefined,

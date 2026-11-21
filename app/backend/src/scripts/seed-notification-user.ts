@@ -54,8 +54,14 @@ async function seed(contactEmail: string): Promise<void> {
   // Meet the highest bar among the open TORs so the profile qualifies by construction.
   const eligibilities = mappedTors.map((tor) => tor.eligibility!)
   const qualification: CompanyQualification = {
-    registeredCapitalBaht: maxOf(eligibilities.map((e) => e.minRegisteredCapitalBaht), 10_000_000),
-    yearsInBusiness: maxOf(eligibilities.map((e) => e.minYearsInBusiness), 10),
+    registeredCapitalBaht: maxOf(
+      eligibilities.map((e) => e.minRegisteredCapitalBaht),
+      10_000_000,
+    ),
+    yearsInBusiness: maxOf(
+      eligibilities.map((e) => e.minYearsInBusiness),
+      10,
+    ),
     maxPastContractValueBaht: maxOf(
       eligibilities.map((e) => e.minPastContractValueBaht),
       5_000_000,
@@ -70,7 +76,10 @@ async function seed(contactEmail: string): Promise<void> {
   }
   const interests = [
     ...new Set(
-      mappedTors.flatMap((tor) => [...(tor.categories ?? []), ...(tor.category ? [tor.category] : [])]),
+      mappedTors.flatMap((tor) => [
+        ...(tor.categories ?? []),
+        ...(tor.category ? [tor.category] : []),
+      ]),
     ),
   ]
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExternalUrl } from "@/lib/safe-url";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDebounce } from "use-debounce";
 import {
@@ -474,7 +475,7 @@ export function TorManagementPanel({
                     >
                       <td className="max-w-md px-5 py-4">
                         <a
-                          href={`/tor/${tor.id}`}
+                          href={`/tor/${encodeURIComponent(tor.id)}`}
                           className="line-clamp-2 font-semibold text-[#2d2d2d] hover:text-[#4a7c59] hover:underline"
                         >
                           {tor.projectTitle}
@@ -622,7 +623,7 @@ export function TorManagementPanel({
                   {editing.externalId} · {editing.projectTitle}
                 </p>
                 <a
-                  href={editing.detailUrl}
+                  href={safeExternalUrl(editing.detailUrl)}
                   target="_blank"
                   rel="noreferrer"
                   className="mt-1 inline-block text-xs font-semibold text-[#4a7c59] hover:underline"

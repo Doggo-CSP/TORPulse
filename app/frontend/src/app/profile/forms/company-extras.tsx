@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExternalUrl } from "@/lib/safe-url";
 import { useRef, useState } from "react";
 import {
   DocumentArrowUpIcon,
@@ -177,7 +178,7 @@ export function CertificateUploader({
             >
               <DocumentTextIcon className="size-5 shrink-0 text-[#4a7c59]" />
               <a
-                href={f.url}
+                href={safeExternalUrl(f.url)}
                 target="_blank"
                 rel="noreferrer"
                 className="min-w-0 flex-1 truncate text-sm text-[#2d2d2d] hover:underline"

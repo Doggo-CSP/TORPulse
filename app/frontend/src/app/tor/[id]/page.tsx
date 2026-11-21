@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExternalUrl } from "@/lib/safe-url";
 import Link from "next/link";
 import { use, useState, useMemo } from "react";
 import { SiteNav } from "@/app/components/site_nav";
@@ -348,7 +349,7 @@ export default function TorDetailPage({
                         )}
 
                         <a
-                            href={tor.detailUrl}
+                            href={safeExternalUrl(tor.detailUrl)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="panel flex w-full items-center justify-between p-4 text-sm font-medium text-primary transition-colors hover:bg-surface-2"

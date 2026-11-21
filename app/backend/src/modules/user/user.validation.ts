@@ -21,21 +21,56 @@ export const qualificationSchema = z.object({
     .transform((keys) => [...new Set(keys)]),
 })
 
+// Positive validation for profile input (ASVS V2.2.1): every field has a length limit, and
+// fields with a known format must match it. An empty string clears the field.
+const text = (max: number) => z.string().trim().max(max)
+
+// Only http(s) links are stored, so a saved value can never become a javascript: or data: URL
+// when it is rendered. A bare domain ("example.com") is stored as https://example.com.
+const webUrl = z
+  .string()
+  .trim()
+  .max(2048)
+  .transform((value) => (value && !/^[a-z][a-z0-9+.-]*:/i.test(value) ? `https://${value}` : value))
+  .refine((value) => {
+    if (value === '') return true
+    try {
+      const url = new URL(value)
+      return (url.protocol === 'https:' || url.protocol === 'http:') && url.hostname.includes('.')
+    } catch {
+      return false
+    }
+  }, 'Must be an http(s) URL')
+
 export const updateProfileSchema = z.object({
   accountType: z.enum(['personal', 'company']).optional(),
-  displayName: z.string().trim().optional(),
-  firstName: z.string().trim().optional(),
-  lastName: z.string().trim().optional(),
-  jobTitle: z.string().trim().optional(),
-  contactEmail: z.string().trim().optional(),
-  phone: z.string().trim().optional(),
-  image: z.string().trim().optional(),
-  address: z.string().trim().optional(),
-  about: z.string().trim().optional(),
-  companyName: z.string().trim().optional(),
-  registrationNumber: z.string().trim().optional(),
-  businessType: z.string().trim().optional(),
-  website: z.string().trim().optional(),
+  displayName: text(100).optional(),
+  firstName: text(100).optional(),
+  lastName: text(100).optional(),
+  jobTitle: text(100).optional(),
+  contactEmail: z
+    .string()
+    .trim()
+    .max(254)
+    .refine((value) => value === '' || z.email().safeParse(value).success, 'Invalid email')
+    .optional(),
+  phone: z
+    .string()
+    .trim()
+    .refine((value) => value === '' || /^[0-9+()\-\s]{6,30}$/.test(value), 'Invalid phone number')
+    .optional(),
+  image: webUrl.optional(),
+  address: text(500).optional(),
+  about: text(2000).optional(),
+  companyName: text(200).optional(),
+  // Thai juristic person registration numbers are 13 digits; dashes and spaces are allowed
+  registrationNumber: z
+    .string()
+    .trim()
+    .refine((value) => /^[0-9A-Za-z\-\s]{0,30}$/.test(value), 'Invalid registration number')
+    .optional(),
+  businessType: text(100).optional(),
+  website: webUrl.optional(),
   qualification: qualificationSchema.optional(),
   notificationPrefs: z.object({ emailEnabled: z.boolean() }).optional(),
 })
@@ -49,7 +84,8 @@ export const updateOnboardingSchema = z.object({
 
 export const updateInterestsSchema = z.object({
   interests: z
-    .array(z.string().trim().min(1))
+    .array(z.string().trim().min(1).max(100))
+    .max(50)
     .transform((values) => [
       ...new Set(values.map((value) => LEGACY_INTEREST_IDS[value] ?? value)),
     ]),

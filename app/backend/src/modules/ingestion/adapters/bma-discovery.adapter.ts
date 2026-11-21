@@ -292,7 +292,9 @@ export class BmaDiscoveryAdapter {
       url.searchParams.set('pageNo', String(pageNo))
       url.searchParams.set('pageSize', String(ANNOUNCEMENT_PAGE_SIZE))
 
-      const parsed = responseSchema.safeParse(await this.getJson(url, 'project announcements', signal))
+      const parsed = responseSchema.safeParse(
+        await this.getJson(url, 'project announcements', signal),
+      )
       if (!parsed.success) {
         throw new Error('BMA returned an invalid project-announcements response')
       }

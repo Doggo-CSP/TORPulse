@@ -229,7 +229,9 @@ test('finds project details by eGP project number across all stages', async () =
       if (url.pathname.endsWith('/GetProjectFromFilter')) searchUrl = url
     },
     (projectId) =>
-      projectId === BMA_PROJECT_ID ? Response.json(detailBody) : new Response(null, { status: 404 }),
+      projectId === BMA_PROJECT_ID
+        ? Response.json(detailBody)
+        : new Response(null, { status: 404 }),
   )
 
   assert.deepEqual(await adapter.findProjectDetails('69099316505'), {

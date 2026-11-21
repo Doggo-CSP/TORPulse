@@ -211,7 +211,10 @@ test('notification flow: full score, batch, send once, retry on failure', async 
     assert.equal(mailer.sent.length, 2)
     assert.match(mailer.sent[1]?.subject ?? '', /\(1 รายการ\)/)
 
-    const skipped = await TorNotificationModel.findOne({ userId: partial._id, torId: torB._id }).lean()
+    const skipped = await TorNotificationModel.findOne({
+      userId: partial._id,
+      torId: torB._id,
+    }).lean()
     assert.equal(skipped?.status, 'skipped')
   })
 })

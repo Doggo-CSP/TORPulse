@@ -4,7 +4,7 @@ import test, { before } from 'node:test'
 
 import express from 'express'
 import request from 'supertest'
-import { Types } from 'mongoose'
+import mongoose, { Types } from 'mongoose'
 
 import { env } from '../../config/env.js'
 import { database } from '../../config/mongoose.js'
@@ -282,6 +282,39 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     assert.equal(response.status, 400)
   })
 
+  await t.test("PATCH status to suspended deletes only that user's stored sessions", async () => {
+    const sessions = mongoose.connection.db!.collection<{ _id: string; session: string }>(
+      'sessions',
+    )
+    const otherUserId = new Types.ObjectId().toString()
+    const sessionOf = (userId: string) =>
+      JSON.stringify({ cookie: { path: '/' }, passport: { user: userId } })
+    const seedSessions = { _id: { $regex: `^${SEED_PREFIX}` } }
+    await sessions.deleteMany(seedSessions)
+    await sessions.insertMany([
+      { _id: `${SEED_PREFIX}s1`, session: sessionOf(target._id.toString()) },
+      { _id: `${SEED_PREFIX}s2`, session: sessionOf(target._id.toString()) },
+      { _id: `${SEED_PREFIX}s3`, session: sessionOf(otherUserId) },
+    ])
+
+    const suspend = await request(app)
+      .patch(`${targetUrl(target._id)}/status`)
+      .send({ status: 'suspended' })
+    assert.equal(suspend.status, 200)
+
+    const left = await sessions.find(seedSessions).toArray()
+    assert.deepEqual(
+      left.map((doc) => doc._id),
+      [`${SEED_PREFIX}s3`],
+    )
+
+    const reactivate = await request(app)
+      .patch(`${targetUrl(target._id)}/status`)
+      .send({ status: 'active' })
+    assert.equal(reactivate.status, 200)
+    await sessions.deleteMany(seedSessions)
+  })
+
   await t.test('PATCH status suspends and reactivates with an audit log each time', async () => {
     const suspend = await request(app)
       .patch(`${targetUrl(target._id)}/status`)
@@ -350,9 +383,7 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
     const email = await request(app).patch(targetUrl(target._id)).send({ email: 'x@example.com' })
     const role = await request(app).patch(targetUrl(target._id)).send({ role: 'admin' })
     const status = await request(app).patch(targetUrl(target._id)).send({ status: 'suspended' })
-    const badType = await request(app)
-      .patch(targetUrl(target._id))
-      .send({ accountType: 'agency' })
+    const badType = await request(app).patch(targetUrl(target._id)).send({ accountType: 'agency' })
     const missing = await request(app)
       .patch(targetUrl(new Types.ObjectId()))
       .send({ name: 'Nobody' })

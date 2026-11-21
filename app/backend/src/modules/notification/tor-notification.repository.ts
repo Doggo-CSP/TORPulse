@@ -18,9 +18,7 @@ export interface NotificationPair {
 export async function enqueueNotifications(
   pairs: NotificationPair[],
 ): Promise<{ queued: number; existing: number }> {
-  const unique = [
-    ...new Map(pairs.map((pair) => [`${pair.userId}:${pair.torId}`, pair])).values(),
-  ]
+  const unique = [...new Map(pairs.map((pair) => [`${pair.userId}:${pair.torId}`, pair])).values()]
 
   if (unique.length === 0) {
     return { queued: 0, existing: 0 }

@@ -10,6 +10,12 @@ export interface ApiAuthConfig {
   sessionAbsoluteTimeoutMs?: number
 }
 
+// Production uses the __Host- prefix (ASVS V3.3.1): the browser then only accepts the cookie when
+// it is Secure, has Path=/ and no Domain, so a sibling subdomain cannot set or overwrite it.
+// Plain-HTTP local development cannot use the prefix, so it keeps the bare name.
+export const sessionCookieName = (isProduction: boolean): string =>
+  isProduction ? '__Host-torpulse.sid' : 'torpulse.sid'
+
 export const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000
 export const DEFAULT_SESSION_ABSOLUTE_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000
 

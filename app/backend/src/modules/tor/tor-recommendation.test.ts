@@ -27,7 +27,15 @@ test('a TOR is in an interest when its primary or any category is', () => {
   const interests = new Set(['ai_ml'])
   assert.equal(matchesInterest(tor('t', 'ai_ml'), interests), true)
   assert.equal(
-    matchesInterest({ _id: 't', category: 'web_application', categories: ['web_application', 'ai_ml'], createdAt: day(1) }, interests),
+    matchesInterest(
+      {
+        _id: 't',
+        category: 'web_application',
+        categories: ['web_application', 'ai_ml'],
+        createdAt: day(1),
+      },
+      interests,
+    ),
     true,
   )
   assert.equal(matchesInterest(tor('t', 'web_application'), interests), false)

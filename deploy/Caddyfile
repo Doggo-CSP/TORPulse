@@ -1,0 +1,30 @@
+# HTTPS reverse proxy for production (ASVS V12.1.1, V12.2.1, V12.2.2).
+#
+#   https://{$APP_DOMAIN}       -> frontend (Next.js)
+#   https://api.{$APP_DOMAIN}   -> API (Express)
+#
+# Caddy obtains and renews publicly trusted Let's Encrypt certificates for both names and
+# redirects every http:// request to https://. Only TLS 1.2 and 1.3 are accepted; Caddy's
+# default cipher suites are the modern AEAD ones (AES-GCM, ChaCha20-Poly1305).
+# With APP_DOMAIN=localhost Caddy uses its own local CA instead, for testing.
+
+# Let's Encrypt works without an account email; set one in a global block
+# (`{ email ops@example.com }`) to get certificate expiry notices.
+
+(tls_policy) {
+	tls {
+		protocols tls1.2 tls1.3
+	}
+}
+
+{$APP_DOMAIN} {
+	import tls_policy
+	encode zstd gzip
+	reverse_proxy frontend:3000
+}
+
+api.{$APP_DOMAIN} {
+	import tls_policy
+	encode zstd gzip
+	reverse_proxy api:8000
+}

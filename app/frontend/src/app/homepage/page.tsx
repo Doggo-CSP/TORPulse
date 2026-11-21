@@ -736,7 +736,7 @@ export default function HomePage() {
             {!searching && !searchError && pagedResults.map((t) => (
               <li key={t.id}>
                 <Link
-                  href={`/tor/${t.id}`}
+                  href={`/tor/${encodeURIComponent(t.id)}`}
                   className="group flex items-start gap-4 px-6 py-5 transition-colors hover:bg-surface-2"
                 >
                   {/* Category color bar */}
@@ -1004,7 +1004,7 @@ export default function HomePage() {
                 {recommendedList.map((t) => (
                   <Link
                     key={t.id}
-                    href={`/tor/${t.id}`}
+                    href={`/tor/${encodeURIComponent(t.id)}`}
                     className="rounded-2xl border border-border bg-surface p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
                   >
                     <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">

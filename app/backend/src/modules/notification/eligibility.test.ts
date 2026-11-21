@@ -76,13 +76,19 @@ test('does not qualify when a certification is missing', () => {
 })
 
 test('does not qualify a TOR without extracted eligibility', () => {
-  assert.equal(isFullyQualified(readyUser, { ...qualifyingTor, eligibility: null }).qualified, false)
+  assert.equal(
+    isFullyQualified(readyUser, { ...qualifyingTor, eligibility: null }).qualified,
+    false,
+  )
 })
 
 test('does not qualify when the TOR has unmapped qualifications', () => {
   const result = isFullyQualified(readyUser, {
     ...qualifyingTor,
-    eligibility: { ...qualifyingTor.eligibility, unmappedQualifications: ['มีศูนย์บริการในจังหวัด'] },
+    eligibility: {
+      ...qualifyingTor.eligibility,
+      unmappedQualifications: ['มีศูนย์บริการในจังหวัด'],
+    },
   })
 
   assert.equal(result.qualified, false)
@@ -105,12 +111,17 @@ test('treats a missing profile value as not meeting a stated minimum', () => {
 
 test('checks net worth, Bangkok office, past work age and staff roles', () => {
   const failing = (qualification: Record<string, unknown>) =>
-    isFullyQualified({ ...readyUser, qualification: { ...readyUser.qualification, ...qualification } }, qualifyingTor)
+    isFullyQualified(
+      { ...readyUser, qualification: { ...readyUser.qualification, ...qualification } },
+      qualifyingTor,
+    )
 
   assert.deepEqual(failing({ hasPositiveNetWorth: false }).reasons, ['net worth not positive'])
   assert.deepEqual(failing({ hasBangkokOffice: false }).reasons, ['no Bangkok office'])
   assert.deepEqual(failing({ pastContractAgeYears: 4 }).reasons, ['past work older than 3 years'])
-  assert.deepEqual(failing({ pastContractAgeYears: null }).reasons, ['past work older than 3 years'])
+  assert.deepEqual(failing({ pastContractAgeYears: null }).reasons, [
+    'past work older than 3 years',
+  ])
   assert.deepEqual(failing({ staffRoles: ['developer'] }).reasons, [
     'missing staff role project_manager',
   ])
@@ -124,10 +135,15 @@ test('needs the same complete profile as the AI score, and email turned on', () 
   } as unknown as BidderProfileInput
 
   assert.equal(canReceiveNotification(user, profile), true)
-  assert.equal(canReceiveNotification({ ...user, notificationPrefs: { emailEnabled: false } }, profile), false)
+  assert.equal(
+    canReceiveNotification({ ...user, notificationPrefs: { emailEnabled: false } }, profile),
+    false,
+  )
   assert.equal(canReceiveNotification({ ...user, status: 'suspended' }, profile), false)
   assert.equal(canReceiveNotification(user, null), false)
-  assert.deepEqual(missingNotificationFields({ ...user, businessType: '' }, profile), ['businessType'])
+  assert.deepEqual(missingNotificationFields({ ...user, businessType: '' }, profile), [
+    'businessType',
+  ])
   // Individuals can be notified too
   assert.equal(
     canReceiveNotification(

@@ -146,7 +146,7 @@ export async function updateUserInterests(interests: string[]): Promise<{ intere
  * API Function to toggle TOR bookmark
  */
 export async function toggleUserBookmark(torId: string): Promise<{ bookmarked: boolean; bookmarkedCount: number }> {
-  const res = await fetch(`${apiUrl}/api/v1/user/bookmarks/${torId}`, {
+  const res = await fetch(`${apiUrl}/api/v1/user/bookmarks/${encodeURIComponent(torId)}`, {
     method: "POST",
     credentials: "include",
   });

@@ -71,12 +71,18 @@ export interface QualificationResult {
 
 // Full qualification only: every stated requirement must be met. A requirement that cannot be
 // checked (no structured eligibility, or text the extractor could not map) counts as not met.
-export function isFullyQualified(user: NotificationUser, tor: NotificationTor): QualificationResult {
+export function isFullyQualified(
+  user: NotificationUser,
+  tor: NotificationTor,
+): QualificationResult {
   const reasons: string[] = []
   const eligibility = tor.eligibility
   const profile = user.qualification ?? {}
 
-  const torCategories = new Set([...(tor.categories ?? []), ...(tor.category ? [tor.category] : [])])
+  const torCategories = new Set([
+    ...(tor.categories ?? []),
+    ...(tor.category ? [tor.category] : []),
+  ])
   if (!(user.interests ?? []).some((key) => torCategories.has(key))) {
     reasons.push('category not in interests')
   }
@@ -96,7 +102,12 @@ export function isFullyQualified(user: NotificationUser, tor: NotificationTor): 
     profile.registeredCapitalBaht,
     eligibility.minRegisteredCapitalBaht,
   )
-  checkMinimum(reasons, 'years in business', profile.yearsInBusiness, eligibility.minYearsInBusiness)
+  checkMinimum(
+    reasons,
+    'years in business',
+    profile.yearsInBusiness,
+    eligibility.minYearsInBusiness,
+  )
   checkMinimum(
     reasons,
     'past contract value',

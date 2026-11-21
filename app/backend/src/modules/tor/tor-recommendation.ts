@@ -63,8 +63,7 @@ export function recommendationFor(
   }
 }
 
-const groupOf = (r: Recommendation): number =>
-  r.score === null ? 2 : r.allMandatoryMet ? 0 : 1
+const groupOf = (r: Recommendation): number => (r.score === null ? 2 : r.allMandatoryMet ? 0 : 1)
 
 /** Orders TORs as described at the top of this file; returns each with its recommendation. */
 export function rankRecommendations<T extends RecommendationTor>(

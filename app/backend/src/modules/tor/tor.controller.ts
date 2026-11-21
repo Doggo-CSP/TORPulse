@@ -1,4 +1,3 @@
-
 import type { Request, Response } from 'express'
 import { isObjectIdOrHexString } from 'mongoose'
 
@@ -489,7 +488,10 @@ export async function getRecommendationsHandler(req: Request, res: Response): Pr
   const interests = new Set(user?.interests ?? [])
 
   const ranked = [
-    ...rankRecommendations(openTors, matchesByTorId, interests).map((r) => ({ ...r, isOpen: true })),
+    ...rankRecommendations(openTors, matchesByTorId, interests).map((r) => ({
+      ...r,
+      isOpen: true,
+    })),
     ...rankRecommendations(closedTors, matchesByTorId, interests).map((r) => ({
       ...r,
       isOpen: false,

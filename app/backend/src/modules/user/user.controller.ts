@@ -1,3 +1,4 @@
+import { isObjectIdOrHexString } from 'mongoose'
 import type { Request, Response } from 'express'
 
 import { getActiveCategoryKeys } from '../category/category.repository.js'
@@ -201,8 +202,8 @@ export const toggleBookmarkHandler = async (req: Request, res: Response): Promis
   }
 
   const { torId } = req.params
-  if (!torId || typeof torId !== 'string') {
-    res.status(400).json({ error: 'torId parameter is required' })
+  if (!torId || typeof torId !== 'string' || !isObjectIdOrHexString(torId)) {
+    res.status(400).json({ error: 'Invalid TOR id' })
     return
   }
 

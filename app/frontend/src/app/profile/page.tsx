@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExternalUrl } from "@/lib/safe-url";
 import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { SiteNav } from "@/app/components/site_nav";
@@ -579,7 +580,7 @@ export default function ProfilePage() {
                       </span>
                       {tor.detailUrl && (
                         <a
-                          href={tor.detailUrl}
+                          href={safeExternalUrl(tor.detailUrl)}
                           target="_blank"
                           rel="noreferrer"
                           className="font-medium text-[#4a7c59] hover:underline"
@@ -667,7 +668,7 @@ export default function ProfilePage() {
 
                         <div className="flex items-start justify-between gap-3">
                           <Link
-                            href={`/tor/${tor.id}`}
+                            href={`/tor/${encodeURIComponent(tor.id)}`}
                             className="font-bold text-[#2d2d2d] line-clamp-2 hover:text-[#4a7c59]"
                           >
                             {tor.projectTitle}
@@ -700,7 +701,7 @@ export default function ProfilePage() {
                             : "ไม่ระบุงบประมาณ"}
                         </span>
                         <Link
-                          href={`/tor/${tor.id}`}
+                          href={`/tor/${encodeURIComponent(tor.id)}`}
                           className="font-medium text-[#4a7c59] hover:underline"
                         >
                           ดูรายละเอียด →

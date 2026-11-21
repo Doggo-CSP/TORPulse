@@ -1,0 +1,32 @@
+# Dependency updates (ASVS V15.1.1 / V15.2.1). Security updates are opened as soon as an
+# advisory is published; the weekly run keeps everything else from drifting. The remediation
+# time frames are in docs/security-project-report.md (§7.2, "Dependency remediation policy").
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /app/backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /app/frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directories: [/app/backend, /app/frontend]
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

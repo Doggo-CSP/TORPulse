@@ -20,7 +20,7 @@
 
 | # | Criterion | Section |
 |---|---|---|
-| 1 | OWASP ASVS requirements we follow | [§2](#2-security-requirements-owasp-asvs--criterion-1), [Appendix A](#appendix-a-full-asvs-requirement-list-planned-rows) |
+| 1 | OWASP ASVS requirements we follow | [§2](#2-security-requirements-owasp-asvs--criterion-1), [Appendix A](#appendix-a-full-asvs-requirement-list) |
 | 2 | Threat model with priorities | [§3](#3-threat-model--criterion-2) |
 | 3 | Security design principles | [§4](#4-security-design-principles--criterion-3) |
 | 4–13 | Implementation controls | [§5](#5-security-implementation--criteria-413) |
@@ -40,19 +40,19 @@ Status legend used throughout: ✅ implemented · ⚠️ partial · ❌ not impl
 | 5 | Social SSO (OAuth / OpenID) | ✅ | Google OAuth 2.0 via Passport. Account upserted by `googleId`. OAuth config checked at startup. | OAuth `state` / PKCE (T1). `email_verified` not checked. No OpenID nonce. | [§5.2](#52-social-sso-with-oauth--openid--criterion-5---implemented-with-gaps), M9 |
 | 6 | Authorization (roles) | ✅ | `admin` / `user` roles, each granting a fixed set of scopes. `requireRole` guards the admin router; `requireScope` checks each route's scope. Suspended accounts hold no scopes. Self role change and last-admin demotion blocked. Tested. | — | [§5.3](#53-authorisation-roles--criterion-6---implemented), M1–M3 |
 | 7 | Access control (no access to other users' data) | ✅ | Every user query scoped to `req.user._id`. Sub-ids looked up inside the caller's own profile. Router-level `requireAuth` on `/user/*`. IDOR test returns 404. | `/ingestion/report` is public (T12). | [§5.4](#54-access-control-no-access-to-another-users-data--criterion-7---implemented), M4, M14 |
-| 8 | Input validation and SQL/NoSQL/ORM injection | ⚠️ | Zod on every write endpoint. Express 5 simple query parser. ObjectId checks. `escapeRegex`. `.strict()` blocks mass assignment. ZAP raised 0 injection alerts. | `sanitizeFilter` / `strictQuery` off. `torId` not validated in bookmarks. No max length on profile strings. | [§5.5](#55-input-validation-and-injection-protection-sql--nosql--orm--criterion-8--️-partial), M6, M7 |
-| 9 | Environment variables and credentials | ✅ | All secrets in env vars. `.env` gitignored and dockerignored. Startup validation (`SESSION_SECRET` ≥ 32 chars). | MongoDB has no auth and is exposed on port 27017 (T9). Test secret written literally in CI. | [§5.6](#56-environment-variables-and-credentials--criterion-9---implemented-deployment-gaps) |
+| 8 | Input validation and SQL/NoSQL/ORM injection | ✅ | Zod allow-list validation on every write endpoint, with length limits and email/phone/URL formats. Express 5 simple query parser. ObjectId checks, including bookmarks. `escapeRegex`. `.strict()` blocks mass assignment. Rules documented in §5.5. ZAP raised 0 injection alerts. | Mongoose `sanitizeFilter` not enabled (it would also rewrite the code's own `$in`/`$gte` filters). | [§5.5](#55-input-validation-and-injection-protection-sql--nosql--orm--criterion-8---implemented), M6, M7 |
+| 9 | Environment variables and credentials | ✅ | All secrets in env vars. `.env` gitignored and dockerignored. Startup validation (`SESSION_SECRET` ≥ 32 chars). | MongoDB has no authentication (T9); the production compose no longer publishes it. Test secret written literally in CI. | [§5.6](#56-environment-variables-and-credentials--criterion-9---implemented-deployment-gaps) |
 | 10 | CORS (no `*`) | ✅ | One allowed origin from `FRONTEND_URL`, `credentials: true`. Tested. Manual test with an `evil.example` origin got no CORS header. | — | [§5.7](#57-cors--criterion-10---implemented), M5 |
 | 11 | Error handling | ⚠️ | Global 404/500 handlers. No stack traces sent to clients. Validation errors return 400. AI failures fall back to cached results. | 500 responses return `error.message` (Mongoose CastError leak, M10). | [§5.8](#58-error-handling--criterion-11--️-partial) |
 | 12 | Logging (errors, auth events) | ⚠️ | Audit log for 18 admin/system events, written in the same transaction as the change. Errors logged to the console. | Login, logout and 401/403 denials not logged. No structured logger. | [§5.9](#59-logging--criterion-12--️-partial) |
-| 13 | HTTP security headers | ❌ | Backend: `x-powered-by` off. Cookies `HttpOnly`, `SameSite=Lax`, `Secure` in production. | No CSP, HSTS, nosniff or X-Frame-Options on the API or frontend. Neither framework sets them, so they must be set in code (helmet + Next `headers()`) and shown during the presentation. | [§5.10](#510-http-security-headers--criterion-13---mostly-not-implemented), M12 |
-| 14 | SAST | ✅ | Semgrep (261 rules: 24 findings, all triaged). npm audit (backend 6, frontend 13 advisories). | CodeQL not set up yet. Dependency upgrades still pending. | [§7.2](#72-sast-semgrep--npm-audit--criterion-14) |
+| 13 | HTTP security headers | ✅ | Set in code: `helmet()` on the API, `headers()` in `next.config.ts`. CSP, HSTS, nosniff, X-Frame-Options, Referrer-Policy, no `X-Powered-By`. `__Host-` Secure cookie in production. Shown live in §5.10. | Frontend CSP has no `script-src` yet. | [§5.10](#510-http-security-headers--criterion-13---implemented), M12 |
+| 14 | SAST | ✅ | Semgrep (261 rules: 24 findings, all triaged). npm audit: 19 advisories found, all fixed by upgrades (0 left on 21 Nov 2026). CI audit gate and Dependabot. | CodeQL not set up yet. | [§7.2](#72-sast-semgrep--npm-audit--criterion-14) |
 | 15 | DAST | ✅ | OWASP ZAP API scan on an isolated stack: 5,762 attacks, 0 High / 2 Medium / 1 Low. ZAP frontend baseline scan: 0 High. 14 manual tests. | Report screenshot still TODO. | [§7.3](#73-dast-owasp-zap--criterion-15), [§7.4](#74-manual-security-tests) |
 | 16 | Threat model verification checklist | ✅ | All 17 threats checked: 6 ✅, 6 ⚠️, 5 ❌ | — | [§8](#8-threat-model-verification-checklist--criterion-16) |
-| 17 | Mapping to OWASP ASVS and Top 10 | ✅ | A01–A10 mapped to controls and ASVS v5 requirements | — | [§9](#9-mapping-to-owasp-top-10-2021-and-asvs--criterion-17), [Appendix A](#appendix-a-full-asvs-requirement-list-planned-rows) |
+| 17 | Mapping to OWASP ASVS and Top 10 | ✅ | A01–A10 mapped to controls and ASVS v5 requirements | — | [§9](#9-mapping-to-owasp-top-10-2021-and-asvs--criterion-17), [Appendix A](#appendix-a-full-asvs-requirement-list) |
 | 18 | 4 advanced features | ✅ | **4 of 4:** authorization with scope, login-attempt rate limit, API rate limit, login timeout (30-min idle + 7-day absolute). | MFA, compromised-password check (N/A, no passwords), JWT expiry (N/A, uses sessions). | [§6](#6-advanced-security-features--criterion-18) |
 
-**Totals for criteria 4–18:** 10 ✅ · 3 ⚠️ · 2 ❌ (4, 13).
+**Totals for criteria 4–18:** 12 ✅ · 2 ⚠️ (11, 12) · 1 ❌ (4).
 
 #### Advanced features (criterion 18)
 
@@ -150,35 +150,37 @@ We use **OWASP ASVS v5.0**. We went through all 345 requirements and marked each
 | Total ASVS v5 requirements | 345 |
 | Not related to TORPulse | 180 |
 | **Planned** | **165** (L1: 47 · L2: 100 · L3: 18) |
-| ✅ Done | 63 |
-| ⚠️ In progress | 54 |
-| ❌ To do | 48 |
+| ✅ Implemented | 88 |
+| ⚠️ Partial | 42 |
+| ❌ Not implemented | 34 |
+| ➖ N/A after review | 1 |
 
 ### 2.1 Planned requirements by chapter
 
-The table below is generated from the CSV, so it matches it exactly.
+The table below is generated from the CSV, using the report's status legend after code review (see Appendix A).
 
-| Chapter | Planned | Done | In progress | To do |
-|---|---:|---:|---:|---:|
-| V1 Encoding and Sanitization | 13 | 9 | 4 | 0 |
-| V2 Validation and Business Logic | 10 | 3 | 4 | 3 |
-| V3 Web Frontend Security | 19 | 9 | 5 | 5 |
-| V4 API and Web Service | 5 | 1 | 4 | 0 |
-| V5 File Handling | 8 | 5 | 2 | 1 |
-| V6 Authentication | 6 | 2 | 2 | 2 |
-| V7 Session Management | 15 | 9 | 1 | 5 |
-| V8 Authorization | 6 | 4 | 1 | 1 |
-| V9 Self-contained Tokens | 1 | 1 | 0 | 0 |
-| V10 OAuth and OIDC | 5 | 2 | 0 | 3 |
-| V11 Cryptography | 9 | 6 | 2 | 1 |
-| V12 Secure Communication | 6 | 1 | 1 | 4 |
-| V13 Configuration | 16 | 4 | 8 | 4 |
-| V14 Data Protection | 11 | 1 | 4 | 6 |
-| V15 Secure Coding and Architecture | 18 | 4 | 9 | 5 |
-| V16 Security Logging and Error Handling | 17 | 2 | 7 | 8 |
-| **Total** | **165** | **63** | **54** | **48** |
+| Chapter | Planned | ✅ | ⚠️ | ❌ | ➖ |
+|---|---:|---:|---:|---:|---:|
+| V1 Encoding and Sanitization | 13 | 10 | 3 | 0 | 0 |
+| V2 Validation and Business Logic | 10 | 6 | 3 | 1 | 0 |
+| V3 Web Frontend Security | 19 | 16 | 2 | 1 | 0 |
+| V4 API and Web Service | 5 | 1 | 4 | 0 | 0 |
+| V5 File Handling | 8 | 7 | 0 | 1 | 0 |
+| V6 Authentication | 6 | 2 | 3 | 1 | 0 |
+| V7 Session Management | 15 | 11 | 1 | 2 | 1 |
+| V8 Authorization | 6 | 4 | 0 | 2 | 0 |
+| V9 Self-contained Tokens | 1 | 1 | 0 | 0 | 0 |
+| V10 OAuth and OIDC | 5 | 2 | 0 | 3 | 0 |
+| V11 Cryptography | 9 | 8 | 0 | 1 | 0 |
+| V12 Secure Communication | 6 | 4 | 1 | 1 | 0 |
+| V13 Configuration | 16 | 5 | 7 | 4 | 0 |
+| V14 Data Protection | 11 | 2 | 3 | 6 | 0 |
+| V15 Secure Coding and Architecture | 18 | 7 | 8 | 3 | 0 |
+| V16 Security Logging and Error Handling | 17 | 2 | 7 | 8 | 0 |
+| V17 WebRTC | 0 | 0 | 0 | 0 | 0 |
+| **Total** | **165** | **88** | **42** | **34** | **1** |
 
-[Appendix A](#appendix-a-full-asvs-requirement-list-planned-rows) lists every planned requirement with code evidence. The Status column holds the team's self-assessment from the CSV. The *Audit note* column records places where the code review for this report found something different.
+[Appendix A](#appendix-a-full-asvs-requirement-list) lists all 345 requirements with code evidence. Statuses use the report legend (✅ / ⚠️ / ❌ / ➖). Where the code review differs from the team's CSV self-assessment (34 rows), the Note column gives the CSV value and the reason.
 
 ### 2.2 Key requirements by area
 
@@ -338,7 +340,7 @@ TORPulse has **no password login**. The `User` schema has no password field (`mo
 - Admin-only data (users, audit log, settings) sits behind `requireAdmin`.
 - `/api/v1/user/*` has a router-level `requireAuth` and a per-route `requireScope`, so a new handler cannot forget the login check. Handlers keep their own `req.user` check as well.
 
-### 5.5 Input validation and injection protection (SQL / NoSQL / ORM) · Criterion 8 · ⚠️ Partial
+### 5.5 Input validation and injection protection (SQL / NoSQL / ORM) · Criterion 8 · ✅ Implemented
 
 | Control | Evidence |
 |---|---|
@@ -349,14 +351,34 @@ TORPulse has **no password login**. The `User` schema has no password field (`mo
 | **Mass assignment:** Zod drops unknown keys. Admin schemas are `.strict()` and reject `email`/`role`/`status`. Role and status have their own endpoints. | `admin.validation.ts:60-66` (test: "PATCH /admin/users/:userId refuses email, role, and status") |
 | No SQL database. Mongoose queries are built from objects, not strings, so classic SQL injection does not apply. | — |
 
-**Gaps:** Mongoose `sanitizeFilter` and `strictQuery` are not enabled. `tor.validation.ts` is empty (the TOR list uses hand-written parsers instead). `POST /user/bookmarks/:torId` does not check that `torId` is an ObjectId. `PUT /user/profile` string fields have no maximum length.
+#### Input validation rules (ASVS V2.1.1)
+
+Every rule is enforced on the server. The frontend repeats some of them only for usability.
+
+| Input | Rule | Where |
+|---|---|---|
+| Any id in a path or body (`:torId`, `:userId`, `:memberId`, ...) | 24-hex MongoDB ObjectId, else 400 | `isObjectIdOrHexString` in each controller |
+| Profile names, job title, business type | trimmed text, ≤ 100 chars | `user.validation.ts` |
+| Company name / address / about | ≤ 200 / ≤ 500 / ≤ 2,000 chars | `user.validation.ts` |
+| Contact email | empty or a valid email, ≤ 254 chars | `user.validation.ts` |
+| Phone | empty or 6–30 of `0-9 + ( ) -` and spaces | `user.validation.ts` |
+| Registration number | ≤ 30 letters, digits, dashes, spaces (Thai juristic id is 13 digits) | `user.validation.ts` |
+| Website, image | empty or an `http(s)` URL with a dotted host, ≤ 2,048 chars; a bare domain is stored as `https://…` | `user.validation.ts` |
+| Interests | ≤ 50 items, each 1–100 chars; must be active category keys | `user.validation.ts`, `user.controller.ts` |
+| Bidder profile | enums for certifications and staff roles; lengths 100–5,000; numbers within ranges; list sizes capped | `bidder-profile.validation.ts` |
+| Admin edits | `.strict()` schemas: unknown keys rejected, `email`/`role`/`status` refused | `admin.validation.ts` |
+| List queries (`page_size`, `limit`, `confidence_*`) | coerced numbers with min/max | `admin.validation.ts`, `tor.controller.ts` |
+| Search text | regex metacharacters escaped (`escapeRegex`) | `tor.controller.ts`, `admin.controller.ts`, `category.repository.ts` |
+| Request bodies | JSON or URL-encoded only, ≤ 1 MB | `apps/api/app.ts` |
+
+**Remaining gap:** Mongoose `sanitizeFilter` is not enabled globally, because it would also rewrite the operators the code builds itself (`$in`, `$gte`). Operator injection is blocked earlier instead: the simple query parser cannot produce objects, and Zod rejects non-string types.
 
 ### 5.6 Environment variables and credentials · Criterion 9 · ✅ Implemented (deployment gaps)
 
 - All secrets come from environment variables loaded by `dotenv` (`config/env.ts:1`). Nothing is hard-coded in source. Semgrep's secrets ruleset found only the CI test value (see §7.2).
 - **Startup validation:** `MONGODB_URI`/`MONGODB_DATABASE` and the numeric limits are required (`config/env.ts:48-102`). The OAuth settings and `SESSION_SECRET` are required, and the secret must be **≥ 32 characters** (`modules/auth/auth.config.ts:28-43`). The test `auth.config.test.ts` checks this.
 - `.env`, `.env.*` are gitignored (`/.gitignore:14-16`, `app/backend/.gitignore`, `app/frontend/.gitignore`) and excluded from Docker images (`app/backend/.dockerignore`). Git history contains only `.env.example`, with blank values.
-- **Gaps:** docker-compose passes secrets through `env_file` rather than Docker secrets or a vault. MongoDB runs **without authentication** and is published on host port 27017 (`docker-compose.yml:22-25`, threat T9). The CI workflow contains a literal test-only `SESSION_SECRET`.
+- **Gaps:** docker-compose passes secrets through `env_file` rather than Docker secrets or a vault. MongoDB runs **without authentication** (threat T9). The local `docker-compose.yml` publishes port 27017; `docker-compose.prod.yml` does not (`ports: !reset []`). The CI workflow contains a literal test-only `SESSION_SECRET`.
 
 ### 5.7 CORS · Criterion 10 · ✅ Implemented
 
@@ -376,6 +398,14 @@ cors({
 - Requests with no `Origin` header (curl, server-to-server) pass CORS but still need a valid session cookie.
 - **Test:** `auth.routes.test.ts` "GET /auth/me returns 401 for a guest and allows only the configured frontend origin" ✅ (passed in our local run, §7.1).
 
+**Cross-site request forgery (ASVS V3.5.1, V3.5.2).** CORS alone does not stop "simple" requests (a form post or a `text/plain` fetch), which skip the preflight. `createOriginCheck` (`middleware/security.middleware.ts`) therefore checks every POST, PUT, PATCH and DELETE:
+
+- a browser request whose `Origin` is not the frontend gets 403
+- a cross-site request with no `Origin` (`Sec-Fetch-Site: cross-site`) gets 403
+- non-browser clients, which send neither header and cannot carry a victim's cookie, continue to the normal session checks
+
+`SameSite=Lax` on the session cookie is a second layer. Checked on 21 Nov 2026: a `POST /auth/logout` with `Origin: https://evil.example` got 403; from the frontend origin it got 204.
+
 ### 5.8 Error handling · Criterion 11 · ⚠️ Partial
 
 - A global `notFoundHandler` and `errorHandler` are registered last (`apps/api/app.ts:74-75`, `middleware/error.middleware.ts`). Express 5 forwards rejected async handlers to them automatically.
@@ -394,21 +424,63 @@ cors({
 - **Error logging:** unexpected errors are written to the console (`error.middleware.ts:15`). Worker failures are logged and stored on the job document.
 - **Gaps:** login success and failure, logout, and 401/403 denials are **not** logged. There is no structured logger (pino/winston) and no log redaction. Semgrep flagged string concatenation in `console.log` calls (log injection risk, INFO severity).
 
-### 5.10 HTTP security headers · Criterion 13 · ❌ Mostly not implemented
+### 5.10 HTTP security headers · Criterion 13 · ✅ Implemented
 
-| Header | Backend (Express) | Frontend (Next.js) |
+Neither Express nor Next.js sets these headers by default, so we set them in code: `helmet()` in `app/backend/src/middleware/security.middleware.ts`, and `headers()` in `app/frontend/next.config.ts`.
+
+| Header | Backend (Express, helmet) | Frontend (Next.js) |
 |---|---|---|
-| `X-Powered-By` removed | ✅ `app.disable('x-powered-by')` (`apps/api/app.ts:34`) | ❌ still sent (`poweredByHeader` not set) |
-| `Content-Security-Policy` (incl. `frame-ancestors`) | ❌ | ❌ |
-| `Strict-Transport-Security` | ❌ | ❌ |
-| `X-Content-Type-Options: nosniff` | ❌ | ❌ |
-| `X-Frame-Options` | ❌ | ❌ |
-| `Referrer-Policy` | ❌ (external links use `rel="noreferrer"`) | ❌ |
-| Cookie flags `HttpOnly`, `SameSite=Lax`, `Secure` (production) | ✅ (`apps/api/app.ts:57-62`) | n/a |
+| `X-Powered-By` removed | ✅ `app.disable('x-powered-by')` | ✅ `poweredByHeader: false` |
+| `Content-Security-Policy` | ✅ `default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox` | ⚠️ `frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'` (no `script-src` yet; it needs Next.js nonces) |
+| `Strict-Transport-Security` | ✅ `max-age=31536000; includeSubDomains` (production) | ✅ same |
+| `X-Content-Type-Options: nosniff` | ✅ | ✅ |
+| `X-Frame-Options: DENY` | ✅ | ✅ |
+| `Referrer-Policy` | ✅ `no-referrer` | ✅ `strict-origin-when-cross-origin` |
+| `Cross-Origin-Resource-Policy` | ✅ `same-site` | — |
+| `Permissions-Policy` | — | ✅ camera, microphone, geolocation off |
+| Session cookie | ✅ `HttpOnly`, `SameSite=Lax`; in production `__Host-torpulse.sid` with `Secure` (`modules/auth/auth.config.ts`) | n/a |
+| `Clear-Site-Data` on logout | ✅ `"cache", "storage"` | n/a |
 
-Neither framework sets these headers for us. **Planned fix:** add `helmet()` to the Express app, plus `async headers()` and `poweredByHeader: false` in `app/frontend/next.config.ts`. Screenshot placeholder for after the fix:
+**Live check (21 Nov 2026)**, production stack behind Caddy (`APP_DOMAIN=localhost`):
 
-> 📷 _TODO: browser DevTools → Network → response headers for `GET /auth/me` and the frontend `/` page._
+```
+GET https://api.localhost/auth/me
+content-security-policy: default-src 'none';style-src 'unsafe-inline';base-uri 'none';form-action 'none';frame-ancestors 'none';sandbox
+referrer-policy: no-referrer
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+
+GET https://localhost/auth
+content-security-policy: frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+```
+
+Tests: `middleware/security.test.ts` (headers, HSTS only in production, origin check) and `auth.routes.test.ts` (`__Host-` cookie, `Clear-Site-Data`).
+
+> 📷 _TODO: browser DevTools → Network → response headers for `GET /auth/me` and the frontend `/` page, for the presentation._
+
+### 5.11 Transport security (TLS)
+
+`docker-compose.prod.yml` puts **Caddy** (`deploy/Caddyfile`) in front of the app:
+
+- `https://APP_DOMAIN` goes to the frontend; `https://api.APP_DOMAIN` goes to the API.
+- Caddy gets and renews publicly trusted Let's Encrypt certificates and answers `http://` with a 308 redirect to HTTPS.
+- Only TLS 1.2 and 1.3 are accepted.
+- Only ports 80 and 443 are published. The API, frontend and MongoDB are reachable only on the compose network.
+- The API runs with `NODE_ENV=production`, which turns on `trust proxy`, the `Secure` + `__Host-` cookie and HSTS.
+
+| Check (21 Nov 2026, `APP_DOMAIN=localhost`) | Result |
+|---|---|
+| `http://api.localhost/` | 308 → `https://api.localhost/` |
+| TLS 1.0 / 1.1 handshake | refused |
+| TLS 1.2 | `ECDHE-ECDSA-AES128-GCM-SHA256` |
+| TLS 1.3 | `TLS_AES_128_GCM_SHA256` |
+| Published ports | Caddy 80/443 only |
+
+With `APP_DOMAIN=localhost`, Caddy uses its own local CA instead of Let's Encrypt. A real deployment needs DNS for both names, and the Google OAuth redirect URI `https://api.APP_DOMAIN/auth/google/callback`.
 
 ---
 
@@ -538,8 +610,10 @@ cd app/frontend && npm audit
 
 | Project | Critical | High | Moderate | Low | Total |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Backend | 1 | 3 | 2 | 0 | **6** |
-| Frontend | 1 | 4 | 8 | 0 | **13** |
+| Backend (16 Nov) | 1 | 3 | 2 | 0 | **6** |
+| Frontend (16 Nov) | 1 | 4 | 8 | 0 | **13** |
+| **Backend (21 Nov, after upgrades)** | 0 | 0 | 0 | 0 | **0** |
+| **Frontend (21 Nov, after upgrades)** | 0 | 0 | 0 | 0 | **0** |
 
 | Package (installed) | Severity | Direct? | Advisory | Action |
 |---|---|---|---|---|
@@ -553,7 +627,23 @@ cd app/frontend && npm audit
 | `sharp`, `source-map-js`, `brace-expansion`, `zod` | High | transitive | librsvg CVE; DoS issues | `npm audit fix` |
 | `eslint-config-next` / `typescript-eslint` / `minimatch` | Moderate | dev only | ReDoS in build tooling | Upgrade (dev only, not shipped) |
 
-Every finding has a fix available (`fixAvailable: true`). Upgrading is roadmap item R3.
+**Fixed on 21 Nov 2026:** `next` 16.3.0 → 16.4.6, `eslint-config-next` 16.4.6, `mongoose` → 9.12.3, `zod` → 4.6.7, `nodemailer` → 10.6.1, plus `npm audit fix` for the transitive packages (`proxy-addr`, `body-parser`, `qs`, `sharp`, ...). After the upgrades: backend and frontend type-check, every backend test suite and `next build` pass.
+
+#### Dependency remediation policy (ASVS V15.1.1, V15.2.1)
+
+| Advisory severity (shipped dependency) | Fix within |
+|---|---|
+| Critical | 7 days |
+| High | 14 days |
+| Moderate | 30 days |
+| Low, or dev-only tooling | next planned update |
+| No advisory | reviewed monthly; stay within the current major version, majors planned on purpose |
+
+How it is enforced:
+
+- **Dependabot** (`.github/dependabot.yml`) opens security updates as soon as an advisory is published, plus weekly grouped minor and patch updates for npm, Docker base images and GitHub Actions.
+- **CI** runs `npm audit --omit=dev --audit-level=high` in both jobs, so a build fails while a high or critical advisory is open.
+- An advisory that cannot be fixed in time (no patched version) is recorded in §10 with the reason and a mitigation.
 
 #### CodeQL (GitHub code scanning). Recommended setup.
 
@@ -625,9 +715,9 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 | M7 | Admin `GET /admin/users?q=.*` | `.*` taken literally | ✅ 0 results | T5 |
 | M8 | Logout, then reuse the cookie | 401 | ✅ | T6 |
 | M9 | `GET /auth/google`: `state=` in the redirect | present | ❌ **missing** | T1 |
-| M10 | `POST /user/bookmarks/not-an-id` | generic 400 | ❌ **500 `Cast to ObjectId failed … model "UserBookmark"`** | T11 |
+| M10 | `POST /user/bookmarks/not-an-id` | generic 400 | ❌ **500 `Cast to ObjectId failed … model "UserBookmark"`** (fixed 21 Nov: bookmark id validated, returns 400) | T11 |
 | M11 | 100 rapid requests | some 429 | ❌ **0 × 429** (before R4; the local re-test on 21 Nov returned 429 once over the limit, §6.3) | T2 |
-| M12 | Response headers | CSP, HSTS, nosniff | ❌ **only Content-Type + CORS** | T10 |
+| M12 | Response headers | CSP, HSTS, nosniff | ❌ **only Content-Type + CORS** (before R7; all present in the 21 Nov re-check, §5.10) | T10 |
 | M13 | `POST /tors/:id/qualification` | no AI call | ✅ 409 (incomplete profile) / 429 (limit) | T17 |
 | M14 | Guest → `GET /ingestion/report` | 401 | ❌ **200** | T12 |
 
@@ -642,20 +732,20 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 | T7 | P1 | Secrets leakage | Env vars, gitignore and dockerignore, startup validation | ✅ | `auth.config.ts:28-43`. Remaining: move the CI secret into GitHub Secrets. |
 | T8 | P1 | Malicious ZIP/PDF | Size, entry, total and ratio limits; zip-slip guard; `%PDF-` magic bytes; temp directory cleanup | ✅ | `central-egp.adapters.ts:62-66,891,899-911` |
 | T17 | P1 | AI cost exhaustion | Daily rolling quota, 429 or cached result | ✅ | `qualification-match.controller.ts:125-135` |
-| T6 | P1 | Session hijack / fixation | httpOnly, SameSite, server-side store, regenerate at login, destroy at logout, 30-min idle and 7-day absolute timeout | ⚠️ | `Secure` only when `NODE_ENV=production`, which compose does not set. |
-| T5 | P1 | NoSQL / regex injection | Simple query parser, Zod, ObjectId checks, `escapeRegex` | ⚠️ | Add `mongoose.set('sanitizeFilter', true)` and `strictQuery`. Validate `torId` in bookmarks. |
+| T6 | P1 | Session hijack / fixation | httpOnly, SameSite, server-side store, regenerate at login, destroy at logout, 30-min idle and 7-day absolute timeout, sessions deleted on suspension, `__Host-` + `Secure` in the production compose | ✅ | §6.3, §5.10 |
+| T5 | P1 | NoSQL / regex injection | Simple query parser, Zod allow-list validation with length limits, ObjectId checks (bookmarks included), `escapeRegex`; ZAP 0 injection alerts | ✅ | §5.5. `sanitizeFilter` deliberately not enabled. |
 | T2 | P1 | Brute force / API abuse | Login delegated to Google. Login-attempt limiter per IP, API limiter per user/IP, daily AI quota. | ✅ | `middleware/rate-limit.middleware.ts` |
-| T15 | P1 | Vulnerable dependencies | npm audit + Semgrep run, lockfiles committed | ⚠️ | 19 advisories open. Run upgrades (R3). Add Dependabot and CodeQL. |
+| T15 | P1 | Vulnerable dependencies | Upgrades: npm audit 0 in both apps; remediation policy; Dependabot; CI audit gate | ✅ | §7.2. CodeQL still to add. |
 | T1 | P1 | OAuth login CSRF | — | ❌ | Enable `state: true` / PKCE |
-| T9 | P1 | Exposed MongoDB | — | ❌ | Remove the `27017` port mapping. Enable auth and TLS. |
+| T9 | P1 | Exposed MongoDB | Production compose does not publish 27017 | ⚠️ | Enable Mongo authentication (R2). Local compose still publishes the port. |
 | T11 | P2 | Error message disclosure | Global handler, no stack traces | ⚠️ | Stop returning `error.message` in production |
 | T14 | P2 | Repudiation | Transactional audit log for all admin actions | ⚠️ | Log login, logout and access denials |
-| T10 | P2 | XSS / clickjacking | React escaping, no `dangerouslySetInnerHTML` | ⚠️ | Add CSP and `frame-ancestors` (helmet + Next headers) |
-| T16 | P2 | No transport security | Cookie `Secure` in production, `trust proxy` | ❌ | Reverse proxy with TLS, HSTS |
+| T10 | P2 | XSS / clickjacking | React escaping, no `dangerouslySetInnerHTML`, `frame-ancestors 'none'` + `X-Frame-Options`, strict API CSP, http(s)-only external links | ⚠️ | Frontend CSP `script-src` with Next.js nonces |
+| T16 | P2 | No transport security | Caddy TLS 1.2/1.3 with Let's Encrypt, HTTP→HTTPS redirect, HSTS, `Secure` `__Host-` cookie | ✅ | §5.11 |
 | T13 | P3 | SSRF | Hard-coded hosts, `AbortSignal.timeout`, no user URLs fetched | ✅ | `bma-discovery.adapter.ts`, `central-egp.adapters.ts` |
 | T12 | P3 | Unauthenticated ops report | — | ❌ | Add `requireAdmin` to `/api/v1/ingestion/report` |
 
-**Summary:** 7 ✅ done · 5 ⚠️ partial · 5 ❌ not done, out of 17 threats. Of the 11 P1 threats: 6 done, 3 partial, 2 not done.
+**Summary:** 11 ✅ done · 3 ⚠️ partial · 3 ❌ not done, out of 17 threats. Of the 11 P1 threats: 9 done, 1 partial (T9), 1 not done (T1).
 
 ---
 
@@ -663,12 +753,12 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 
 | OWASP Top 10 2021 | TORPulse controls | Status | ASVS v5 | Gaps |
 |---|---|:-:|---|---|
-| **A01 Broken Access Control** | `requireAdmin` + per-route `requireScope`; router-level `requireAuth` on `/user`; per-user data scoping; last-admin and self guards; single-origin CORS | ✅ | V8.2.1, V8.2.2, V8.3.1, V3.4.2 | Protect `/ingestion/report` |
-| **A02 Cryptographic Failures** | Sessions signed with a ≥ 32-char secret; CSPRNG session ids; no passwords stored; TLS to Google, e-GP and Gemini | ⚠️ | V11.5.1, V12.3.2, V3.3.1 | No TLS in front of the app; Mongo without TLS; `Secure` cookie depends on `NODE_ENV` |
+| **A01 Broken Access Control** | `requireAdmin` + per-route `requireScope`; router-level `requireAuth` on `/user`; per-user data scoping; last-admin and self guards; single-origin CORS; Origin check against CSRF | ✅ | V8.2.1, V8.2.2, V8.3.1, V3.4.2, V3.5.1 | Protect `/ingestion/report` |
+| **A02 Cryptographic Failures** | Sessions signed with a ≥ 32-char secret; CSPRNG session ids; no passwords stored; Caddy TLS 1.2/1.3 with Let's Encrypt; HSTS; `__Host-` Secure cookie; TLS to Google, e-GP and Gemini | ⚠️ | V11.5.1, V12.1.1, V12.2.1, V12.2.2, V12.3.2, V3.3.1 | Mongo without TLS (internal network only) |
 | **A03 Injection** | Mongoose object queries; Express 5 simple parser; Zod; `escapeRegex`; ObjectId checks; React escaping; no `eval` | ⚠️ | V1.2.4, V1.2.9, V1.3.2, V2.2.1 | `sanitizeFilter`/`strictQuery` not enabled |
 | **A04 Insecure Design** | Threat model (§3); SSO-only design; transactional admin changes; AI quota; per-user API and per-IP login rate limits | ✅ | V2.3.3, V15.1.3 | — |
-| **A05 Security Misconfiguration** | `x-powered-by` off; non-root containers; production dev-token guard; env validation | ❌ | V13.4.1, V13.4.6, V3.4.1–V3.4.6 | No security headers; Mongo exposed; compose runs `NODE_ENV=development` |
-| **A06 Vulnerable and Outdated Components** | Lockfiles; `npm audit`; Semgrep | ⚠️ | V15.2.1, V15.2.4 | 19 open advisories (2 critical); no Dependabot |
+| **A05 Security Misconfiguration** | Security headers on API and frontend; no `X-Powered-By`; production compose with `NODE_ENV=production` and only 80/443 published; non-root containers; production dev-token guard; env validation | ⚠️ | V13.4.1, V13.4.6, V3.4.1–V3.4.6 | Mongo without authentication; frontend CSP has no `script-src` |
+| **A06 Vulnerable and Outdated Components** | Lockfiles; `npm audit` 0 in both apps; remediation policy; Dependabot; CI audit gate; Semgrep | ✅ | V15.1.1, V15.2.1, V15.2.4 | — |
 | **A07 Identification and Authentication Failures** | Google OAuth; session regenerated at login; logout destroys session; suspension enforced on every request; 30-min idle / 7-day absolute timeout; login rate limit | ⚠️ | V6.3.1, V6.3.3, V7.2.4, V7.3.1, V7.3.2, V7.4.1, V7.4.2, V10.1.2 | No OAuth `state`; no MFA |
 | **A08 Software and Data Integrity Failures** | Lockfiles; CI with least-privilege token; upstream files checked (magic bytes, limits) | ⚠️ | V15.2.4, V5.2.3 | GitHub Actions not pinned to SHAs |
 | **A09 Security Logging and Monitoring Failures** | Transactional audit log for admin and system actions; error logging | ⚠️ | V16.2.1, V16.3.3, V16.3.4 | Auth events not logged; no structured or central logging |
@@ -683,268 +773,600 @@ Ordered by threat priority. Each item names the threat it closes.
 | # | Priority | Action | Closes | Effort |
 |---|:-:|---|---|---|
 | R1 | P1 | Enable OAuth `state: true` + PKCE; check `email_verified` | T1, V10.1.2 | S |
-| R2 | P1 | Remove the MongoDB host port; enable Mongo auth (`MONGO_INITDB_ROOT_*`) and use credentials in `MONGODB_URI` | T9 | S |
-| R3 | P1 | Upgrade `next` (≥ 16.4.6), `mongoose`, `zod`, `nodemailer`; run `npm audit fix`; add Dependabot and CodeQL | T15 | S |
+| R2 | P1 | Enable Mongo auth (`MONGO_INITDB_ROOT_*`) and use credentials in `MONGODB_URI` (the production compose no longer publishes the port, 21 Nov 2026) | T9 | S |
+| ~~R3~~ | P1 | ✅ **Done (21 Nov 2026), except CodeQL.** Upgraded `next` 16.4.6, `mongoose`, `zod`, `nodemailer`; `npm audit fix`; Dependabot; CI audit gate (§7.2) | T15 | S |
 | ~~R4~~ | P1 | ✅ **Done (21 Nov 2026).** `express-rate-limit`: `/auth/google*` 10 per 15 min per IP; `/api/v1/*` 300 per 15 min per user or IP (§6.2) | T2 (advanced features) | S |
-| R5 | P1 | `mongoose.set('sanitizeFilter', true)` and `strictQuery: true`; validate `torId`; add max lengths to profile strings | T5 | S |
-| R6 | P1 | Production compose profile with `NODE_ENV=production` so cookies are `Secure` | T6 | S |
-| R7 | P2 | `helmet()` in Express and `headers()` + `poweredByHeader:false` in Next.js (CSP, HSTS, nosniff, frame-ancestors, Referrer-Policy) | T10, T16 | M |
+| ~~R5~~ | P1 | ✅ **Done (21 Nov 2026).** `torId` validated; profile strings have length and format rules (§5.5). `sanitizeFilter` deliberately not enabled. | T5 | S |
+| ~~R6~~ | P1 | ✅ **Done (21 Nov 2026).** `docker-compose.prod.yml` with `NODE_ENV=production`: `Secure` `__Host-` cookie | T6 | S |
+| ~~R7~~ | P2 | ✅ **Done (21 Nov 2026), except a frontend `script-src`.** `helmet()` in Express; `headers()` + `poweredByHeader: false` in Next.js (§5.10) | T10, T16 | M |
 | R8 | P2 | Generic 500 message in production with a correlation id | T11 | S |
 | R9 | P2 | Structured logger (pino) with redaction; log login success, failure, logout and 401/403 denials | T14 | M |
 | ~~R10~~ | P2 | ✅ **Done (21 Nov 2026).** Idle session timeout (`rolling: true`, 30 min) on top of the 7-day absolute lifetime (§6.3) | T6 (advanced features) | S |
-| R11 | P2 | TLS-terminating reverse proxy (Caddy/nginx) in front of the frontend and API | T16 | M |
+| ~~R11~~ | P2 | ✅ **Done (21 Nov 2026).** Caddy with Let's Encrypt, TLS 1.2/1.3 (§5.11) | T16 | M |
 | R12 | P3 | `requireAdmin` on `/api/v1/ingestion/report` (router-level `requireAuth` on `/api/v1/user` done 21 Nov 2026) | T12 | S |
 | R13 | P3 | Pin GitHub Actions to commit SHAs; move the CI test secret into GitHub Secrets | T7, A08 | S |
 | R14 | P3 | Email OTP second factor for admins | advanced features | M |
 
 ---
 
-## Appendix A. Full ASVS requirement list (planned rows)
+## Appendix A. Full ASVS requirement list
 
-Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASVS (1).csv>), showing only rows with `Plan = TRUE` (165). Descriptions are shortened; the CSV has the full text. **Status** is the team's self-assessment from the CSV. **Evidence** and **Audit note** come from the code review for this report. An audit note means the code does not fully match the CSV status.
+Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASVS (1).csv>): all 345 OWASP ASVS v5.0 requirements. Descriptions are shortened; the CSV has the full text.
+
+**Status** uses the same legend as the rest of this report: ✅ implemented · ⚠️ partial · ❌ not implemented · ➖ N/A (not related to TORPulse). It starts from the team's CSV self-assessment (Done → ✅, In progress → ⚠️, To do → ❌, Not related → ➖) and is corrected where the code review for this report found something different. Each corrected row says so in the **Note** column ("CSV: …"); 34 planned rows were corrected.
+
+| Chapter | Planned | ✅ | ⚠️ | ❌ | ➖ N/A | Not related |
+|---|---:|---:|---:|---:|---:|---:|
+| V1 Encoding and Sanitization | 13 | 10 | 3 | 0 | 0 | 17 |
+| V2 Validation and Business Logic | 10 | 6 | 3 | 1 | 0 | 3 |
+| V3 Web Frontend Security | 19 | 16 | 2 | 1 | 0 | 12 |
+| V4 API and Web Service | 5 | 1 | 4 | 0 | 0 | 11 |
+| V5 File Handling | 8 | 7 | 0 | 1 | 0 | 5 |
+| V6 Authentication | 6 | 2 | 3 | 1 | 0 | 41 |
+| V7 Session Management | 15 | 11 | 1 | 2 | 1 | 4 |
+| V8 Authorization | 6 | 4 | 0 | 2 | 0 | 7 |
+| V9 Self-contained Tokens | 1 | 1 | 0 | 0 | 0 | 6 |
+| V10 OAuth and OIDC | 5 | 2 | 0 | 3 | 0 | 31 |
+| V11 Cryptography | 9 | 8 | 0 | 1 | 0 | 15 |
+| V12 Secure Communication | 6 | 4 | 1 | 1 | 0 | 6 |
+| V13 Configuration | 16 | 5 | 7 | 4 | 0 | 5 |
+| V14 Data Protection | 11 | 2 | 3 | 6 | 0 | 2 |
+| V15 Secure Coding and Architecture | 18 | 7 | 8 | 3 | 0 | 3 |
+| V16 Security Logging and Error Handling | 17 | 2 | 7 | 8 | 0 | 0 |
+| V17 WebRTC | 0 | 0 | 0 | 0 | 0 | 12 |
+| **Total** | **165** | **88** | **42** | **34** | **1** | **180** |
 
 #### V1 Encoding and Sanitization
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V1.1.1 | Input is decoded or unescaped into a canonical form only once, it is only decoded when encoded data in that form is expected,… | 2 | ✅ Done | — | — |
-| V1.1.2 | The application performs output encoding and escaping either as a final step before being used by the interpreter for which it… | 2 | ✅ Done | — | — |
-| V1.2.1 | Output encoding for an HTTP response, HTML document, or XML document is relevant for the context required, such as encoding… | 1 | ✅ Done | — | — |
-| V1.2.2 | When dynamically building URLs, untrusted data is encoded according to its context (e.g., URL encoding or base64url encoding… | 1 | ⚠️ In progress | — | — |
-| V1.2.3 | Output encoding or escaping is used when dynamically building JavaScript content (including JSON), to avoid changing the… | 1 | ✅ Done | — | — |
-| V1.2.4 | Data selection or database queries (e.g., SQL, HQL, NoSQL, Cypher) use parameterized queries, ORMs, entity frameworks, or are… | 1 | ✅ Done | Mongoose queries with typed values; ObjectId checks (`app/backend/src/modules/tor/tor.controller.ts:398`) | — |
-| V1.2.5 | The application protects against OS command injection and that operating system calls use parameterized OS queries or use… | 1 | ✅ Done | No shell exec of user input; PDF extraction runs on files the server downloads itself | — |
-| V1.2.9 | The application escapes special characters in regular expressions (typically using a backslash) to prevent them from being… | 2 | ✅ Done | `escapeRegex` in `app/backend/src/modules/tor/tor.controller.ts:277`, `admin.controller.ts:60`, `category.repository.ts:8` | — |
-| V1.3.2 | The application avoids the use of eval() or other dynamic code execution features such as Spring Expression Language (SpEL).… | 1 | ✅ Done | No `eval`/`new Function`; Semgrep found none | — |
-| V1.3.3 | Data being passed to a potentially dangerous context is sanitized beforehand to enforce safety measures, such as only allowing… | 2 | ⚠️ In progress | — | — |
-| V1.3.6 | The application protects against Server-side Request Forgery (SSRF) attacks, by validating untrusted data against an allowlist… | 2 | ⚠️ In progress | Outbound hosts hard-coded (e-GP, BMA); no user-supplied URL is fetched | No explicit allowlist check |
-| V1.3.11 | The application sanitizes user input before passing to mail systems to protect against SMTP or IMAP injection. | 2 | ⚠️ In progress | — | — |
-| V1.5.2 | Deserialization of untrusted data enforces safe input handling, such as using an allowlist of object types or restricting… | 2 | ✅ Done | JSON only, via `express.json`; Zod parses request bodies | — |
+| V1.1.1 | Input is decoded or unescaped into a canonical form only once, it is only decoded when encoded data in that form is… | 2 | ✅ | — | — |
+| V1.1.2 | The application performs output encoding and escaping either as a final step before being used by the interpreter for which… | 2 | ✅ | — | — |
+| V1.2.1 | Output encoding for an HTTP response, HTML document, or XML document is relevant for the context required, such as encoding… | 1 | ✅ | — | — |
+| V1.2.2 | When dynamically building URLs, untrusted data is encoded according to its context (e.g., URL encoding or base64url encoding… | 1 | ✅ | Frontend encodes path ids with `encodeURIComponent` (`app/frontend/src/api/*.ts`); external links pass `safeExternalUrl` (http/https only, `app/frontend/src/lib/safe-url.ts`); the API stores only http(s) profile URLs (`user.validation.ts`) | CSV: In progress. Implemented 21 Nov 2026 |
+| V1.2.3 | Output encoding or escaping is used when dynamically building JavaScript content (including JSON), to avoid changing the… | 1 | ✅ | — | — |
+| V1.2.4 | Data selection or database queries (e.g., SQL, HQL, NoSQL, Cypher) use parameterized queries, ORMs, entity frameworks, or… | 1 | ✅ | Mongoose queries with typed values; ObjectId checks (`app/backend/src/modules/tor/tor.controller.ts:398`) | — |
+| V1.2.5 | The application protects against OS command injection and that operating system calls use parameterized OS queries or use… | 1 | ✅ | No shell exec of user input; PDF extraction runs on files the server downloads itself | — |
+| V1.2.9 | The application escapes special characters in regular expressions (typically using a backslash) to prevent them from being… | 2 | ✅ | `escapeRegex` in `app/backend/src/modules/tor/tor.controller.ts:277`, `admin.controller.ts:60`, `category.repository.ts:8` | — |
+| V1.3.2 | The application avoids the use of eval() or other dynamic code execution features such as Spring Expression Language (SpEL).… | 1 | ✅ | No `eval`/`new Function`; Semgrep found none | — |
+| V1.3.3 | Data being passed to a potentially dangerous context is sanitized beforehand to enforce safety measures, such as only… | 2 | ⚠️ | — | — |
+| V1.3.6 | The application protects against Server-side Request Forgery (SSRF) attacks, by validating untrusted data against an… | 2 | ⚠️ | Outbound hosts hard-coded (e-GP, BMA); no user-supplied URL is fetched | No explicit allowlist check |
+| V1.3.11 | The application sanitizes user input before passing to mail systems to protect against SMTP or IMAP injection. | 2 | ⚠️ | — | — |
+| V1.5.2 | Deserialization of untrusted data enforces safe input handling, such as using an allowlist of object types or restricting… | 2 | ✅ | JSON only, via `express.json`; Zod parses request bodies | — |
+
+<details>
+<summary>17 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V1.2.6 | The application protects against LDAP injection vulnerabilities, or that specific security controls to prevent LDAP… | 2 | ➖ N/A |
+| V1.2.7 | The application is protected against XPath injection attacks by using query parameterization or precompiled queries. | 2 | ➖ N/A |
+| V1.2.8 | LaTeX processors are configured securely (such as not using the "--shell-escape" flag) and an allowlist of commands is used… | 2 | ➖ N/A |
+| V1.2.10 | The application is protected against CSV and Formula Injection. The application must follow the escaping rules defined in… | 3 | ➖ N/A |
+| V1.3.1 | All untrusted HTML input from WYSIWYG editors or similar is sanitized using a well-known and secure HTML sanitization… | 1 | ➖ N/A |
+| V1.3.4 | User-supplied Scalable Vector Graphics (SVG) scriptable content is validated or sanitized to contain only tags and… | 2 | ➖ N/A |
+| V1.3.5 | The application sanitizes or disables user-supplied scriptable or expression template language content, such as Markdown… | 2 | ➖ N/A |
+| V1.3.7 | The application protects against template injection attacks by not allowing templates to be built based on untrusted input.… | 2 | ➖ N/A |
+| V1.3.8 | The application appropriately sanitizes untrusted input before use in Java Naming and Directory Interface (JNDI) queries and… | 2 | ➖ N/A |
+| V1.3.9 | The application sanitizes content before it is sent to memcache to prevent injection attacks. | 2 | ➖ N/A |
+| V1.3.10 | Format strings which might resolve in an unexpected or malicious way when used are sanitized before being processed. | 2 | ➖ N/A |
+| V1.3.12 | Regular expressions are free from elements causing exponential backtracking, and ensure untrusted input is sanitized to… | 3 | ➖ N/A |
+| V1.4.1 | The application uses memory-safe string, safer memory copy and pointer arithmetic to detect or prevent stack, buffer, or… | 2 | ➖ N/A |
+| V1.4.2 | Sign, range, and input validation techniques are used to prevent integer overflows. | 2 | ➖ N/A |
+| V1.4.3 | Dynamically allocated memory and resources are released, and that references or pointers to freed memory are removed or set… | 2 | ➖ N/A |
+| V1.5.1 | The application configures XML parsers to use a restrictive configuration and that unsafe features such as resolving… | 1 | ➖ N/A |
+| V1.5.3 | Different parsers used in the application for the same data type (e.g., JSON parsers, XML parsers, URL parsers), perform… | 3 | ➖ N/A |
+
+</details>
 
 #### V2 Validation and Business Logic
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V2.1.1 | The application's documentation defines input validation rules for how to check the validity of data items against an expected… | 1 | ❌ To do | — | — |
-| V2.1.2 | The application's documentation defines how to validate the logical and contextual consistency of combined data items, such as… | 2 | ❌ To do | — | — |
-| V2.1.3 | Expectations for business logic limits and validations are documented, including both per-user and globally across the… | 2 | ⚠️ In progress | — | — |
-| V2.2.1 | Input is validated to enforce business or functional expectations for that input. This should either use positive validation… | 1 | ⚠️ In progress | — | — |
-| V2.2.2 | The application is designed to enforce input validation at a trusted service layer. While client-side validation improves… | 1 | ✅ Done | All validation runs server-side (Zod in `*.validation.ts`) | — |
-| V2.2.3 | The application ensures that combinations of related data items are reasonable according to the pre-defined rules. | 2 | ⚠️ In progress | — | — |
-| V2.3.1 | The application will only process business logic flows for the same user in the expected sequential step order and without… | 1 | ✅ Done | — | — |
-| V2.3.2 | Business logic limits are implemented per the application's documentation to avoid business logic flaws being exploited. | 2 | ⚠️ In progress | — | — |
-| V2.3.3 | Transactions are being used at the business logic level such that either a business logic operation succeeds in its entirety… | 2 | ✅ Done | Mongo transactions for role/status changes (`app/backend/src/modules/admin/admin.controller.ts:340`) | — |
-| V2.4.1 | Anti-automation controls are in place to protect against excessive calls to application functions that could lead to data… | 2 | ❌ To do | — | Only a global daily AI quota exists; no per-user anti-automation |
+| V2.1.1 | The application's documentation defines input validation rules for how to check the validity of data items against an… | 1 | ✅ | Validation rules per input documented in §5.5 | CSV: To do. Documented 21 Nov 2026 |
+| V2.1.2 | The application's documentation defines how to validate the logical and contextual consistency of combined data items, such… | 2 | ❌ | — | — |
+| V2.1.3 | Expectations for business logic limits and validations are documented, including both per-user and globally across the… | 2 | ⚠️ | — | — |
+| V2.2.1 | Input is validated to enforce business or functional expectations for that input. This should either use positive validation… | 1 | ✅ | Zod allow-list validation: enums, length limits, email/phone/URL formats, ObjectId checks (`user.validation.ts`, `bidder-profile.validation.ts`, `admin.validation.ts`) | CSV: In progress. Profile limits and bookmark id check added 21 Nov 2026 |
+| V2.2.2 | The application is designed to enforce input validation at a trusted service layer. While client-side validation improves… | 1 | ✅ | All validation runs server-side (Zod in `*.validation.ts`) | — |
+| V2.2.3 | The application ensures that combinations of related data items are reasonable according to the pre-defined rules. | 2 | ⚠️ | — | — |
+| V2.3.1 | The application will only process business logic flows for the same user in the expected sequential step order and without… | 1 | ✅ | — | — |
+| V2.3.2 | Business logic limits are implemented per the application's documentation to avoid business logic flaws being exploited. | 2 | ⚠️ | — | — |
+| V2.3.3 | Transactions are being used at the business logic level such that either a business logic operation succeeds in its entirety… | 2 | ✅ | Mongo transactions for role/status changes (`app/backend/src/modules/admin/admin.controller.ts:340`) | — |
+| V2.4.1 | Anti-automation controls are in place to protect against excessive calls to application functions that could lead to data… | 2 | ✅ | Per-user `/api/v1` limiter, per-IP login limiter (`app/backend/src/middleware/rate-limit.middleware.ts`), daily AI quota | CSV: To do. Implemented 21 Nov 2026 (§6.2) |
+
+<details>
+<summary>3 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V2.3.4 | Business logic level locking mechanisms are used to ensure that limited quantity resources (such as theater seats or… | 2 | ➖ N/A |
+| V2.3.5 | High-value business logic flows require multi-user approval to prevent unauthorized or accidental actions. This could… | 3 | ➖ N/A |
+| V2.4.2 | Business logic flows require realistic human timing, preventing excessively rapid transaction submissions. | 3 | ➖ N/A |
+
+</details>
 
 #### V3 Web Frontend Security
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V3.2.1 | Security controls are in place to prevent browsers from rendering content or functionality in HTTP responses in an incorrect… | 1 | ⚠️ In progress | — | — |
-| V3.2.2 | Content intended to be displayed as text, rather than rendered as HTML, is handled using safe rendering functions (such as… | 1 | ✅ Done | React escapes output; no `dangerouslySetInnerHTML` in frontend | — |
-| V3.3.1 | Cookies have the 'Secure' attribute set, and if the '\__Host-' prefix is not used for the cookie name, the '__Secure-' prefix… | 1 | ⚠️ In progress | `secure: isProduction` (`app/backend/src/apps/api/app.ts:60`) | docker-compose forces NODE_ENV=development, so not Secure there |
-| V3.3.2 | Each cookie's 'SameSite' attribute value is set according to the purpose of the cookie, to limit exposure to user interface… | 2 | ✅ Done | `sameSite: lax` (`app/backend/src/apps/api/app.ts:59`) | — |
-| V3.3.3 | Cookies have the '__Host-' prefix for the cookie name unless they are explicitly designed to be shared with other hosts. | 2 | ❌ To do | — | — |
-| V3.3.4 | If the value of a cookie is not meant to be accessible to client-side scripts (such as a session token), the cookie must have… | 2 | ✅ Done | `httpOnly: true` (`app/backend/src/apps/api/app.ts:58`) | — |
-| V3.3.5 | When the application writes a cookie, the cookie name and value length combined are not over 4096 bytes. Overly large cookies… | 3 | ✅ Done | — | — |
-| V3.4.1 | A Strict-Transport-Security header field is included on all responses to enforce an HTTP Strict Transport Security (HSTS)… | 1 | ❌ To do | — | No HSTS header |
-| V3.4.2 | The Cross-Origin Resource Sharing (CORS) Access-Control-Allow-Origin header field is a fixed value by the application, or if… | 1 | ✅ Done | Single-origin CORS callback (`app/backend/src/apps/api/app.ts:40-47`) | — |
-| V3.4.3 | HTTP responses include a Content-Security-Policy response header field which defines directives to ensure the browser only… | 2 | ❌ To do | — | No CSP header |
-| V3.4.4 | All HTTP responses contain an 'X-Content-Type-Options: nosniff' header field. This instructs browsers not to use content… | 2 | ❌ To do | — | No `X-Content-Type-Options` header |
-| V3.4.5 | The application sets a referrer policy to prevent leakage of technically sensitive data to third-party services via the… | 2 | ⚠️ In progress | — | — |
-| V3.4.6 | The web application uses the frame-ancestors directive of the Content-Security-Policy header field for every HTTP response to… | 2 | ❌ To do | — | No `frame-ancestors` |
-| V3.5.1 | Verify that, if the application does not rely on the CORS preflight mechanism to prevent disallowed cross-origin requests to… | 1 | ⚠️ In progress | — | — |
-| V3.5.2 | Verify that, if the application relies on the CORS preflight mechanism to prevent disallowed cross-origin use of sensitive… | 1 | ⚠️ In progress | — | — |
-| V3.5.3 | HTTP requests to sensitive functionality use appropriate HTTP methods such as POST, PUT, PATCH, or DELETE, and not methods… | 1 | ✅ Done | State changes use POST/PUT/PATCH/DELETE | — |
-| V3.5.4 | Separate applications are hosted on different hostnames to leverage the restrictions provided by same-origin policy, including… | 2 | ✅ Done | — | — |
-| V3.7.1 | The application only uses client-side technologies which are still supported and considered secure. Examples of technologies… | 2 | ✅ Done | — | — |
-| V3.7.2 | The application will only automatically redirect the user to a different hostname or domain (which is not controlled by the… | 2 | ✅ Done | — | — |
+| V3.2.1 | Security controls are in place to prevent browsers from rendering content or functionality in HTTP responses in an incorrect… | 1 | ✅ | API CSP `default-src 'none'; sandbox` + `nosniff` on every response (`app/backend/src/middleware/security.middleware.ts`); JSON-only API | CSV: In progress. Implemented 21 Nov 2026 |
+| V3.2.2 | Content intended to be displayed as text, rather than rendered as HTML, is handled using safe rendering functions (such as… | 1 | ✅ | React escapes output; no `dangerouslySetInnerHTML` in frontend | — |
+| V3.3.1 | Cookies have the 'Secure' attribute set, and if the '\__Host-' prefix is not used for the cookie name, the '__Secure-'… | 1 | ✅ | Production cookie `__Host-torpulse.sid` with `Secure` (`app/backend/src/modules/auth/auth.config.ts`); `docker-compose.prod.yml` runs `NODE_ENV=production` behind HTTPS | CSV: In progress. Plain-HTTP local dev keeps the bare name |
+| V3.3.2 | Each cookie's 'SameSite' attribute value is set according to the purpose of the cookie, to limit exposure to user interface… | 2 | ✅ | `sameSite: lax` (`app/backend/src/apps/api/app.ts:59`) | — |
+| V3.3.3 | Cookies have the '__Host-' prefix for the cookie name unless they are explicitly designed to be shared with other hosts. | 2 | ❌ | — | — |
+| V3.3.4 | If the value of a cookie is not meant to be accessible to client-side scripts (such as a session token), the cookie must… | 2 | ✅ | `httpOnly: true` (`app/backend/src/apps/api/app.ts:58`) | — |
+| V3.3.5 | When the application writes a cookie, the cookie name and value length combined are not over 4096 bytes. Overly large… | 3 | ✅ | — | — |
+| V3.4.1 | A Strict-Transport-Security header field is included on all responses to enforce an HTTP Strict Transport Security (HSTS)… | 1 | ✅ | HSTS `max-age=31536000; includeSubDomains` on API (production) and frontend (`security.middleware.ts`, `app/frontend/next.config.ts`) | CSV: To do. Implemented 21 Nov 2026 |
+| V3.4.2 | The Cross-Origin Resource Sharing (CORS) Access-Control-Allow-Origin header field is a fixed value by the application, or if… | 1 | ✅ | Single-origin CORS callback (`app/backend/src/apps/api/app.ts:40-47`) | — |
+| V3.4.3 | HTTP responses include a Content-Security-Policy response header field which defines directives to ensure the browser only… | 2 | ⚠️ | API: strict CSP (`default-src 'none'`). Frontend: `frame-ancestors`, `object-src`, `base-uri`, `form-action` | CSV: To do. Frontend CSP has no `script-src` yet (needs Next.js nonces) |
+| V3.4.4 | All HTTP responses contain an 'X-Content-Type-Options: nosniff' header field. This instructs browsers not to use content… | 2 | ✅ | `X-Content-Type-Options: nosniff` on API and frontend | CSV: To do. Implemented 21 Nov 2026 |
+| V3.4.5 | The application sets a referrer policy to prevent leakage of technically sensitive data to third-party services via the… | 2 | ⚠️ | — | — |
+| V3.4.6 | The web application uses the frame-ancestors directive of the Content-Security-Policy header field for every HTTP response… | 2 | ✅ | CSP `frame-ancestors 'none'` + `X-Frame-Options: DENY` on API and frontend | CSV: To do. Implemented 21 Nov 2026 |
+| V3.5.1 | Verify that, if the application does not rely on the CORS preflight mechanism to prevent disallowed cross-origin requests to… | 1 | ✅ | Origin check on every POST/PUT/PATCH/DELETE (`createOriginCheck` in `security.middleware.ts`) + `SameSite=Lax` cookie | CSV: In progress. Implemented 21 Nov 2026 |
+| V3.5.2 | Verify that, if the application relies on the CORS preflight mechanism to prevent disallowed cross-origin use of sensitive… | 1 | ✅ | Simple (non-preflighted) cross-origin requests are refused by the Origin check, not only by CORS | CSV: In progress. Implemented 21 Nov 2026 |
+| V3.5.3 | HTTP requests to sensitive functionality use appropriate HTTP methods such as POST, PUT, PATCH, or DELETE, and not methods… | 1 | ✅ | State changes use POST/PUT/PATCH/DELETE | — |
+| V3.5.4 | Separate applications are hosted on different hostnames to leverage the restrictions provided by same-origin policy… | 2 | ✅ | — | — |
+| V3.7.1 | The application only uses client-side technologies which are still supported and considered secure. Examples of technologies… | 2 | ✅ | — | — |
+| V3.7.2 | The application will only automatically redirect the user to a different hostname or domain (which is not controlled by the… | 2 | ✅ | — | — |
+
+<details>
+<summary>12 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V3.1.1 | Application documentation states the expected security features that browsers using the application must support (such as… | 3 | ➖ N/A |
+| V3.2.3 | The application avoids DOM clobbering when using client-side JavaScript by employing explicit variable declarations… | 3 | ➖ N/A |
+| V3.4.7 | The Content-Security-Policy header field specifies a location to report violations. | 3 | ➖ N/A |
+| V3.4.8 | All HTTP responses that initiate a document rendering (such as responses with Content-Type text/html), include the… | 3 | ➖ N/A |
+| V3.5.5 | Messages received by the postMessage interface are discarded if the origin of the message is not trusted, or if the syntax… | 2 | ➖ N/A |
+| V3.5.6 | JSONP functionality is not enabled anywhere across the application to avoid Cross-Site Script Inclusion (XSSI) attacks. | 3 | ➖ N/A |
+| V3.5.7 | Data requiring authorization is not included in script resource responses, like JavaScript files, to prevent Cross-Site… | 3 | ➖ N/A |
+| V3.5.8 | Authenticated resources (such as images, videos, scripts, and other documents) can be loaded or embedded on behalf of the… | 3 | ➖ N/A |
+| V3.6.1 | Client-side assets, such as JavaScript libraries, CSS, or web fonts, are only hosted externally (e.g., on a Content Delivery… | 3 | ➖ N/A |
+| V3.7.3 | The application shows a notification when the user is being redirected to a URL outside of the application's control, with… | 3 | ➖ N/A |
+| V3.7.4 | The application's top-level domain (e.g., site.tld) is added to the public preload list for HTTP Strict Transport Security… | 3 | ➖ N/A |
+| V3.7.5 | The application behaves as documented (such as warning the user or blocking access) if the browser used to access the… | 3 | ➖ N/A |
+
+</details>
 
 #### V4 API and Web Service
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V4.1.1 | Every HTTP response with a message body contains a Content-Type header field that matches the actual content of the response,… | 1 | ✅ Done | Express `res.json` sets `Content-Type` | — |
-| V4.1.2 | Only user-facing endpoints (intended for manual web-browser access) automatically redirect from HTTP to HTTPS, while other… | 2 | ⚠️ In progress | — | — |
-| V4.1.3 | Any HTTP header field used by the application and set by an intermediary layer, such as a load balancer, a web proxy, or a… | 2 | ⚠️ In progress | — | — |
-| V4.2.1 | All application components (including load balancers, firewalls, and application servers) determine boundaries of incoming… | 2 | ⚠️ In progress | — | — |
-| V4.3.1 | A query allowlist, depth limiting, amount limiting, or query cost analysis is used to prevent GraphQL or data layer expression… | 2 | ⚠️ In progress | — | — |
+| V4.1.1 | Every HTTP response with a message body contains a Content-Type header field that matches the actual content of the… | 1 | ✅ | Express `res.json` sets `Content-Type` | — |
+| V4.1.2 | Only user-facing endpoints (intended for manual web-browser access) automatically redirect from HTTP to HTTPS, while other… | 2 | ⚠️ | — | — |
+| V4.1.3 | Any HTTP header field used by the application and set by an intermediary layer, such as a load balancer, a web proxy, or a… | 2 | ⚠️ | — | — |
+| V4.2.1 | All application components (including load balancers, firewalls, and application servers) determine boundaries of incoming… | 2 | ⚠️ | — | — |
+| V4.3.1 | A query allowlist, depth limiting, amount limiting, or query cost analysis is used to prevent GraphQL or data layer… | 2 | ⚠️ | — | — |
+
+<details>
+<summary>11 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V4.1.4 | Only HTTP methods that are explicitly supported by the application or its API (including OPTIONS during preflight requests)… | 3 | ➖ N/A |
+| V4.1.5 | Per-message digital signatures are used to provide additional assurance on top of transport protections for requests or… | 3 | ➖ N/A |
+| V4.2.2 | When generating HTTP messages, the Content-Length header field does not conflict with the length of the content as… | 3 | ➖ N/A |
+| V4.2.3 | The application does not send nor accept HTTP/2 or HTTP/3 messages with connection-specific header fields such as… | 3 | ➖ N/A |
+| V4.2.4 | The application only accepts HTTP/2 and HTTP/3 requests where the header fields and values do not contain any CR (\r), LF… | 3 | ➖ N/A |
+| V4.2.5 | Verify that, if the application (backend or frontend) builds and sends requests, it uses validation, sanitization, or other… | 3 | ➖ N/A |
+| V4.3.2 | GraphQL introspection queries are disabled in the production environment unless the GraphQL API is meant to be used by other… | 2 | ➖ N/A |
+| V4.4.1 | WebSocket over TLS (WSS) is used for all WebSocket connections. | 1 | ➖ N/A |
+| V4.4.2 | Verify that, during the initial HTTP WebSocket handshake, the Origin header field is checked against a list of origins… | 2 | ➖ N/A |
+| V4.4.3 | Verify that, if the application's standard session management cannot be used, dedicated tokens are being used for this… | 2 | ➖ N/A |
+| V4.4.4 | Dedicated WebSocket session management tokens are initially obtained or validated through the previously authenticated HTTPS… | 2 | ➖ N/A |
+
+</details>
 
 #### V5 File Handling
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V5.1.1 | The documentation defines the permitted file types, expected file extensions, and maximum size (including unpacked size) for… | 2 | ❌ To do | — | — |
-| V5.2.1 | The application will only accept files of a size which it can process without causing a loss of performance or a denial of… | 1 | ⚠️ In progress | — | — |
-| V5.2.2 | When the application accepts a file, either on its own or within an archive such as a zip file, it checks if the file… | 1 | ⚠️ In progress | — | — |
-| V5.2.3 | The application checks compressed files (e.g., zip, gz, docx, odt) against maximum allowed uncompressed size and against… | 2 | ✅ Done | ZIP limits: size, entries, ratio (`app/backend/src/modules/ingestion/adapters/central-egp.adapters.ts:62-66`) | — |
-| V5.2.5 | The application does not allow uploading compressed files containing symlinks unless this is specifically required (in which… | 3 | ✅ Done | — | — |
-| V5.3.1 | Files uploaded or generated by untrusted input and stored in a public folder, are not executed as server-side program code… | 1 | ✅ Done | — | — |
-| V5.3.2 | When the application creates file paths for file operations, instead of user-submitted filenames, it uses internally generated… | 1 | ✅ Done | Zip-slip guard + `basename` (`app/backend/src/modules/ingestion/adapters/central-egp.adapters.ts:899-911`) | — |
-| V5.3.3 | Server-side file processing, such as file decompression, ignores user-provided path information to prevent vulnerabilities… | 3 | ✅ Done | — | — |
+| V5.1.1 | The documentation defines the permitted file types, expected file extensions, and maximum size (including unpacked size) for… | 2 | ❌ | — | — |
+| V5.2.1 | The application will only accept files of a size which it can process without causing a loss of performance or a denial of… | 1 | ✅ | Only files the server downloads itself: e-GP ZIP ≤ 100 MB, ≤ 500 entries, ≤ 500 MB expanded, ratio ≤ 500 (`central-egp.adapters.ts`); JSON bodies ≤ 1 MB | CSV: In progress. No user upload endpoint exists (the profile certificate uploader posts to an endpoint that is not implemented) |
+| V5.2.2 | When the application accepts a file, either on its own or within an archive such as a zip file, it checks if the file… | 1 | ✅ | Only `.pdf` entries with known TOR name prefixes are extracted, then checked for the `%PDF-` magic bytes (`extractTorPdfs`) | CSV: In progress. |
+| V5.2.3 | The application checks compressed files (e.g., zip, gz, docx, odt) against maximum allowed uncompressed size and against… | 2 | ✅ | ZIP limits: size, entries, ratio (`app/backend/src/modules/ingestion/adapters/central-egp.adapters.ts:62-66`) | — |
+| V5.2.5 | The application does not allow uploading compressed files containing symlinks unless this is specifically required (in which… | 3 | ✅ | — | — |
+| V5.3.1 | Files uploaded or generated by untrusted input and stored in a public folder, are not executed as server-side program code… | 1 | ✅ | — | — |
+| V5.3.2 | When the application creates file paths for file operations, instead of user-submitted filenames, it uses internally… | 1 | ✅ | Zip-slip guard + `basename` (`app/backend/src/modules/ingestion/adapters/central-egp.adapters.ts:899-911`) | — |
+| V5.3.3 | Server-side file processing, such as file decompression, ignores user-provided path information to prevent vulnerabilities… | 3 | ✅ | — | — |
+
+<details>
+<summary>5 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V5.2.4 | A file size quota and maximum number of files per user are enforced to ensure that a single user cannot fill up the storage… | 3 | ➖ N/A |
+| V5.2.6 | The application rejects uploaded images with a pixel size larger than the maximum allowed, to prevent pixel flood attacks. | 3 | ➖ N/A |
+| V5.4.1 | The application validates or ignores user-submitted filenames, including in a JSON, JSONP, or URL parameter and specifies a… | 2 | ➖ N/A |
+| V5.4.2 | File names served (e.g., in HTTP response header fields or email attachments) are encoded or sanitized (e.g., following RFC… | 2 | ➖ N/A |
+| V5.4.3 | Files obtained from untrusted sources are scanned by antivirus scanners to prevent serving of known malicious content. | 2 | ➖ N/A |
+
+</details>
 
 #### V6 Authentication
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V6.1.1 | Application documentation defines how controls such as rate limiting, anti-automation, and adaptive response, are used to… | 1 | ❌ To do | — | — |
-| V6.1.3 | Verify that, if the application includes multiple authentication pathways, these are all documented together with the security… | 2 | ⚠️ In progress | — | — |
-| V6.3.1 | Controls to prevent attacks such as credential stuffing and password brute force are implemented according to the… | 1 | ✅ Done | Login is delegated to Google, which applies its own brute-force protection | No rate limit on the app side |
-| V6.3.3 | Either a multi-factor authentication mechanism or a combination of single-factor authentication mechanisms, must be used in… | 2 | ⚠️ In progress | — | — |
-| V6.3.5 | Users are notified of suspicious authentication attempts (successful or unsuccessful). This may include authentication… | 3 | ✅ Done | Delegated to Google account security alerts | Not implemented in the app |
-| V6.8.4 | Verify that, if an application uses a separate Identity Provider (IdP) and expects specific authentication strength, methods,… | 2 | ❌ To do | — | — |
+| V6.1.1 | Application documentation defines how controls such as rate limiting, anti-automation, and adaptive response, are used to… | 1 | ✅ | Rate limits and anti-automation documented in §6.2 | CSV: To do. Documented 21 Nov 2026 |
+| V6.1.3 | Verify that, if the application includes multiple authentication pathways, these are all documented together with the… | 2 | ⚠️ | — | — |
+| V6.3.1 | Controls to prevent attacks such as credential stuffing and password brute force are implemented according to the… | 1 | ✅ | Login delegated to Google; app-side login limiter, 10 per 15 min per IP (`app/backend/src/middleware/rate-limit.middleware.ts`) | App-side login rate limit added 21 Nov 2026 |
+| V6.3.3 | Either a multi-factor authentication mechanism or a combination of single-factor authentication mechanisms, must be used in… | 2 | ⚠️ | — | — |
+| V6.3.5 | Users are notified of suspicious authentication attempts (successful or unsuccessful). This may include authentication… | 3 | ⚠️ | Delegated to Google account security alerts | CSV: Done. Not implemented in the app itself |
+| V6.8.4 | Verify that, if an application uses a separate Identity Provider (IdP) and expects specific authentication strength… | 2 | ❌ | — | — |
+
+<details>
+<summary>41 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V6.1.2 | A list of context-specific words is documented in order to prevent their use in passwords. The list could include… | 2 | ➖ N/A |
+| V6.2.1 | User set passwords are at least 8 characters in length although a minimum of 15 characters is strongly recommended. | 1 | ➖ N/A |
+| V6.2.2 | Users can change their password. | 1 | ➖ N/A |
+| V6.2.3 | Password change functionality requires the user's current and new password. | 1 | ➖ N/A |
+| V6.2.4 | Passwords submitted during account registration or password change are checked against an available set of, at least, the… | 1 | ➖ N/A |
+| V6.2.5 | Passwords of any composition can be used, without rules limiting the type of characters permitted. There must be no… | 1 | ➖ N/A |
+| V6.2.6 | Password input fields use type=password to mask the entry. Applications may allow the user to temporarily view the entire… | 1 | ➖ N/A |
+| V6.2.7 | "paste" functionality, browser password helpers, and external password managers are permitted. | 1 | ➖ N/A |
+| V6.2.8 | The application verifies the user's password exactly as received from the user, without any modifications such as truncation… | 1 | ➖ N/A |
+| V6.2.9 | Passwords of at least 64 characters are permitted. | 2 | ➖ N/A |
+| V6.2.10 | A user's password stays valid until it is discovered to be compromised or the user rotates it. The application must not… | 2 | ➖ N/A |
+| V6.2.11 | The documented list of context specific words is used to prevent easy to guess passwords being created. | 2 | ➖ N/A |
+| V6.2.12 | Passwords submitted during account registration or password changes are checked against a set of breached passwords. | 2 | ➖ N/A |
+| V6.3.2 | Default user accounts (e.g., "root", "admin", or "sa") are not present in the application or are disabled. | 1 | ➖ N/A |
+| V6.3.4 | Verify that, if the application includes multiple authentication pathways, there are no undocumented pathways and that… | 2 | ➖ N/A |
+| V6.3.6 | Email is not used as either a single-factor or multi-factor authentication mechanism. | 3 | ➖ N/A |
+| V6.3.7 | Users are notified after updates to authentication details, such as credential resets or modification of the username or… | 3 | ➖ N/A |
+| V6.3.8 | Valid users cannot be deduced from failed authentication challenges, such as by basing on error messages, HTTP response… | 3 | ➖ N/A |
+| V6.4.1 | System generated initial passwords or activation codes are securely randomly generated, follow the existing password policy… | 1 | ➖ N/A |
+| V6.4.2 | Password hints or knowledge-based authentication (so-called "secret questions") are not present. | 1 | ➖ N/A |
+| V6.4.3 | A secure process for resetting a forgotten password is implemented, that does not bypass any enabled multi-factor… | 2 | ➖ N/A |
+| V6.4.4 | If a multi-factor authentication factor is lost, evidence of identity proofing is performed at the same level as during… | 2 | ➖ N/A |
+| V6.4.5 | Renewal instructions for authentication mechanisms which expire are sent with enough time to be carried out before the old… | 3 | ➖ N/A |
+| V6.4.6 | Administrative users can initiate the password reset process for the user, but that this does not allow them to change or… | 3 | ➖ N/A |
+| V6.5.1 | Lookup secrets, out-of-band authentication requests or codes, and time-based one-time passwords (TOTPs) are only… | 2 | ➖ N/A |
+| V6.5.2 | Verify that, when being stored in the application's backend, lookup secrets with less than 112 bits of entropy (19 random… | 2 | ➖ N/A |
+| V6.5.3 | Lookup secrets, out-of-band authentication code, and time-based one-time password seeds, are generated using a… | 2 | ➖ N/A |
+| V6.5.4 | Lookup secrets and out-of-band authentication codes have a minimum of 20 bits of entropy (typically 4 random alphanumeric… | 2 | ➖ N/A |
+| V6.5.5 | Out-of-band authentication requests, codes, or tokens, as well as time-based one-time passwords (TOTPs) have a defined… | 2 | ➖ N/A |
+| V6.5.6 | Any authentication factor (including physical devices) can be revoked in case of theft or other loss. | 3 | ➖ N/A |
+| V6.5.7 | Biometric authentication mechanisms are only used as secondary factors together with either something you have or something… | 3 | ➖ N/A |
+| V6.5.8 | Time-based one-time passwords (TOTPs) are checked based on a time source from a trusted service and not from an untrusted or… | 3 | ➖ N/A |
+| V6.6.1 | Authentication mechanisms using the Public Switched Telephone Network (PSTN) to deliver One-time Passwords (OTPs) via phone… | 2 | ➖ N/A |
+| V6.6.2 | Out-of-band authentication requests, codes, or tokens are bound to the original authentication request for which they were… | 2 | ➖ N/A |
+| V6.6.3 | A code based out-of-band authentication mechanism is protected against brute force attacks by using rate limiting. Consider… | 2 | ➖ N/A |
+| V6.6.4 | Verify that, where push notifications are used for multi-factor authentication, rate limiting is used to prevent push… | 3 | ➖ N/A |
+| V6.7.1 | The certificates used to verify cryptographic authentication assertions are stored in a way protects them from modification. | 3 | ➖ N/A |
+| V6.7.2 | The challenge nonce is at least 64 bits in length, and statistically unique or unique over the lifetime of the cryptographic… | 3 | ➖ N/A |
+| V6.8.1 | Verify that, if the application supports multiple identity providers (IdPs), the user's identity cannot be spoofed via… | 2 | ➖ N/A |
+| V6.8.2 | The presence and integrity of digital signatures on authentication assertions (for example on JWTs or SAML assertions) are… | 2 | ➖ N/A |
+| V6.8.3 | SAML assertions are uniquely processed and used only once within the validity period to prevent replay attacks. | 2 | ➖ N/A |
+
+</details>
 
 #### V7 Session Management
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V7.1.1 | The user's session inactivity timeout and absolute maximum session lifetime are documented, are appropriate in combination… | 2 | ❌ To do | — | — |
-| V7.1.3 | All systems that create and manage user sessions as part of a federated identity management ecosystem (such as SSO systems)… | 2 | ✅ Done | — | — |
-| V7.2.1 | The application performs all session token verification using a trusted, backend service. | 1 | ✅ Done | Server-side session store, MongoDB `sessions` (`app/backend/src/apps/api/app.ts:25-32`) | — |
-| V7.2.2 | The application uses either self-contained or reference tokens that are dynamically generated for session management, i.e. not… | 1 | ✅ Done | — | — |
-| V7.2.3 | If reference tokens are used to represent user sessions, they are unique and generated using a cryptographically secure… | 1 | ✅ Done | — | — |
-| V7.2.4 | The application generates a new session token on user authentication, including re-authentication, and terminates the current… | 1 | ❌ To do | Passport 0.7 calls `session.regenerate()` on login | Library default, not app code |
-| V7.3.1 | There is an inactivity timeout such that re-authentication is enforced according to risk analysis and documented security… | 2 | ✅ Done | 7-day cookie `maxAge` (`app/backend/src/apps/api/app.ts:61`) | No idle timeout; only an absolute 7-day lifetime |
-| V7.3.2 | There is an absolute maximum session lifetime such that re-authentication is enforced according to risk analysis and… | 2 | ✅ Done | Store TTL 7 days (`app/backend/src/apps/api/app.ts:31`) | — |
-| V7.4.1 | When session termination is triggered (such as logout or expiration), the application disallows any further use of the… | 1 | ✅ Done | `req.logout` + `session.destroy` + `clearCookie` (`app/backend/src/modules/auth/auth.routes.ts:40-62`) | — |
-| V7.4.2 | The application terminates all active sessions when a user account is disabled or deleted (such as an employee leaving the… | 1 | ❌ To do | Suspended users rejected in `deserializeUser` (`app/backend/src/modules/auth/passport.ts:77-83`) | Session rows are not deleted |
-| V7.4.3 | The application gives the option to terminate all other active sessions after a successful change or removal of any… | 2 | ✅ Done | — | No "log out other sessions" feature in the app |
-| V7.4.4 | All pages that require authentication have easy and visible access to logout functionality. | 2 | ⚠️ In progress | — | — |
-| V7.5.1 | The application requires full re-authentication before allowing modifications to sensitive account attributes which may affect… | 2 | ❌ To do | — | — |
-| V7.6.1 | Session lifetime and termination between Relying Parties (RPs) and Identity Providers (IdPs) behave as documented, requiring… | 2 | ✅ Done | — | — |
-| V7.6.2 | Creation of a session requires either the user's consent or an explicit action, preventing the creation of new application… | 2 | ❌ To do | — | — |
+| V7.1.1 | The user's session inactivity timeout and absolute maximum session lifetime are documented, are appropriate in combination… | 2 | ✅ | 30-min idle and 7-day absolute lifetime documented in §6.3 | CSV: To do. Documented 21 Nov 2026 |
+| V7.1.3 | All systems that create and manage user sessions as part of a federated identity management ecosystem (such as SSO systems)… | 2 | ✅ | — | — |
+| V7.2.1 | The application performs all session token verification using a trusted, backend service. | 1 | ✅ | Server-side session store, MongoDB `sessions` (`app/backend/src/apps/api/app.ts:25-32`) | — |
+| V7.2.2 | The application uses either self-contained or reference tokens that are dynamically generated for session management, i.e.… | 1 | ✅ | — | — |
+| V7.2.3 | If reference tokens are used to represent user sessions, they are unique and generated using a cryptographically secure… | 1 | ✅ | — | — |
+| V7.2.4 | The application generates a new session token on user authentication, including re-authentication, and terminates the… | 1 | ✅ | Passport 0.7 calls `session.regenerate()` on login; logout destroys the session | CSV: To do. Library behaviour, verified in the session flow |
+| V7.3.1 | There is an inactivity timeout such that re-authentication is enforced according to risk analysis and documented security… | 2 | ✅ | 30-min idle timeout: `rolling: true` cookie + server-side `lastSeenAt` check (`app/backend/src/middleware/session-timeout.middleware.ts`) | Idle timeout added 21 Nov 2026 |
+| V7.3.2 | There is an absolute maximum session lifetime such that re-authentication is enforced according to risk analysis and… | 2 | ✅ | 7-day absolute lifetime from `authAt` (`app/backend/src/middleware/session-timeout.middleware.ts`) | — |
+| V7.4.1 | When session termination is triggered (such as logout or expiration), the application disallows any further use of the… | 1 | ✅ | Logout and timeout destroy the server-side session; a reused cookie gets 401 (§6.3 check) | — |
+| V7.4.2 | The application terminates all active sessions when a user account is disabled or deleted (such as an employee leaving the… | 1 | ✅ | Suspending a user deletes all their stored sessions (`app/backend/src/modules/auth/session-revocation.ts`); suspended users are also refused in `deserializeUser` | CSV: To do. Implemented 21 Nov 2026 |
+| V7.4.3 | The application gives the option to terminate all other active sessions after a successful change or removal of any… | 2 | ➖ N/A | — | CSV: Done. The app manages no authentication factors (Google SSO), so there is nothing to change |
+| V7.4.4 | All pages that require authentication have easy and visible access to logout functionality. | 2 | ⚠️ | — | — |
+| V7.5.1 | The application requires full re-authentication before allowing modifications to sensitive account attributes which may… | 2 | ❌ | — | — |
+| V7.6.1 | Session lifetime and termination between Relying Parties (RPs) and Identity Providers (IdPs) behave as documented, requiring… | 2 | ✅ | — | — |
+| V7.6.2 | Creation of a session requires either the user's consent or an explicit action, preventing the creation of new application… | 2 | ❌ | — | — |
+
+<details>
+<summary>4 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V7.1.2 | The documentation defines how many concurrent (parallel) sessions are allowed for one account as well as the intended… | 2 | ➖ N/A |
+| V7.4.5 | Application administrators are able to terminate active sessions for an individual user or for all users. | 2 | ➖ N/A |
+| V7.5.2 | Users are able to view and (having authenticated again with at least one factor) terminate any or all currently active… | 2 | ➖ N/A |
+| V7.5.3 | The application requires further authentication with at least one factor or secondary verification before performing highly… | 3 | ➖ N/A |
+
+</details>
 
 #### V8 Authorization
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V8.1.1 | Authorization documentation defines rules for restricting function-level and data-specific access based on consumer… | 1 | ❌ To do | — | — |
-| V8.1.4 | Authentication and authorization documentation defines how environmental and contextual factors are used in decision-making,… | 3 | ✅ Done | — | — |
-| V8.2.1 | The application ensures that function-level access is restricted to consumers with explicit permissions. | 1 | ✅ Done | `requireAdmin` on admin router (`app/backend/src/modules/admin/admin.routes.ts:32`) | — |
-| V8.2.2 | The application ensures that data-specific access is restricted to consumers with explicit permissions to specific data items… | 1 | ⚠️ In progress | Queries scoped by `req.user._id` (user, bookmarks, bidder profile) | — |
-| V8.2.4 | Adaptive security controls based on a consumer's environmental and contextual attributes (such as time of day, location, IP… | 3 | ✅ Done | — | — |
-| V8.3.1 | The application enforces authorization rules at a trusted service layer and doesn't rely on controls that an untrusted… | 1 | ✅ Done | Checks run in Express middleware/controllers, not in the frontend | — |
+| V8.1.1 | Authorization documentation defines rules for restricting function-level and data-specific access based on consumer… | 1 | ✅ | Role → scope table and data-access rules documented in §5.3, §5.4 and §6.1 | CSV: To do. Documented 21 Nov 2026 |
+| V8.1.4 | Authentication and authorization documentation defines how environmental and contextual factors are used in decision-making… | 3 | ❌ | — | CSV: Done. No environmental or contextual factors are documented |
+| V8.2.1 | The application ensures that function-level access is restricted to consumers with explicit permissions. | 1 | ✅ | `requireAdmin` + per-route `requireScope` (`app/backend/src/middleware/admin.middleware.ts`, `modules/auth/scopes.ts`) | — |
+| V8.2.2 | The application ensures that data-specific access is restricted to consumers with explicit permissions to specific data… | 1 | ✅ | All user data queried by `req.user._id`; sub-ids looked up inside the caller's profile; IDOR test M4 returns 404 | CSV: In progress. |
+| V8.2.4 | Adaptive security controls based on a consumer's environmental and contextual attributes (such as time of day, location, IP… | 3 | ❌ | — | CSV: Done. No adaptive controls based on time, location or device in the code |
+| V8.3.1 | The application enforces authorization rules at a trusted service layer and doesn't rely on controls that an untrusted… | 1 | ✅ | All checks are server-side middleware; the frontend only hides UI | — |
+
+<details>
+<summary>7 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V8.1.2 | Authorization documentation defines rules for field-level access restrictions (both read and write) based on consumer… | 2 | ➖ N/A |
+| V8.1.3 | The application's documentation defines the environmental and contextual attributes (including but not limited to, time of… | 3 | ➖ N/A |
+| V8.2.3 | The application ensures that field-level access is restricted to consumers with explicit permissions to specific fields to… | 2 | ➖ N/A |
+| V8.3.2 | Changes to values on which authorization decisions are made are applied immediately. Where changes cannot be applied… | 3 | ➖ N/A |
+| V8.3.3 | Access to an object is based on the originating subject's (e.g. consumer's) permissions, not on the permissions of any… | 3 | ➖ N/A |
+| V8.4.1 | Multi-tenant applications use cross-tenant controls to ensure consumer operations will never affect tenants with which they… | 2 | ➖ N/A |
+| V8.4.2 | Access to administrative interfaces incorporates multiple layers of security, including continuous consumer identity… | 3 | ➖ N/A |
+
+</details>
 
 #### V9 Self-contained Tokens
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V9.2.4 | Verify that, if a token issuer uses the same private key for issuing tokens to different audiences, the issued tokens contain… | 2 | ✅ Done | — | — |
+| V9.2.4 | Verify that, if a token issuer uses the same private key for issuing tokens to different audiences, the issued tokens… | 2 | ✅ | — | — |
+
+<details>
+<summary>6 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V9.1.1 | Self-contained tokens are validated using their digital signature or MAC to protect against tampering before accepting the… | 1 | ➖ N/A |
+| V9.1.2 | Only algorithms on an allowlist can be used to create and verify self-contained tokens, for a given context. The allowlist… | 1 | ➖ N/A |
+| V9.1.3 | Key material that is used to validate self-contained tokens is from trusted pre-configured sources for the token issuer… | 1 | ➖ N/A |
+| V9.2.1 | Verify that, if a validity time span is present in the token data, the token and its content are accepted only if the… | 1 | ➖ N/A |
+| V9.2.2 | The service receiving a token validates the token to be the correct type and is meant for the intended purpose before… | 2 | ➖ N/A |
+| V9.2.3 | The service only accepts tokens which are intended for use with that service (audience). For JWTs, this can be achieved by… | 2 | ➖ N/A |
+
+</details>
 
 #### V10 OAuth and OIDC
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V10.1.1 | Tokens are only sent to components that strictly need them. For example, when using a backend-for-frontend pattern for… | 2 | ❌ To do | — | — |
-| V10.1.2 | The client only accepts values from the authorization server (such as the authorization code or ID Token) if these values… | 2 | ❌ To do | — | OAuth `state` not enabled |
-| V10.2.2 | Verify that, if the OAuth client can interact with more than one authorization server, it has a defense against mix-up… | 2 | ✅ Done | — | — |
-| V10.5.1 | The client (as the relying party) mitigates ID Token replay attacks. For example, by ensuring that the 'nonce' claim in the ID… | 2 | ✅ Done | — | — |
-| V10.7.3 | The user can review, modify, and revoke consents which the user has granted through the authorization server. | 2 | ❌ To do | — | — |
+| V10.1.1 | Tokens are only sent to components that strictly need them. For example, when using a backend-for-frontend pattern for… | 2 | ❌ | — | — |
+| V10.1.2 | The client only accepts values from the authorization server (such as the authorization code or ID Token) if these values… | 2 | ❌ | — | OAuth `state` not enabled |
+| V10.2.2 | Verify that, if the OAuth client can interact with more than one authorization server, it has a defense against mix-up… | 2 | ✅ | — | — |
+| V10.5.1 | The client (as the relying party) mitigates ID Token replay attacks. For example, by ensuring that the 'nonce' claim in the… | 2 | ✅ | — | — |
+| V10.7.3 | The user can review, modify, and revoke consents which the user has granted through the authorization server. | 2 | ❌ | — | — |
+
+<details>
+<summary>31 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V10.2.1 | Verify that, if the code flow is used, the OAuth client has protection against browser-based request forgery attacks… | 2 | ➖ N/A |
+| V10.2.3 | The OAuth client only requests the required scopes (or other authorization parameters) in requests to the authorization… | 3 | ➖ N/A |
+| V10.3.1 | The resource server only accepts access tokens that are intended for use with that service (audience). The audience may be… | 2 | ➖ N/A |
+| V10.3.2 | The resource server enforces authorization decisions based on claims from the access token that define delegated… | 2 | ➖ N/A |
+| V10.3.3 | If an access control decision requires identifying a unique user from an access token (JWT or related token introspection… | 2 | ➖ N/A |
+| V10.3.4 | Verify that, if the resource server requires specific authentication strength, methods, or recentness, it verifies that the… | 2 | ➖ N/A |
+| V10.3.5 | The resource server prevents the use of stolen access tokens or replay of access tokens (from unauthorized parties) by… | 3 | ➖ N/A |
+| V10.4.1 | The authorization server validates redirect URIs based on a client-specific allowlist of pre-registered URIs using exact… | 1 | ➖ N/A |
+| V10.4.2 | Verify that, if the authorization server returns the authorization code in the authorization response, it can be used only… | 1 | ➖ N/A |
+| V10.4.3 | The authorization code is short-lived. The maximum lifetime can be up to 10 minutes for L1 and L2 applications and up to 1… | 1 | ➖ N/A |
+| V10.4.4 | For a given client, the authorization server only allows the usage of grants that this client needs to use. Note that the… | 1 | ➖ N/A |
+| V10.4.5 | The authorization server mitigates refresh token replay attacks for public clients, preferably using sender-constrained… | 1 | ➖ N/A |
+| V10.4.6 | Verify that, if the code grant is used, the authorization server mitigates authorization code interception attacks by… | 2 | ➖ N/A |
+| V10.4.7 | If the authorization server supports unauthenticated dynamic client registration, it mitigates the risk of malicious client… | 2 | ➖ N/A |
+| V10.4.8 | Refresh tokens have an absolute expiration, including if sliding refresh token expiration is applied. | 2 | ➖ N/A |
+| V10.4.9 | Refresh tokens and reference access tokens can be revoked by an authorized user using the authorization server user… | 2 | ➖ N/A |
+| V10.4.10 | Confidential client is authenticated for client-to-authorized server backchannel requests such as token requests, pushed… | 2 | ➖ N/A |
+| V10.4.11 | The authorization server configuration only assigns the required scopes to the OAuth client. | 2 | ➖ N/A |
+| V10.4.12 | For a given client, the authorization server only allows the 'response_mode' value that this client needs to use. For… | 3 | ➖ N/A |
+| V10.4.13 | Grant type 'code' is always used together with pushed authorization requests (PAR). | 3 | ➖ N/A |
+| V10.4.14 | The authorization server issues only sender-constrained (Proof-of-Possession) access tokens, either with certificate-bound… | 3 | ➖ N/A |
+| V10.4.15 | Verify that, for a server-side client (which is not executed on the end-user device), the authorization server ensures that… | 3 | ➖ N/A |
+| V10.4.16 | The client is confidential and the authorization server requires the use of strong client authentication methods (based on… | 3 | ➖ N/A |
+| V10.5.2 | The client uniquely identifies the user from ID Token claims, usually the 'sub' claim, which cannot be reassigned to other… | 2 | ➖ N/A |
+| V10.5.3 | The client rejects attempts by a malicious authorization server to impersonate another authorization server through… | 2 | ➖ N/A |
+| V10.5.4 | The client validates that the ID Token is intended to be used for that client (audience) by checking that the 'aud' claim… | 2 | ➖ N/A |
+| V10.5.5 | Verify that, when using OIDC back-channel logout, the relying party mitigates denial of service through forced logout and… | 2 | ➖ N/A |
+| V10.6.1 | The OpenID Provider only allows values 'code', 'ciba', 'id_token', or 'id_token code' for response mode. Note that 'code' is… | 2 | ➖ N/A |
+| V10.6.2 | The OpenID Provider mitigates denial of service through forced logout. By obtaining explicit confirmation from the end-user… | 2 | ➖ N/A |
+| V10.7.1 | The authorization server ensures that the user consents to each authorization request. If the identity of the client cannot… | 2 | ➖ N/A |
+| V10.7.2 | When the authorization server prompts for user consent, it presents sufficient and clear information about what is being… | 2 | ➖ N/A |
+
+</details>
 
 #### V11 Cryptography
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V11.1.1 | There is a documented policy for management of cryptographic keys and a cryptographic key lifecycle that follows a key… | 2 | ❌ To do | — | — |
-| V11.1.4 | A cryptographic inventory is maintained. This must include a documented plan that outlines the migration path to new… | 3 | ✅ Done | — | — |
-| V11.2.1 | Industry-validated implementations (including libraries and hardware-accelerated implementations) are used for cryptographic… | 2 | ✅ Done | — | — |
-| V11.2.3 | All cryptographic primitives utilize a minimum of 128-bits of security based on the algorithm, key size, and configuration.… | 2 | ✅ Done | — | — |
-| V11.3.1 | Insecure block modes (e.g., ECB) and weak padding schemes (e.g., PKCS#1 v1.5) are not used. | 1 | ✅ Done | — | — |
-| V11.3.2 | Only approved ciphers and modes such as AES with GCM are used. | 1 | ⚠️ In progress | — | — |
-| V11.4.1 | Only approved hash functions are used for general cryptographic use cases, including digital signatures, HMAC, KDF, and random… | 1 | ⚠️ In progress | — | — |
-| V11.4.3 | Hash functions used in digital signatures, as part of data authentication or data integrity are collision resistant and have… | 2 | ✅ Done | — | — |
-| V11.5.1 | All random numbers and strings which are intended to be non-guessable must be generated using a cryptographically secure… | 2 | ✅ Done | Session IDs from express-session (`uid-safe`, CSPRNG) | — |
+| V11.1.1 | There is a documented policy for management of cryptographic keys and a cryptographic key lifecycle that follows a key… | 2 | ❌ | — | — |
+| V11.1.4 | A cryptographic inventory is maintained. This must include a documented plan that outlines the migration path to new… | 3 | ✅ | — | — |
+| V11.2.1 | Industry-validated implementations (including libraries and hardware-accelerated implementations) are used for cryptographic… | 2 | ✅ | — | — |
+| V11.2.3 | All cryptographic primitives utilize a minimum of 128-bits of security based on the algorithm, key size, and configuration.… | 2 | ✅ | — | — |
+| V11.3.1 | Insecure block modes (e.g., ECB) and weak padding schemes (e.g., PKCS#1 v1.5) are not used. | 1 | ✅ | — | — |
+| V11.3.2 | Only approved ciphers and modes such as AES with GCM are used. | 1 | ✅ | App crypto is express-session cookie signing (HMAC-SHA256) and TLS via Caddy (AES-GCM / ChaCha20-Poly1305) | CSV: In progress. Documented exception: `encryptAnnouncementData` uses AES-CBC with a public passphrase only to reproduce the public e-GP client's request encoding; it protects nothing |
+| V11.4.1 | Only approved hash functions are used for general cryptographic use cases, including digital signatures, HMAC, KDF, and… | 1 | ✅ | HMAC-SHA256 (session cookies), CSPRNG `randomBytes` for ids | CSV: In progress. Documented exception: MD5 (OpenSSL EVP_BytesToKey) in the same e-GP request encoding, required by the upstream API; not a security use |
+| V11.4.3 | Hash functions used in digital signatures, as part of data authentication or data integrity are collision resistant and have… | 2 | ✅ | — | — |
+| V11.5.1 | All random numbers and strings which are intended to be non-guessable must be generated using a cryptographically secure… | 2 | ✅ | Session IDs from express-session (`uid-safe`, CSPRNG) | — |
+
+<details>
+<summary>15 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V11.1.2 | A cryptographic inventory is performed, maintained, regularly updated, and includes all cryptographic keys, algorithms, and… | 2 | ➖ N/A |
+| V11.1.3 | Cryptographic discovery mechanisms are employed to identify all instances of cryptography in the system, including… | 3 | ➖ N/A |
+| V11.2.2 | The application is designed with crypto agility such that random number, authenticated encryption, MAC, or hashing… | 2 | ➖ N/A |
+| V11.2.4 | All cryptographic operations are constant-time, with no 'short-circuit' operations in comparisons, calculations, or returns… | 3 | ➖ N/A |
+| V11.2.5 | All cryptographic modules fail securely, and errors are handled in a way that does not enable vulnerabilities, such as… | 3 | ➖ N/A |
+| V11.3.3 | Encrypted data is protected against unauthorized modification preferably by using an approved authenticated encryption… | 2 | ➖ N/A |
+| V11.3.4 | Nonces, initialization vectors, and other single-use numbers are not used for more than one encryption key and data-element… | 3 | ➖ N/A |
+| V11.3.5 | Any combination of an encryption algorithm and a MAC algorithm is operating in encrypt-then-MAC mode. | 3 | ➖ N/A |
+| V11.4.2 | Passwords are stored using an approved, computationally intensive, key derivation function (also known as a "password… | 2 | ➖ N/A |
+| V11.4.4 | The application uses approved key derivation functions with key stretching parameters when deriving secret keys from… | 2 | ➖ N/A |
+| V11.5.2 | The random number generation mechanism in use is designed to work securely, even under heavy demand. | 3 | ➖ N/A |
+| V11.6.1 | Only approved cryptographic algorithms and modes of operation are used for key generation and seeding, and digital signature… | 2 | ➖ N/A |
+| V11.6.2 | Approved cryptographic algorithms are used for key exchange (such as Diffie-Hellman) with a focus on ensuring that key… | 3 | ➖ N/A |
+| V11.7.1 | Full memory encryption is in use that protects sensitive data while it is in use, preventing access by unauthorized users or… | 3 | ➖ N/A |
+| V11.7.2 | Data minimization ensures the minimal amount of data is exposed during processing, and ensure that data is encrypted… | 3 | ➖ N/A |
+
+</details>
 
 #### V12 Secure Communication
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V12.1.1 | Only the latest recommended versions of the TLS protocol are enabled, such as TLS 1.2 and TLS 1.3. The latest version of the… | 1 | ❌ To do | — | — |
-| V12.1.2 | Only recommended cipher suites are enabled, with the strongest cipher suites set as preferred. L3 applications must only… | 2 | ❌ To do | — | — |
-| V12.2.1 | TLS is used for all connectivity between a client and external facing, HTTP-based services, and does not fall back to insecure… | 1 | ❌ To do | — | — |
-| V12.2.2 | External facing services use publicly trusted TLS certificates. | 1 | ❌ To do | — | — |
-| V12.3.1 | An encrypted protocol such as TLS is used for all inbound and outbound connections to and from the application, including… | 2 | ⚠️ In progress | — | — |
-| V12.3.2 | TLS clients validate certificates received before communicating with a TLS server. | 2 | ✅ Done | — | — |
+| V12.1.1 | Only the latest recommended versions of the TLS protocol are enabled, such as TLS 1.2 and TLS 1.3. The latest version of the… | 1 | ✅ | Caddy accepts only TLS 1.2 and 1.3 (`deploy/Caddyfile`); TLS 1.0/1.1 refused in the 21 Nov check | CSV: To do. |
+| V12.1.2 | Only recommended cipher suites are enabled, with the strongest cipher suites set as preferred. L3 applications must only… | 2 | ❌ | — | — |
+| V12.2.1 | TLS is used for all connectivity between a client and external facing, HTTP-based services, and does not fall back to… | 1 | ✅ | All browser traffic goes through Caddy over HTTPS; http:// gets a 308 redirect; outbound calls use https URLs | CSV: To do. |
+| V12.2.2 | External facing services use publicly trusted TLS certificates. | 1 | ✅ | Caddy obtains Let's Encrypt certificates for `APP_DOMAIN` and `api.APP_DOMAIN` (`docker-compose.prod.yml`) | CSV: To do. Needs a real domain at deploy time |
+| V12.3.1 | An encrypted protocol such as TLS is used for all inbound and outbound connections to and from the application, including… | 2 | ⚠️ | — | — |
+| V12.3.2 | TLS clients validate certificates received before communicating with a TLS server. | 2 | ✅ | — | — |
+
+<details>
+<summary>6 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V12.1.3 | The application validates that mTLS client certificates are trusted before using the certificate identity for authentication… | 2 | ➖ N/A |
+| V12.1.4 | Proper certification revocation, such as Online Certificate Status Protocol (OCSP) Stapling, is enabled and configured. | 3 | ➖ N/A |
+| V12.1.5 | Encrypted Client Hello (ECH) is enabled in the application's TLS settings to prevent exposure of sensitive metadata, such as… | 3 | ➖ N/A |
+| V12.3.3 | TLS or another appropriate transport encryption mechanism used for all connectivity between internal, HTTP-based services… | 2 | ➖ N/A |
+| V12.3.4 | TLS connections between internal services use trusted certificates. Where internally generated or self-signed certificates… | 2 | ➖ N/A |
+| V12.3.5 | Services communicating internally within a system (intra-service communications) use strong authentication to ensure that… | 3 | ➖ N/A |
+
+</details>
 
 #### V13 Configuration
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V13.1.1 | All communication needs for the application are documented. This must include external services which the application relies… | 2 | ⚠️ In progress | — | — |
-| V13.1.4 | The application's documentation defines the secrets that are critical for the security of the application and a schedule for… | 3 | ❌ To do | — | — |
-| V13.2.1 | Communications between backend application components that don't support the application's standard user session mechanism,… | 2 | ❌ To do | — | — |
-| V13.2.2 | Communications between backend application components, including local or operating system services, APIs, middleware, and… | 2 | ⚠️ In progress | — | — |
-| V13.2.3 | If a credential has to be used for service authentication, the credential being used by the consumer is not a default… | 2 | ⚠️ In progress | — | — |
-| V13.2.4 | An allowlist is used to define the external resources or systems with which the application is permitted to communicate (e.g.,… | 2 | ⚠️ In progress | — | — |
-| V13.2.5 | The web or application server is configured with an allowlist of resources or systems to which the server can send requests or… | 2 | ❌ To do | — | — |
-| V13.3.1 | A secrets management solution, such as a key vault, is used to securely create, store, control access to, and destroy backend… | 2 | ⚠️ In progress | Secrets in env vars; `.env` gitignored | No vault/secret manager |
-| V13.3.2 | Access to secret assets adheres to the principle of least privilege. | 2 | ❌ To do | — | — |
-| V13.4.1 | The application is deployed either without any source control metadata, including the .git or .svn folders, or in a way that… | 1 | ✅ Done | `.dockerignore`; no `.git` in images | — |
-| V13.4.2 | Debug modes are disabled for all components in production environments to prevent exposure of debugging features and… | 2 | ⚠️ In progress | — | — |
-| V13.4.3 | Web servers do not expose directory listings to clients unless explicitly intended. | 2 | ✅ Done | — | — |
-| V13.4.4 | Using the HTTP TRACE method is not supported in production environments, to avoid potential information leakage. | 2 | ⚠️ In progress | — | — |
-| V13.4.5 | Documentation (such as for internal APIs) and monitoring endpoints are not exposed unless explicitly intended. | 2 | ✅ Done | — | — |
-| V13.4.6 | The application does not expose detailed version information of backend components. | 3 | ⚠️ In progress | `x-powered-by` disabled (`app/backend/src/apps/api/app.ts:34`) | Next.js `X-Powered-By` still on |
-| V13.4.7 | The web tier is configured to only serve files with specific file extensions to prevent unintentional information,… | 3 | ✅ Done | — | — |
+| V13.1.1 | All communication needs for the application are documented. This must include external services which the application relies… | 2 | ⚠️ | — | — |
+| V13.1.4 | The application's documentation defines the secrets that are critical for the security of the application and a schedule for… | 3 | ❌ | — | — |
+| V13.2.1 | Communications between backend application components that don't support the application's standard user session mechanism… | 2 | ❌ | — | — |
+| V13.2.2 | Communications between backend application components, including local or operating system services, APIs, middleware, and… | 2 | ⚠️ | — | — |
+| V13.2.3 | If a credential has to be used for service authentication, the credential being used by the consumer is not a default… | 2 | ⚠️ | — | — |
+| V13.2.4 | An allowlist is used to define the external resources or systems with which the application is permitted to communicate… | 2 | ⚠️ | — | — |
+| V13.2.5 | The web or application server is configured with an allowlist of resources or systems to which the server can send requests… | 2 | ❌ | — | — |
+| V13.3.1 | A secrets management solution, such as a key vault, is used to securely create, store, control access to, and destroy… | 2 | ⚠️ | Secrets in env vars; `.env` gitignored | No vault/secret manager |
+| V13.3.2 | Access to secret assets adheres to the principle of least privilege. | 2 | ❌ | — | — |
+| V13.4.1 | The application is deployed either without any source control metadata, including the .git or .svn folders, or in a way that… | 1 | ✅ | `.dockerignore`; no `.git` in images | — |
+| V13.4.2 | Debug modes are disabled for all components in production environments to prevent exposure of debugging features and… | 2 | ⚠️ | — | — |
+| V13.4.3 | Web servers do not expose directory listings to clients unless explicitly intended. | 2 | ✅ | — | — |
+| V13.4.4 | Using the HTTP TRACE method is not supported in production environments, to avoid potential information leakage. | 2 | ⚠️ | — | — |
+| V13.4.5 | Documentation (such as for internal APIs) and monitoring endpoints are not exposed unless explicitly intended. | 2 | ✅ | — | — |
+| V13.4.6 | The application does not expose detailed version information of backend components. | 3 | ✅ | `x-powered-by` off in Express; `poweredByHeader: false` in Next.js | CSV: In progress. Implemented 21 Nov 2026 |
+| V13.4.7 | The web tier is configured to only serve files with specific file extensions to prevent unintentional information… | 3 | ✅ | — | — |
+
+<details>
+<summary>5 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V13.1.2 | For each service the application uses, the documentation defines the maximum number of concurrent connections (e.g.… | 3 | ➖ N/A |
+| V13.1.3 | The application documentation defines resource‑management strategies for every external system or service it uses (e.g.… | 3 | ➖ N/A |
+| V13.2.6 | Where the application connects to separate services, it follows the documented configuration for each connection, such as… | 3 | ➖ N/A |
+| V13.3.3 | All cryptographic operations are performed using an isolated security module (such as a vault or hardware security module)… | 3 | ➖ N/A |
+| V13.3.4 | Secrets are configured to expire and be rotated based on the application's documentation. | 3 | ➖ N/A |
+
+</details>
 
 #### V14 Data Protection
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V14.1.1 | All sensitive data created and processed by the application has been identified and classified into protection levels. This… | 2 | ❌ To do | — | — |
-| V14.1.2 | All sensitive data protection levels have a documented set of protection requirements. This must include (but not be limited… | 2 | ❌ To do | — | — |
-| V14.2.1 | Sensitive data is only sent to the server in the HTTP message body or header fields, and that the URL and query string do not… | 1 | ✅ Done | — | — |
-| V14.2.2 | The application prevents sensitive data from being cached in server components, such as load balancers and application caches,… | 2 | ⚠️ In progress | — | — |
-| V14.2.3 | Defined sensitive data is not sent to untrusted parties (e.g., user trackers) to prevent unwanted collection of data outside… | 2 | ⚠️ In progress | — | — |
-| V14.2.4 | Controls around sensitive data related to encryption, integrity verification, retention, how the data is to be logged, access… | 2 | ❌ To do | — | — |
-| V14.2.6 | The application only returns the minimum required sensitive data for the application's functionality. For example, only… | 3 | ⚠️ In progress | — | — |
-| V14.2.7 | Sensitive information is subject to data retention classification, ensuring that outdated or unnecessary data is deleted… | 3 | ❌ To do | — | — |
-| V14.3.1 | Authenticated data is cleared from client storage, such as the browser DOM, after the client or session is terminated. The… | 1 | ⚠️ In progress | — | — |
-| V14.3.2 | The application sets sufficient anti-caching HTTP response header fields (i.e., Cache-Control: no-store) so that sensitive… | 2 | ❌ To do | — | — |
-| V14.3.3 | Data stored in browser storage (such as localStorage, sessionStorage, IndexedDB, or cookies) does not contain sensitive data,… | 2 | ❌ To do | — | — |
+| V14.1.1 | All sensitive data created and processed by the application has been identified and classified into protection levels. This… | 2 | ❌ | — | — |
+| V14.1.2 | All sensitive data protection levels have a documented set of protection requirements. This must include (but not be limited… | 2 | ❌ | — | — |
+| V14.2.1 | Sensitive data is only sent to the server in the HTTP message body or header fields, and that the URL and query string do… | 1 | ✅ | — | — |
+| V14.2.2 | The application prevents sensitive data from being cached in server components, such as load balancers and application… | 2 | ⚠️ | — | — |
+| V14.2.3 | Defined sensitive data is not sent to untrusted parties (e.g., user trackers) to prevent unwanted collection of data outside… | 2 | ⚠️ | — | — |
+| V14.2.4 | Controls around sensitive data related to encryption, integrity verification, retention, how the data is to be logged… | 2 | ❌ | — | — |
+| V14.2.6 | The application only returns the minimum required sensitive data for the application's functionality. For example, only… | 3 | ⚠️ | — | — |
+| V14.2.7 | Sensitive information is subject to data retention classification, ensuring that outdated or unnecessary data is deleted… | 3 | ❌ | — | — |
+| V14.3.1 | Authenticated data is cleared from client storage, such as the browser DOM, after the client or session is terminated. The… | 1 | ✅ | Sign-out clears form drafts and sessionStorage in the browser (`app/frontend/src/hooks/use-auth.ts`); logout sends `Clear-Site-Data` | CSV: In progress. Implemented 21 Nov 2026 |
+| V14.3.2 | The application sets sufficient anti-caching HTTP response header fields (i.e., Cache-Control: no-store) so that sensitive… | 2 | ❌ | — | — |
+| V14.3.3 | Data stored in browser storage (such as localStorage, sessionStorage, IndexedDB, or cookies) does not contain sensitive… | 2 | ❌ | — | — |
+
+<details>
+<summary>2 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V14.2.5 | Caching mechanisms are configured to only cache responses which have the expected content type for that resource and do not… | 3 | ➖ N/A |
+| V14.2.8 | Sensitive information is removed from the metadata of user-submitted files unless storage is consented to by the user. | 3 | ➖ N/A |
+
+</details>
 
 #### V15 Secure Coding and Architecture
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V15.1.1 | Application documentation defines risk based remediation time frames for 3rd party component versions with vulnerabilities and… | 1 | ❌ To do | — | — |
-| V15.1.2 | An inventory catalog, such as software bill of materials (SBOM), is maintained of all third-party libraries in use, including… | 2 | ⚠️ In progress | — | — |
-| V15.1.3 | The application documentation identifies functionality which is time-consuming or resource-demanding. This must include how to… | 2 | ⚠️ In progress | — | — |
-| V15.1.4 | Application documentation highlights third-party libraries which are considered to be "risky components". | 3 | ❌ To do | — | — |
-| V15.1.5 | Application documentation highlights parts of the application where "dangerous functionality" is being used. | 3 | ❌ To do | — | — |
-| V15.2.1 | The application only contains components which have not breached the documented update and remediation time frames. | 1 | ❌ To do | — | — |
-| V15.2.2 | The application has implemented defenses against loss of availability due to functionality which is time-consuming or… | 2 | ⚠️ In progress | — | — |
-| V15.2.3 | The production environment only includes functionality that is required for the application to function, and does not expose… | 2 | ⚠️ In progress | — | — |
-| V15.2.4 | Third-party components and all of their transitive dependencies are included from the expected repository, whether internally… | 3 | ✅ Done | `package-lock.json` committed; `npm audit` run (see §7.2) | — |
-| V15.2.5 | The application implements additional protections around parts of the application which are documented as containing… | 3 | ⚠️ In progress | — | — |
-| V15.3.1 | The application only returns the required subset of fields from a data object. For example, it should not return an entire… | 1 | ⚠️ In progress | — | — |
-| V15.3.2 | Where the application backend makes calls to external URLs, it is configured to not follow redirects unless it is intended… | 2 | ❌ To do | — | — |
-| V15.3.3 | The application has countermeasures to protect against mass assignment attacks by limiting allowed fields per controller and… | 2 | ✅ Done | Zod strips unknown keys; admin schemas `.strict()` | — |
-| V15.3.4 | All proxying and middleware components transfer the user's original IP address correctly using trusted data fields that cannot… | 2 | ⚠️ In progress | — | — |
-| V15.3.5 | The application explicitly ensures that variables are of the correct type and performs strict equality and comparator… | 2 | ⚠️ In progress | — | — |
-| V15.3.6 | JavaScript code is written in a way that prevents prototype pollution, for example, by using Set() or Map() instead of object… | 2 | ✅ Done | — | — |
-| V15.3.7 | The application has defenses against HTTP parameter pollution attacks, particularly if the application framework makes no… | 2 | ⚠️ In progress | — | — |
-| V15.4.2 | Checks on a resource's state, such as its existence or permissions, and the actions that depend on them are performed as a… | 3 | ✅ Done | — | — |
+| V15.1.1 | Application documentation defines risk based remediation time frames for 3rd party component versions with vulnerabilities… | 1 | ✅ | Remediation time frames in §7.2; Dependabot (`.github/dependabot.yml`) | CSV: To do. Documented 21 Nov 2026 |
+| V15.1.2 | An inventory catalog, such as software bill of materials (SBOM), is maintained of all third-party libraries in use… | 2 | ⚠️ | — | — |
+| V15.1.3 | The application documentation identifies functionality which is time-consuming or resource-demanding. This must include how… | 2 | ⚠️ | — | — |
+| V15.1.4 | Application documentation highlights third-party libraries which are considered to be "risky components". | 3 | ❌ | — | — |
+| V15.1.5 | Application documentation highlights parts of the application where "dangerous functionality" is being used. | 3 | ❌ | — | — |
+| V15.2.1 | The application only contains components which have not breached the documented update and remediation time frames. | 1 | ✅ | `npm audit`: 0 vulnerabilities in backend and frontend (21 Nov 2026); CI fails on high/critical (`.github/workflows/ci.yml`) | CSV: To do. Upgraded next 16.4.6, mongoose 9.12.3, zod 4.6.7, nodemailer 10.6.1 |
+| V15.2.2 | The application has implemented defenses against loss of availability due to functionality which is time-consuming or… | 2 | ⚠️ | — | — |
+| V15.2.3 | The production environment only includes functionality that is required for the application to function, and does not expose… | 2 | ⚠️ | — | — |
+| V15.2.4 | Third-party components and all of their transitive dependencies are included from the expected repository, whether… | 3 | ✅ | `package-lock.json` committed; `npm audit` run (see §7.2) | — |
+| V15.2.5 | The application implements additional protections around parts of the application which are documented as containing… | 3 | ⚠️ | — | — |
+| V15.3.1 | The application only returns the required subset of fields from a data object. For example, it should not return an entire… | 1 | ✅ | Responses are built field by field (`toProfileResponse`, admin user mappers, `getTorByIdHandler`); no raw documents returned | CSV: In progress. |
+| V15.3.2 | Where the application backend makes calls to external URLs, it is configured to not follow redirects unless it is intended… | 2 | ❌ | — | — |
+| V15.3.3 | The application has countermeasures to protect against mass assignment attacks by limiting allowed fields per controller and… | 2 | ✅ | Zod strips unknown keys; admin schemas `.strict()` | — |
+| V15.3.4 | All proxying and middleware components transfer the user's original IP address correctly using trusted data fields that… | 2 | ⚠️ | — | — |
+| V15.3.5 | The application explicitly ensures that variables are of the correct type and performs strict equality and comparator… | 2 | ⚠️ | — | — |
+| V15.3.6 | JavaScript code is written in a way that prevents prototype pollution, for example, by using Set() or Map() instead of… | 2 | ✅ | — | — |
+| V15.3.7 | The application has defenses against HTTP parameter pollution attacks, particularly if the application framework makes no… | 2 | ⚠️ | — | — |
+| V15.4.2 | Checks on a resource's state, such as its existence or permissions, and the actions that depend on them are performed as a… | 3 | ✅ | — | — |
+
+<details>
+<summary>3 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V15.4.1 | Shared objects in multi-threaded code (such as caches, files, or in-memory objects accessed by multiple threads) are… | 3 | ➖ N/A |
+| V15.4.3 | Locks are used consistently to avoid threads getting stuck, whether by waiting on each other or retrying endlessly, and that… | 3 | ➖ N/A |
+| V15.4.4 | Resource allocation policies prevent thread starvation by ensuring fair access to resources, such as by leveraging thread… | 3 | ➖ N/A |
+
+</details>
 
 #### V16 Security Logging and Error Handling
 
-| Req | Requirement (short) | L | Status | Evidence | Audit note |
+| Req | Requirement (short) | L | Status | Evidence | Note |
 |---|---|:-:|---|---|---|
-| V16.1.1 | An inventory exists documenting the logging performed at each layer of the application's technology stack, what events are… | 2 | ❌ To do | — | — |
-| V16.2.1 | Each log entry includes necessary metadata (such as when, where, who, what) that would allow for a detailed investigation of… | 2 | ⚠️ In progress | — | — |
-| V16.2.2 | Time sources for all logging components are synchronized, and that timestamps in security event metadata use UTC or include an… | 2 | ⚠️ In progress | — | — |
-| V16.2.3 | The application only stores or broadcasts logs to the files and services that are documented in the log inventory. | 2 | ❌ To do | — | — |
-| V16.2.4 | Logs can be read and correlated by the log processor that is in use, preferably by using a common logging format. | 2 | ❌ To do | — | — |
-| V16.2.5 | When logging sensitive data, the application enforces logging based on the data's protection level. For example, it may not be… | 2 | ⚠️ In progress | — | — |
-| V16.3.1 | All authentication operations are logged, including successful and unsuccessful attempts. Additional metadata, such as the… | 2 | ❌ To do | — | Login success/failure not logged |
-| V16.3.2 | Failed authorization attempts are logged. For L3, this must include logging all authorization decisions, including logging… | 2 | ❌ To do | — | — |
-| V16.3.3 | The application logs the security events that are defined in the documentation and also logs attempts to bypass the security… | 2 | ❌ To do | — | — |
-| V16.3.4 | The application logs unexpected errors and security control failures such as backend TLS failures. | 2 | ⚠️ In progress | `console.error` in `app/backend/src/middleware/error.middleware.ts:15` | No structured logger |
-| V16.4.1 | All logging components appropriately encode data to prevent log injection. | 2 | ❌ To do | — | — |
-| V16.4.2 | Logs are protected from unauthorized access and cannot be modified. | 2 | ⚠️ In progress | — | — |
-| V16.4.3 | Logs are securely transmitted to a logically separate system for analysis, detection, alerting, and escalation. The aim is to… | 2 | ❌ To do | — | — |
-| V16.5.1 | A generic message is returned to the consumer when an unexpected or security-sensitive error occurs, ensuring no exposure of… | 2 | ⚠️ In progress | — | 500 handler returns `error.message` |
-| V16.5.2 | The application continues to operate securely when external resource access fails, for example, by using patterns such as… | 2 | ✅ Done | — | — |
-| V16.5.3 | The application fails gracefully and securely, including when an exception occurs, preventing fail-open conditions such as… | 2 | ✅ Done | — | — |
-| V16.5.4 | A "last resort" error handler is defined which will catch all unhandled exceptions. This is both to avoid losing error details… | 3 | ⚠️ In progress | Global `errorHandler` (`app/backend/src/apps/api/app.ts:75`) | — |
+| V16.1.1 | An inventory exists documenting the logging performed at each layer of the application's technology stack, what events are… | 2 | ❌ | — | — |
+| V16.2.1 | Each log entry includes necessary metadata (such as when, where, who, what) that would allow for a detailed investigation of… | 2 | ⚠️ | — | — |
+| V16.2.2 | Time sources for all logging components are synchronized, and that timestamps in security event metadata use UTC or include… | 2 | ⚠️ | — | — |
+| V16.2.3 | The application only stores or broadcasts logs to the files and services that are documented in the log inventory. | 2 | ❌ | — | — |
+| V16.2.4 | Logs can be read and correlated by the log processor that is in use, preferably by using a common logging format. | 2 | ❌ | — | — |
+| V16.2.5 | When logging sensitive data, the application enforces logging based on the data's protection level. For example, it may not… | 2 | ⚠️ | — | — |
+| V16.3.1 | All authentication operations are logged, including successful and unsuccessful attempts. Additional metadata, such as the… | 2 | ❌ | — | Login success/failure not logged |
+| V16.3.2 | Failed authorization attempts are logged. For L3, this must include logging all authorization decisions, including logging… | 2 | ❌ | — | — |
+| V16.3.3 | The application logs the security events that are defined in the documentation and also logs attempts to bypass the security… | 2 | ❌ | — | — |
+| V16.3.4 | The application logs unexpected errors and security control failures such as backend TLS failures. | 2 | ⚠️ | `console.error` in `app/backend/src/middleware/error.middleware.ts:15` | No structured logger |
+| V16.4.1 | All logging components appropriately encode data to prevent log injection. | 2 | ❌ | — | — |
+| V16.4.2 | Logs are protected from unauthorized access and cannot be modified. | 2 | ⚠️ | — | — |
+| V16.4.3 | Logs are securely transmitted to a logically separate system for analysis, detection, alerting, and escalation. The aim is… | 2 | ❌ | — | — |
+| V16.5.1 | A generic message is returned to the consumer when an unexpected or security-sensitive error occurs, ensuring no exposure of… | 2 | ⚠️ | — | 500 handler returns `error.message` |
+| V16.5.2 | The application continues to operate securely when external resource access fails, for example, by using patterns such as… | 2 | ✅ | — | — |
+| V16.5.3 | The application fails gracefully and securely, including when an exception occurs, preventing fail-open conditions such as… | 2 | ✅ | — | — |
+| V16.5.4 | A "last resort" error handler is defined which will catch all unhandled exceptions. This is both to avoid losing error… | 3 | ⚠️ | Global `errorHandler` (`app/backend/src/apps/api/app.ts:75`) | — |
 
+#### V17 WebRTC
+
+<details>
+<summary>12 requirements not related to TORPulse (➖ N/A)</summary>
+
+| Req | Requirement (short) | L | Status |
+|---|---|:-:|---|
+| V17.1.1 | The Traversal Using Relays around NAT (TURN) service only allows access to IP addresses that are not reserved for special… | 2 | ➖ N/A |
+| V17.1.2 | The Traversal Using Relays around NAT (TURN) service is not susceptible to resource exhaustion when legitimate users attempt… | 3 | ➖ N/A |
+| V17.2.1 | The key for the Datagram Transport Layer Security (DTLS) certificate is managed and protected based on the documented policy… | 2 | ➖ N/A |
+| V17.2.2 | The media server is configured to use and support approved Datagram Transport Layer Security (DTLS) cipher suites and a… | 2 | ➖ N/A |
+| V17.2.3 | Secure Real-time Transport Protocol (SRTP) authentication is checked at the media server to prevent Real-time Transport… | 2 | ➖ N/A |
+| V17.2.4 | The media server is able to continue processing incoming media traffic when encountering malformed Secure Real-time… | 2 | ➖ N/A |
+| V17.2.5 | The media server is able to continue processing incoming media traffic during a flood of Secure Real-time Transport Protocol… | 3 | ➖ N/A |
+| V17.2.6 | The media server is not susceptible to the "ClientHello" Race Condition vulnerability in Datagram Transport Layer Security… | 3 | ➖ N/A |
+| V17.2.7 | Any audio or video recording mechanisms associated with the media server are able to continue processing incoming media… | 3 | ➖ N/A |
+| V17.2.8 | The Datagram Transport Layer Security (DTLS) certificate is checked against the Session Description Protocol (SDP)… | 3 | ➖ N/A |
+| V17.3.1 | The signaling server is able to continue processing legitimate incoming signaling messages during a flood attack. This… | 2 | ➖ N/A |
+| V17.3.2 | The signaling server is able to continue processing legitimate signaling messages when encountering malformed signaling… | 2 | ➖ N/A |
+
+</details>

@@ -45,7 +45,7 @@ export function useUserProfile(enabled: boolean = true) {
       queryClient.setQueryData(["userProfile"], updatedProfile);
       setMessage({ type: "success", text: "บันทึกการเปลี่ยนแปลงเรียบร้อยแล้ว" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       setMessage({ type: "error", text: err.message || "เกิดข้อผิดพลาดในการบันทึกข้อมูล" });
     },
   });

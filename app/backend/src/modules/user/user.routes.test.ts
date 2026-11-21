@@ -77,16 +77,19 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
     assert.equal(response.body.user.bookmarkedCount, 0)
   })
 
-  await t.test('PUT /user/profile updates allowed fields, including the new org fields', async () => {
-    const response = await request(app)
-      .put('/user/profile')
-      .send({ displayName: 'Updated Name', website: 'https://example.com', companyName: 'Acme' })
+  await t.test(
+    'PUT /user/profile updates allowed fields, including the new org fields',
+    async () => {
+      const response = await request(app)
+        .put('/user/profile')
+        .send({ displayName: 'Updated Name', website: 'https://example.com', companyName: 'Acme' })
 
-    assert.equal(response.status, 200)
-    assert.equal(response.body.user.displayName, 'Updated Name')
-    assert.equal(response.body.user.website, 'https://example.com')
-    assert.equal(response.body.user.companyName, 'Acme')
-  })
+      assert.equal(response.status, 200)
+      assert.equal(response.body.user.displayName, 'Updated Name')
+      assert.equal(response.body.user.website, 'https://example.com')
+      assert.equal(response.body.user.companyName, 'Acme')
+    },
+  )
 
   await t.test('PUT /user/profile saves qualification and notification preferences', async () => {
     const qualification = {
@@ -153,13 +156,16 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
     assert.equal(response.status, 400)
   })
 
-  await t.test('PUT /user/interests rejects values that are neither keys nor legacy ids', async () => {
-    const response = await request(app)
-      .put('/user/interests')
-      .send({ interests: ['web_application', 'blockchain'] })
+  await t.test(
+    'PUT /user/interests rejects values that are neither keys nor legacy ids',
+    async () => {
+      const response = await request(app)
+        .put('/user/interests')
+        .send({ interests: ['web_application', 'blockchain'] })
 
-    assert.equal(response.status, 400)
-  })
+      assert.equal(response.status, 400)
+    },
+  )
 
   // TODO(LEGACY-INTEREST-IDS): remove with the legacy id support
   await t.test('PUT /user/interests converts the profile page legacy ids to keys', async () => {

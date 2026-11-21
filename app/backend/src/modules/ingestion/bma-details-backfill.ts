@@ -87,7 +87,11 @@ export async function backfillBmaTorDetails(
         return
       }
 
-      await TorModel.updateOne({ _id: record._id }, { $set: fields }, { runValidators: true }).exec()
+      await TorModel.updateOne(
+        { _id: record._id },
+        { $set: fields },
+        { runValidators: true },
+      ).exec()
       if (record.ingestionJobId) {
         await IngestionJobModel.updateOne(
           { _id: record.ingestionJobId },

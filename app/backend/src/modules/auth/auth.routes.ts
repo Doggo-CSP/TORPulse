@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from 'express'
 import type passport from 'passport'
 
-import type { ApiAuthConfig } from './auth.config.js'
+import { sessionCookieName, type ApiAuthConfig } from './auth.config.js'
 import { scopesFor } from './scopes.js'
 
 interface AuthRouterOptions {
@@ -65,12 +65,15 @@ export const createAuthRouter = (
           return
         }
 
-        res.clearCookie('torpulse.sid', {
+        res.clearCookie(sessionCookieName(config.isProduction), {
           httpOnly: true,
           sameSite: 'lax',
           secure: config.isProduction,
           path: '/',
         })
+        // Ask the browser to drop anything it cached or stored for the API origin (ASVS V14.3.1).
+        // The frontend clears its own storage on sign-out as well.
+        res.set('Clear-Site-Data', '"cache", "storage"')
         res.sendStatus(204)
       })
     })

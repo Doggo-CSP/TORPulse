@@ -117,7 +117,7 @@ export async function updateAdminUser(
   userId: string,
   input: AdminUserUpdateInput
 ): Promise<string> {
-  const data = await adminRequest<{ message: string }>(`/users/${userId}`, {
+  const data = await adminRequest<{ message: string }>(`/users/${encodeURIComponent(userId)}`, {
     method: "PATCH",
     body: input,
   });
@@ -125,7 +125,7 @@ export async function updateAdminUser(
 }
 
 export async function updateUserRole(userId: string, role: UserRole): Promise<string> {
-  const data = await adminRequest<{ message: string }>(`/users/${userId}/role`, {
+  const data = await adminRequest<{ message: string }>(`/users/${encodeURIComponent(userId)}/role`, {
     method: "PATCH",
     body: { role },
   });
@@ -133,7 +133,7 @@ export async function updateUserRole(userId: string, role: UserRole): Promise<st
 }
 
 export async function updateUserStatus(userId: string, status: UserStatus): Promise<string> {
-  const data = await adminRequest<{ message: string }>(`/users/${userId}/status`, {
+  const data = await adminRequest<{ message: string }>(`/users/${encodeURIComponent(userId)}/status`, {
     method: "PATCH",
     body: { status },
   });
@@ -351,7 +351,7 @@ export function fetchAdminTors(
 }
 
 export async function fetchAdminTor(torId: string): Promise<AdminTorDetail> {
-  const data = await adminRequest<{ tor: AdminTorDetail }>(`/tors/${torId}`);
+  const data = await adminRequest<{ tor: AdminTorDetail }>(`/tors/${encodeURIComponent(torId)}`);
   return data.tor;
 }
 
@@ -359,7 +359,7 @@ export function updateAdminTor(
   torId: string,
   input: AdminTorUpdateInput
 ): Promise<{ message: string; tor: AdminTorDetail }> {
-  return adminRequest(`/tors/${torId}`, { method: "PATCH", body: input });
+  return adminRequest(`/tors/${encodeURIComponent(torId)}`, { method: "PATCH", body: input });
 }
 
 export function changeAdminTorStatus(
@@ -367,9 +367,9 @@ export function changeAdminTorStatus(
   action: "verify" | "archive" | "delete"
 ): Promise<{ message: string; reviewStatus: TorReviewStatus }> {
   if (action === "delete") {
-    return adminRequest(`/tors/${torId}`, { method: "DELETE" });
+    return adminRequest(`/tors/${encodeURIComponent(torId)}`, { method: "DELETE" });
   }
-  return adminRequest(`/tors/${torId}/${action}`, { method: "POST" });
+  return adminRequest(`/tors/${encodeURIComponent(torId)}/${action}`, { method: "POST" });
 }
 
 // ---------------------------------------------------------------------------
@@ -417,19 +417,19 @@ export function updateAdminCategory(
   categoryId: string,
   input: AdminCategoryInput
 ): Promise<{ message: string; category: AdminCategory }> {
-  return adminRequest(`/categories/${categoryId}`, { method: "PATCH", body: input });
+  return adminRequest(`/categories/${encodeURIComponent(categoryId)}`, { method: "PATCH", body: input });
 }
 
 export function setAdminCategoryStatus(
   categoryId: string,
   isActive: boolean
 ): Promise<{ message: string; category: AdminCategory }> {
-  return adminRequest(`/categories/${categoryId}/status`, {
+  return adminRequest(`/categories/${encodeURIComponent(categoryId)}/status`, {
     method: "PATCH",
     body: { isActive },
   });
 }
 
 export function deleteAdminCategory(categoryId: string): Promise<{ message: string }> {
-  return adminRequest(`/categories/${categoryId}`, { method: "DELETE" });
+  return adminRequest(`/categories/${encodeURIComponent(categoryId)}`, { method: "DELETE" });
 }
