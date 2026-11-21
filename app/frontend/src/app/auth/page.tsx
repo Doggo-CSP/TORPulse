@@ -8,7 +8,13 @@ interface LoginPageProps {
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const authenticationFailed = (await searchParams).error === "google";
+  const { error } = await searchParams;
+  const errorMessage =
+    error === "google"
+      ? "ไม่สามารถเข้าสู่ระบบด้วย Google ได้ กรุณาลองอีกครั้ง"
+      : error === "rate_limited"
+        ? "พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่"
+        : null;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f5f0e8] px-4">
@@ -30,12 +36,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             ใช้บัญชี Google เพื่อเข้าใช้งานเว็บไซต์และค้นหา TOR ที่ตรงกับความสนใจของคุณ
           </p>
 
-          {authenticationFailed ? (
+          {errorMessage ? (
             <p
               role="alert"
               className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700"
             >
-              ไม่สามารถเข้าสู่ระบบด้วย Google ได้ กรุณาลองอีกครั้ง
+              {errorMessage}
             </p>
           ) : null}
 

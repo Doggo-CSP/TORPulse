@@ -70,6 +70,14 @@ test('GET /auth/me exposes only the public authenticated-user fields', async () 
       image: null,
       role: 'user',
       status: 'active',
+      scopes: [
+        'profile:read',
+        'profile:write',
+        'bookmarks:read',
+        'bookmarks:write',
+        'qualification:read',
+        'qualification:run',
+      ],
     },
   })
 })

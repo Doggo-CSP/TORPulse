@@ -44,6 +44,12 @@ const qualificationDailyCallLimit = Number(process.env.QUALIFICATION_DAILY_CALL_
 const qualificationTestLatestTors = process.env.QUALIFICATION_TEST_LATEST_TORS?.trim()
   ? Number(process.env.QUALIFICATION_TEST_LATEST_TORS)
   : undefined
+// Rate limits: one window shared by the login and API limiters
+const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS ?? 15 * 60_000)
+// Login attempts (/auth/google and its callback) per IP per window
+const rateLimitLoginMax = Number(process.env.RATE_LIMIT_LOGIN_MAX ?? 10)
+// /api/v1 requests per logged-in user (or per IP for guests) per window
+const rateLimitApiMax = Number(process.env.RATE_LIMIT_API_MAX ?? 300)
 
 if (Number.isNaN(port)) {
   throw new Error('PORT must be a valid number')
@@ -84,6 +90,19 @@ if (!Number.isFinite(qualificationProfileDelayMs) || qualificationProfileDelayMs
 
 if (!Number.isInteger(qualificationDailyCallLimit) || qualificationDailyCallLimit < 0) {
   throw new Error('QUALIFICATION_DAILY_CALL_LIMIT must be zero or a positive integer')
+}
+
+if (!Number.isFinite(rateLimitWindowMs) || rateLimitWindowMs <= 0) {
+  throw new Error('RATE_LIMIT_WINDOW_MS must be a positive number')
+}
+
+for (const [name, value] of [
+  ['RATE_LIMIT_LOGIN_MAX', rateLimitLoginMax],
+  ['RATE_LIMIT_API_MAX', rateLimitApiMax],
+] as const) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`)
+  }
 }
 
 if (
@@ -127,4 +146,7 @@ export const env = {
   QUALIFICATION_PROFILE_DELAY_MS: qualificationProfileDelayMs,
   QUALIFICATION_DAILY_CALL_LIMIT: qualificationDailyCallLimit,
   QUALIFICATION_TEST_LATEST_TORS: qualificationTestLatestTors,
+  RATE_LIMIT_WINDOW_MS: rateLimitWindowMs,
+  RATE_LIMIT_LOGIN_MAX: rateLimitLoginMax,
+  RATE_LIMIT_API_MAX: rateLimitApiMax,
 }

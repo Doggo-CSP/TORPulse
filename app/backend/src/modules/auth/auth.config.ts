@@ -5,7 +5,13 @@ export interface ApiAuthConfig {
   sessionSecret: string
   frontendUrl: string
   isProduction: boolean
+  // Login timeout. Optional so callers (tests) can omit them; the API falls back to the defaults.
+  sessionIdleTimeoutMs?: number
+  sessionAbsoluteTimeoutMs?: number
 }
+
+export const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000
+export const DEFAULT_SESSION_ABSOLUTE_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000
 
 const required = (name: string): string => {
   const value = process.env[name]?.trim()
@@ -25,6 +31,17 @@ const parseUrl = (name: string, value: string): string => {
   }
 }
 
+const positiveMs = (name: string, fallback: number): number => {
+  const raw = process.env[name]?.trim()
+  const value = raw ? Number(raw) : fallback
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive number of milliseconds`)
+  }
+
+  return value
+}
+
 export const getApiAuthConfig = (): ApiAuthConfig => {
   const sessionSecret = required('SESSION_SECRET')
 
@@ -39,5 +56,10 @@ export const getApiAuthConfig = (): ApiAuthConfig => {
     sessionSecret,
     frontendUrl: parseUrl('FRONTEND_URL', required('FRONTEND_URL')),
     isProduction: process.env.NODE_ENV === 'production',
+    sessionIdleTimeoutMs: positiveMs('SESSION_IDLE_TIMEOUT_MS', DEFAULT_SESSION_IDLE_TIMEOUT_MS),
+    sessionAbsoluteTimeoutMs: positiveMs(
+      'SESSION_ABSOLUTE_TIMEOUT_MS',
+      DEFAULT_SESSION_ABSOLUTE_TIMEOUT_MS,
+    ),
   }
 }

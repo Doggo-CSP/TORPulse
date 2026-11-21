@@ -9,6 +9,8 @@ export interface AuthUser {
   image: string | null;
   role?: "admin" | "user";
   status?: "active" | "suspended";
+  // What this account may do, granted by its role (see backend modules/auth/scopes.ts)
+  scopes?: string[];
 }
 
 interface MeResponse {

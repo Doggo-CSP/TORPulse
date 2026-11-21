@@ -1,18 +1,32 @@
-import { Router } from 'express'
+import { Router, type RequestHandler } from 'express'
 import type passport from 'passport'
 
 import type { ApiAuthConfig } from './auth.config.js'
+import { scopesFor } from './scopes.js'
+
+interface AuthRouterOptions {
+  // Limits login attempts; only the Google sign-in routes use it
+  loginLimiter?: RequestHandler
+}
+
+const passThrough: RequestHandler = (_req, _res, next) => next()
 
 export const createAuthRouter = (
   authPassport: passport.Authenticator,
   config: ApiAuthConfig,
+  { loginLimiter = passThrough }: AuthRouterOptions = {},
 ): Router => {
   const router = Router()
 
-  router.get('/google', authPassport.authenticate('google', { scope: ['profile', 'email'] }))
+  router.get(
+    '/google',
+    loginLimiter,
+    authPassport.authenticate('google', { scope: ['profile', 'email'] }),
+  )
 
   router.get(
     '/google/callback',
+    loginLimiter,
     authPassport.authenticate('google', {
       failureRedirect: `${config.frontendUrl}/auth?error=google`,
       successRedirect: `${config.frontendUrl}/homepage`,
@@ -33,6 +47,7 @@ export const createAuthRouter = (
         image: req.user.image,
         role: req.user.role ?? 'user',
         status: req.user.status ?? 'active',
+        scopes: scopesFor(req.user),
       },
     })
   })

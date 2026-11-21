@@ -32,6 +32,42 @@
 
 Status legend used throughout: ✅ implemented · ⚠️ partial · ❌ not implemented. This report records what is actually in the code on the `develop` branch. Where a control is missing, we say so and list it in the [remediation roadmap](#10-known-gaps-and-remediation-roadmap).
 
+### Implementation checklist (criteria 4–18)
+
+| # | Criterion | Status | Done | Not done | Details |
+|---|---|:-:|---|---|---|
+| 4 | Password authentication | ❌ | Design written: argon2id, 12–128 chars, HIBP check, lockout | No password login. TORPulse uses Google sign-in only. | [§5.1](#51-password-authentication--criterion-4---not-implemented-by-design) |
+| 5 | Social SSO (OAuth / OpenID) | ✅ | Google OAuth 2.0 via Passport. Account upserted by `googleId`. OAuth config checked at startup. | OAuth `state` / PKCE (T1). `email_verified` not checked. No OpenID nonce. | [§5.2](#52-social-sso-with-oauth--openid--criterion-5---implemented-with-gaps), M9 |
+| 6 | Authorization (roles) | ✅ | `admin` / `user` roles, each granting a fixed set of scopes. `requireRole` guards the admin router; `requireScope` checks each route's scope. Suspended accounts hold no scopes. Self role change and last-admin demotion blocked. Tested. | — | [§5.3](#53-authorisation-roles--criterion-6---implemented), M1–M3 |
+| 7 | Access control (no access to other users' data) | ✅ | Every user query scoped to `req.user._id`. Sub-ids looked up inside the caller's own profile. Router-level `requireAuth` on `/user/*`. IDOR test returns 404. | `/ingestion/report` is public (T12). | [§5.4](#54-access-control-no-access-to-another-users-data--criterion-7---implemented), M4, M14 |
+| 8 | Input validation and SQL/NoSQL/ORM injection | ⚠️ | Zod on every write endpoint. Express 5 simple query parser. ObjectId checks. `escapeRegex`. `.strict()` blocks mass assignment. ZAP raised 0 injection alerts. | `sanitizeFilter` / `strictQuery` off. `torId` not validated in bookmarks. No max length on profile strings. | [§5.5](#55-input-validation-and-injection-protection-sql--nosql--orm--criterion-8--️-partial), M6, M7 |
+| 9 | Environment variables and credentials | ✅ | All secrets in env vars. `.env` gitignored and dockerignored. Startup validation (`SESSION_SECRET` ≥ 32 chars). | MongoDB has no auth and is exposed on port 27017 (T9). Test secret written literally in CI. | [§5.6](#56-environment-variables-and-credentials--criterion-9---implemented-deployment-gaps) |
+| 10 | CORS (no `*`) | ✅ | One allowed origin from `FRONTEND_URL`, `credentials: true`. Tested. Manual test with an `evil.example` origin got no CORS header. | — | [§5.7](#57-cors--criterion-10---implemented), M5 |
+| 11 | Error handling | ⚠️ | Global 404/500 handlers. No stack traces sent to clients. Validation errors return 400. AI failures fall back to cached results. | 500 responses return `error.message` (Mongoose CastError leak, M10). | [§5.8](#58-error-handling--criterion-11--️-partial) |
+| 12 | Logging (errors, auth events) | ⚠️ | Audit log for 18 admin/system events, written in the same transaction as the change. Errors logged to the console. | Login, logout and 401/403 denials not logged. No structured logger. | [§5.9](#59-logging--criterion-12--️-partial) |
+| 13 | HTTP security headers | ❌ | Backend: `x-powered-by` off. Cookies `HttpOnly`, `SameSite=Lax`, `Secure` in production. | No CSP, HSTS, nosniff or X-Frame-Options on the API or frontend. Neither framework sets them, so they must be set in code (helmet + Next `headers()`) and shown during the presentation. | [§5.10](#510-http-security-headers--criterion-13---mostly-not-implemented), M12 |
+| 14 | SAST | ✅ | Semgrep (261 rules: 24 findings, all triaged). npm audit (backend 6, frontend 13 advisories). | CodeQL not set up yet. Dependency upgrades still pending. | [§7.2](#72-sast-semgrep--npm-audit--criterion-14) |
+| 15 | DAST | ✅ | OWASP ZAP API scan on an isolated stack: 5,762 attacks, 0 High / 2 Medium / 1 Low. ZAP frontend baseline scan: 0 High. 14 manual tests. | Report screenshot still TODO. | [§7.3](#73-dast-owasp-zap--criterion-15), [§7.4](#74-manual-security-tests) |
+| 16 | Threat model verification checklist | ✅ | All 17 threats checked: 6 ✅, 6 ⚠️, 5 ❌ | — | [§8](#8-threat-model-verification-checklist--criterion-16) |
+| 17 | Mapping to OWASP ASVS and Top 10 | ✅ | A01–A10 mapped to controls and ASVS v5 requirements | — | [§9](#9-mapping-to-owasp-top-10-2021-and-asvs--criterion-17), [Appendix A](#appendix-a-full-asvs-requirement-list-planned-rows) |
+| 18 | 4 advanced features | ✅ | **4 of 4:** authorization with scope, login-attempt rate limit, API rate limit, login timeout (30-min idle + 7-day absolute). | MFA, compromised-password check (N/A, no passwords), JWT expiry (N/A, uses sessions). | [§6](#6-advanced-security-features--criterion-18) |
+
+**Totals for criteria 4–18:** 10 ✅ · 3 ⚠️ · 2 ❌ (4, 13).
+
+#### Advanced features (criterion 18)
+
+| Feature | Status | Where |
+|---|:-:|---|
+| ☑ Authorization with scope | ✅ | `modules/auth/scopes.ts`, `requireScope` in `middleware/admin.middleware.ts` |
+| ☑ Rate limit for login attempts | ✅ | `createLoginLimiter` in `middleware/rate-limit.middleware.ts` |
+| ☑ Rate limit for backend APIs | ✅ | `createApiLimiter` in `middleware/rate-limit.middleware.ts`, plus the daily AI quota |
+| ☑ Login timeout | ✅ | `middleware/session-timeout.middleware.ts`, `rolling: true` in `apps/api/app.ts` |
+| ☐ MFA (email OTP) | ❌ | Not built (R14) |
+| ☐ Compromised-password check | N/A | No password login |
+| ☐ JWT expiration | N/A | Server-side sessions, not JWTs |
+
+Details in [§6](#6-advanced-security-features--criterion-18).
+
 ---
 
 ## 1. Application overview and functional features
@@ -287,7 +323,8 @@ TORPulse has **no password login**. The `User` schema has no password field (`mo
 
 - Roles are stored as an enum on `User`: `role: 'admin' | 'user'`, plus `status: 'active' | 'suspended'` (`modules/auth/user.model.ts:56-57`).
 - `requireRole(...roles)` middleware returns **401** with no session and **403** for a wrong role or a suspended account (`middleware/admin.middleware.ts:7-24`).
-- The admin router applies the guard once to every route: `router.use(requireAdmin)` (`modules/admin/admin.routes.ts:32`).
+- The admin router applies the guard once to every route: `router.use(requireAdmin)` (`modules/admin/admin.routes.ts`).
+- **Scopes on top of roles:** each role grants a fixed list of scopes (`modules/auth/scopes.ts`). Every admin route, every `/user/*` route and the qualification routes also call `requireScope(...)`, e.g. `DELETE /admin/tors/:torId` needs `tors:delete`, and `PATCH /admin/users/:userId/role` needs `users:manage`. Details in §6.
 - The frontend admin page also hides itself from non-admins, but that is only for usability. The server enforces the rule.
 - **Tests:** `admin.routes.test.ts`: "rejects a guest with 401", "rejects a regular user with 403", "a regular user is rejected on every admin route group", "rejects a suspended admin with 403", "an admin cannot change their own role or status", "the last active admin cannot be demoted or suspended".
 
@@ -299,7 +336,7 @@ TORPulse has **no password login**. The `User` schema has no password field (`mo
   - Bidder profile: `findOne({ userId })`, unique on `userId`. Team-member and project sub-ids are looked up **inside the caller's own profile**, so another user's id returns 404 (`modules/user/bidder-profile.controller.ts:287-292`).
   - Qualification matches and recommendations are filtered by `userId: req.user._id`.
 - Admin-only data (users, audit log, settings) sits behind `requireAdmin`.
-- **Gap:** `/api/v1/user/*` routes check `req.user` inside each handler rather than through a router-level `requireAuth`. This works, but a new handler could forget the check (see roadmap).
+- `/api/v1/user/*` has a router-level `requireAuth` and a per-route `requireScope`, so a new handler cannot forget the login check. Handlers keep their own `req.user` check as well.
 
 ### 5.5 Input validation and injection protection (SQL / NoSQL / ORM) · Criterion 8 · ⚠️ Partial
 
@@ -377,20 +414,65 @@ Neither framework sets these headers for us. **Planned fix:** add `helmet()` to 
 
 ## 6. Advanced security features · Criterion 18
 
+All backend paths are relative to `app/backend/src/`. Four features are implemented. Each has unit tests in `npm run test:auth` (26 tests passing) and was checked end to end against a running API.
+
 | Feature | Status | Details |
 |---|---|---|
+| **Authorization with scope** | ✅ | See 6.1. |
+| **Rate limit for login attempts** | ✅ | See 6.2. |
+| **Rate limit for backend APIs** | ✅ | See 6.2. The daily AI quota (`QUALIFICATION_DAILY_CALL_LIMIT`, HTTP 429 from `POST /tors/:id/qualification`) remains as an extra cost limit. |
+| **Login timeout** | ✅ | See 6.3. |
 | Multi-factor authentication (email / OTP) | ❌ | Not in the app. Users can turn on 2-Step Verification in their Google account, which then protects TORPulse login too. |
-| Authorisation with scopes | ❌ | Role-based only. OAuth scopes are just `profile` and `email`. |
-| Rate limit for login attempts | ❌ | No limiter on `/auth/google*`. Brute force against credentials is handled by Google. |
-| Rate limit for backend APIs | ⚠️ | **Daily AI quota**: `QUALIFICATION_DAILY_CALL_LIMIT` (default 200, validated in `config/env.ts:42,86`) counted over a rolling 24 h. On-demand `POST /tors/:id/qualification` returns the cached result with `limitReached: true`, or **HTTP 429** when there is no cached result (`modules/qualification/qualification-match.controller.ts:125-135`). The worker waits 1 h when over the limit. No per-IP or per-user limiter. |
-| Login timeout | ⚠️ | Absolute session lifetime of 7 days (`maxAge` and store TTL, `apps/api/app.ts:14,31,61`). New session id at login (Passport 0.7 `session.regenerate`). Logout destroys the server-side session. No idle timeout. |
 | Compromised-password check | ❌ (N/A) | There are no passwords. Design in §5.1. |
 | JWT expiration checking | ❌ (N/A) | We use server-side sessions, not JWTs. |
 
-**Honest status:** two features are partly done. **Two or more still need to be finished** to meet the requirement of four. The quickest to finish:
-1. `express-rate-limit` on `/auth/*` (login attempts) and `/api/v1/*` (APIs), with a per-user key for authenticated routes
-2. An idle session timeout (`rolling: true` with a 30-minute `maxAge`, keeping the 7-day absolute limit)
-3. Email OTP as a second factor for admin accounts, using the existing nodemailer setup
+### 6.1 Authorization with scope
+
+Roles stay as they are (`admin`, `user`), but each role now grants a fixed set of **scopes**, and every protected route asks for the scope it needs (`modules/auth/scopes.ts`).
+
+| Role | Scopes |
+|---|---|
+| `user` | `profile:read`, `profile:write`, `bookmarks:read`, `bookmarks:write`, `qualification:read`, `qualification:run` |
+| `admin` | all user scopes, plus `stats:read`, `users:read`, `users:write`, `users:manage`, `activity:read`, `settings:read`, `settings:write`, `tors:read`, `tors:write`, `tors:delete`, `categories:read`, `categories:write`, `ingestion:read`, `ingestion:write` |
+| suspended (any role) | none |
+
+- `requireScope(...scopes)` (`middleware/admin.middleware.ts`) returns 401 for guests. It returns 403 with `missingScopes` when the account lacks a scope or is suspended.
+- Applied per route in `modules/admin/admin.routes.ts`, `modules/user/user.routes.ts` and `modules/tor/tor.routes.ts` (qualification). Examples: `DELETE /admin/tors/:torId` needs `tors:delete`; `PATCH /admin/users/:userId/role` needs `users:manage`.
+- Layers on the admin side: `router.use(requireAdmin)`, then the route's `requireScope`, then the handler's own checks.
+- `/user/*` now has a router-level `requireAuth`.
+- `GET /auth/me` returns the account's `scopes`, so the frontend can hide actions the user cannot perform. The server still enforces every check.
+
+### 6.2 Rate limits (`middleware/rate-limit.middleware.ts`, `express-rate-limit` 8.7.3)
+
+| Limiter | Applies to | Key | Default | When exceeded |
+|---|---|---|---|---|
+| Login attempts | `GET /auth/google`, `GET /auth/google/callback` | client IP (IPv6 normalised with `ipKeyGenerator`) | 10 per 15 min (`RATE_LIMIT_LOGIN_MAX`) | 302 to `/auth?error=rate_limited`; the sign-in page shows "too many attempts" |
+| Backend API | every `/api/v1/*` request | `user:<id>` when logged in, else client IP | 300 per 15 min (`RATE_LIMIT_API_MAX`) | 429 JSON with a `Retry-After` header |
+
+- Both limiters send standard `RateLimit` / `RateLimit-Policy` headers (draft-7).
+- The window is set with `RATE_LIMIT_WINDOW_MS`. All values are validated at startup (`config/env.ts`).
+- Keying the API limiter on the user id means one account cannot dodge the limit by changing IP, and users behind a shared NAT do not share a bucket.
+- The store is in memory, which is correct for the single API container in docker-compose. Running several replicas would need a shared store such as Redis.
+
+### 6.3 Login timeout (`middleware/session-timeout.middleware.ts`)
+
+- **Idle timeout, 30 min** (`SESSION_IDLE_TIMEOUT_MS`):
+  - The session cookie uses `rolling: true` with `maxAge` set to the idle limit, so the cookie and the stored MongoDB session expire after 30 min without requests.
+  - The middleware also checks the session's own `lastSeenAt` on the server, so an old cookie cannot be replayed.
+- **Absolute timeout, 7 days** (`SESSION_ABSOLUTE_TIMEOUT_MS`): `authAt` is stored at login. A session ends 7 days after login however active the user is.
+- When either limit is passed, the server-side session is destroyed and the cookie cleared. The request continues as a guest, so the route answers 401, which the frontend already treats as logged out.
+- Unchanged from before: Passport 0.7 issues a new session id at login, and logout destroys the session.
+
+**End-to-end check (21 Nov 2026):** local API with `RATE_LIMIT_LOGIN_MAX=3`, `RATE_LIMIT_API_MAX=5` and `SESSION_IDLE_TIMEOUT_MS=5000`.
+
+| Check | Result |
+|---|---|
+| `/auth/me` scopes | user: 6 scopes; admin: 20 |
+| User calls `/admin/stats` | 403 |
+| 4th `/auth/google` request | 302 to `/auth?error=rate_limited` |
+| User's `/api/v1` requests | 429 after the 5th in the window |
+| Admin request after the user hit the limit | 200 (separate bucket) |
+| `/auth/me` after 7 s idle | 401, and the cookie stays rejected |
 
 ---
 
@@ -544,7 +626,7 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 | M8 | Logout, then reuse the cookie | 401 | ✅ | T6 |
 | M9 | `GET /auth/google`: `state=` in the redirect | present | ❌ **missing** | T1 |
 | M10 | `POST /user/bookmarks/not-an-id` | generic 400 | ❌ **500 `Cast to ObjectId failed … model "UserBookmark"`** | T11 |
-| M11 | 100 rapid requests | some 429 | ❌ **0 × 429** | T2 |
+| M11 | 100 rapid requests | some 429 | ❌ **0 × 429** (before R4; the local re-test on 21 Nov returned 429 once over the limit, §6.3) | T2 |
 | M12 | Response headers | CSP, HSTS, nosniff | ❌ **only Content-Type + CORS** | T10 |
 | M13 | `POST /tors/:id/qualification` | no AI call | ✅ 409 (incomplete profile) / 429 (limit) | T17 |
 | M14 | Guest → `GET /ingestion/report` | 401 | ❌ **200** | T12 |
@@ -560,9 +642,9 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 | T7 | P1 | Secrets leakage | Env vars, gitignore and dockerignore, startup validation | ✅ | `auth.config.ts:28-43`. Remaining: move the CI secret into GitHub Secrets. |
 | T8 | P1 | Malicious ZIP/PDF | Size, entry, total and ratio limits; zip-slip guard; `%PDF-` magic bytes; temp directory cleanup | ✅ | `central-egp.adapters.ts:62-66,891,899-911` |
 | T17 | P1 | AI cost exhaustion | Daily rolling quota, 429 or cached result | ✅ | `qualification-match.controller.ts:125-135` |
-| T6 | P1 | Session hijack / fixation | httpOnly, SameSite, server-side store, regenerate at login, destroy at logout | ⚠️ | `Secure` only when `NODE_ENV=production`, which compose does not set. No idle timeout. |
+| T6 | P1 | Session hijack / fixation | httpOnly, SameSite, server-side store, regenerate at login, destroy at logout, 30-min idle and 7-day absolute timeout | ⚠️ | `Secure` only when `NODE_ENV=production`, which compose does not set. |
 | T5 | P1 | NoSQL / regex injection | Simple query parser, Zod, ObjectId checks, `escapeRegex` | ⚠️ | Add `mongoose.set('sanitizeFilter', true)` and `strictQuery`. Validate `torId` in bookmarks. |
-| T2 | P1 | Brute force / API abuse | Login delegated to Google. AI quota. | ⚠️ | No `express-rate-limit` |
+| T2 | P1 | Brute force / API abuse | Login delegated to Google. Login-attempt limiter per IP, API limiter per user/IP, daily AI quota. | ✅ | `middleware/rate-limit.middleware.ts` |
 | T15 | P1 | Vulnerable dependencies | npm audit + Semgrep run, lockfiles committed | ⚠️ | 19 advisories open. Run upgrades (R3). Add Dependabot and CodeQL. |
 | T1 | P1 | OAuth login CSRF | — | ❌ | Enable `state: true` / PKCE |
 | T9 | P1 | Exposed MongoDB | — | ❌ | Remove the `27017` port mapping. Enable auth and TLS. |
@@ -573,7 +655,7 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 | T13 | P3 | SSRF | Hard-coded hosts, `AbortSignal.timeout`, no user URLs fetched | ✅ | `bma-discovery.adapter.ts`, `central-egp.adapters.ts` |
 | T12 | P3 | Unauthenticated ops report | — | ❌ | Add `requireAdmin` to `/api/v1/ingestion/report` |
 
-**Summary:** 6 ✅ done · 6 ⚠️ partial · 5 ❌ not done, out of 17 threats. Of the 11 P1 threats: 5 done, 4 partial, 2 not done.
+**Summary:** 7 ✅ done · 5 ⚠️ partial · 5 ❌ not done, out of 17 threats. Of the 11 P1 threats: 6 done, 3 partial, 2 not done.
 
 ---
 
@@ -581,13 +663,13 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 
 | OWASP Top 10 2021 | TORPulse controls | Status | ASVS v5 | Gaps |
 |---|---|:-:|---|---|
-| **A01 Broken Access Control** | `requireAdmin`; per-user scoping; last-admin and self guards; single-origin CORS | ✅ | V8.2.1, V8.2.2, V8.3.1, V3.4.2 | Router-level `requireAuth` on `/user`; protect `/ingestion/report` |
+| **A01 Broken Access Control** | `requireAdmin` + per-route `requireScope`; router-level `requireAuth` on `/user`; per-user data scoping; last-admin and self guards; single-origin CORS | ✅ | V8.2.1, V8.2.2, V8.3.1, V3.4.2 | Protect `/ingestion/report` |
 | **A02 Cryptographic Failures** | Sessions signed with a ≥ 32-char secret; CSPRNG session ids; no passwords stored; TLS to Google, e-GP and Gemini | ⚠️ | V11.5.1, V12.3.2, V3.3.1 | No TLS in front of the app; Mongo without TLS; `Secure` cookie depends on `NODE_ENV` |
 | **A03 Injection** | Mongoose object queries; Express 5 simple parser; Zod; `escapeRegex`; ObjectId checks; React escaping; no `eval` | ⚠️ | V1.2.4, V1.2.9, V1.3.2, V2.2.1 | `sanitizeFilter`/`strictQuery` not enabled |
-| **A04 Insecure Design** | Threat model (§3); SSO-only design; transactional admin changes; AI quota | ⚠️ | V2.3.3, V15.1.3 | No per-user rate limits |
+| **A04 Insecure Design** | Threat model (§3); SSO-only design; transactional admin changes; AI quota; per-user API and per-IP login rate limits | ✅ | V2.3.3, V15.1.3 | — |
 | **A05 Security Misconfiguration** | `x-powered-by` off; non-root containers; production dev-token guard; env validation | ❌ | V13.4.1, V13.4.6, V3.4.1–V3.4.6 | No security headers; Mongo exposed; compose runs `NODE_ENV=development` |
 | **A06 Vulnerable and Outdated Components** | Lockfiles; `npm audit`; Semgrep | ⚠️ | V15.2.1, V15.2.4 | 19 open advisories (2 critical); no Dependabot |
-| **A07 Identification and Authentication Failures** | Google OAuth; session regenerated at login; logout destroys session; suspension enforced on every request | ⚠️ | V6.3.1, V7.2.4, V7.4.1, V7.4.2, V10.1.2 | No OAuth `state`; no idle timeout; no MFA |
+| **A07 Identification and Authentication Failures** | Google OAuth; session regenerated at login; logout destroys session; suspension enforced on every request; 30-min idle / 7-day absolute timeout; login rate limit | ⚠️ | V6.3.1, V6.3.3, V7.2.4, V7.3.1, V7.3.2, V7.4.1, V7.4.2, V10.1.2 | No OAuth `state`; no MFA |
 | **A08 Software and Data Integrity Failures** | Lockfiles; CI with least-privilege token; upstream files checked (magic bytes, limits) | ⚠️ | V15.2.4, V5.2.3 | GitHub Actions not pinned to SHAs |
 | **A09 Security Logging and Monitoring Failures** | Transactional audit log for admin and system actions; error logging | ⚠️ | V16.2.1, V16.3.3, V16.3.4 | Auth events not logged; no structured or central logging |
 | **A10 Server-Side Request Forgery** | Fixed upstream hosts; no user URL fetched; timeouts | ✅ | V1.3.6, V15.3.2 | Explicit allowlist check |
@@ -603,15 +685,15 @@ Ordered by threat priority. Each item names the threat it closes.
 | R1 | P1 | Enable OAuth `state: true` + PKCE; check `email_verified` | T1, V10.1.2 | S |
 | R2 | P1 | Remove the MongoDB host port; enable Mongo auth (`MONGO_INITDB_ROOT_*`) and use credentials in `MONGODB_URI` | T9 | S |
 | R3 | P1 | Upgrade `next` (≥ 16.4.6), `mongoose`, `zod`, `nodemailer`; run `npm audit fix`; add Dependabot and CodeQL | T15 | S |
-| R4 | P1 | Add `express-rate-limit`: `/auth/*` 10 per 15 min per IP; `/api/v1/*` 300 per 15 min; AI endpoints per user | T2 (advanced features) | S |
+| ~~R4~~ | P1 | ✅ **Done (21 Nov 2026).** `express-rate-limit`: `/auth/google*` 10 per 15 min per IP; `/api/v1/*` 300 per 15 min per user or IP (§6.2) | T2 (advanced features) | S |
 | R5 | P1 | `mongoose.set('sanitizeFilter', true)` and `strictQuery: true`; validate `torId`; add max lengths to profile strings | T5 | S |
 | R6 | P1 | Production compose profile with `NODE_ENV=production` so cookies are `Secure` | T6 | S |
 | R7 | P2 | `helmet()` in Express and `headers()` + `poweredByHeader:false` in Next.js (CSP, HSTS, nosniff, frame-ancestors, Referrer-Policy) | T10, T16 | M |
 | R8 | P2 | Generic 500 message in production with a correlation id | T11 | S |
 | R9 | P2 | Structured logger (pino) with redaction; log login success, failure, logout and 401/403 denials | T14 | M |
-| R10 | P2 | Idle session timeout (`rolling: true`, 30 min) on top of the 7-day absolute lifetime | T6 (advanced features) | S |
+| ~~R10~~ | P2 | ✅ **Done (21 Nov 2026).** Idle session timeout (`rolling: true`, 30 min) on top of the 7-day absolute lifetime (§6.3) | T6 (advanced features) | S |
 | R11 | P2 | TLS-terminating reverse proxy (Caddy/nginx) in front of the frontend and API | T16 | M |
-| R12 | P3 | `requireAdmin` on `/api/v1/ingestion/report`; router-level `requireAuth` on `/api/v1/user` | T12 | S |
+| R12 | P3 | `requireAdmin` on `/api/v1/ingestion/report` (router-level `requireAuth` on `/api/v1/user` done 21 Nov 2026) | T12 | S |
 | R13 | P3 | Pin GitHub Actions to commit SHAs; move the CI test secret into GitHub Secrets | T7, A08 | S |
 | R14 | P3 | Email OTP second factor for admins | advanced features | M |
 
