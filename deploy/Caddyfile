@@ -1,30 +1,82 @@
-# HTTPS reverse proxy for production (ASVS V12.1.1, V12.2.1, V12.2.2).
+# HTTPS reverse proxy for production (ASVS V12.1.1, V12.1.2, V12.2.1, V12.2.2, V12.3.1, V4.1.2, V4.1.3).
 #
 #   https://{$APP_DOMAIN}       -> frontend (Next.js)
 #   https://api.{$APP_DOMAIN}   -> API (Express)
 #
-# Caddy obtains and renews publicly trusted Let's Encrypt certificates for both names and
-# redirects every http:// request to https://. Only TLS 1.2 and 1.3 are accepted; Caddy's
-# default cipher suites are the modern AEAD ones (AES-GCM, ChaCha20-Poly1305).
+# Caddy obtains and renews publicly trusted Let's Encrypt certificates for both names.
 # With APP_DOMAIN=localhost Caddy uses its own local CA instead, for testing.
-
+#
 # Let's Encrypt works without an account email; set one in a global block
 # (`{ email ops@example.com }`) to get certificate expiry notices.
 
-(tls_policy) {
-	tls {
-		protocols tls1.2 tls1.3
+{
+	servers {
+		# Go's HTTP server rejects requests with both Content-Length and Transfer-Encoding or
+		# duplicate lengths, so a request cannot be split differently by Caddy and Node
+		# (request smuggling, ASVS V4.2.1). Bound the header size as well.
+		max_header_size 16KB
 	}
 }
 
+(tls_policy) {
+	tls {
+		# TLS 1.2 and 1.3 only. TLS 1.3 suites are all AEAD with forward secrecy; for TLS 1.2 only
+		# ECDHE (forward secrecy) + AEAD suites are allowed, strongest first (ASVS V12.1.2).
+		protocols tls1.2 tls1.3
+		ciphers TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+	}
+}
+
+(app_proxy) {
+	# TRACE echoes requests back; refuse it at the edge too (ASVS V13.4.4)
+	@trace method TRACE TRACK
+	respond @trace 405
+
+	encode zstd gzip
+}
+
+# Forwarding headers are set by Caddy from the real connection and replace anything the client
+# sent, so a client cannot spoof its IP or scheme (ASVS V4.1.3, V15.3.4). The API trusts exactly
+# one proxy hop (Express `trust proxy` = 1).
+(forward_headers) {
+	header_up X-Forwarded-For {remote_host}
+	header_up X-Forwarded-Proto {scheme}
+	header_up X-Forwarded-Host {host}
+	header_up -X-Real-IP
+}
+
+# The hop from Caddy to the app containers is TLS as well (ASVS V12.3.1): the API and frontend
+# present certificates from the internal CA, which Caddy verifies by service name.
+(internal_tls) {
+	transport http {
+		tls
+		tls_trust_pool file /run/secrets/internal_ca
+		tls_server_name {args[0]}
+	}
+}
+
+# User-facing site: browsers are redirected from http:// to https:// (Caddy default)
 {$APP_DOMAIN} {
 	import tls_policy
-	encode zstd gzip
-	reverse_proxy frontend:3000
+	import app_proxy
+	reverse_proxy https://frontend:3000 {
+		import forward_headers
+		import internal_tls frontend
+	}
 }
 
 api.{$APP_DOMAIN} {
 	import tls_policy
-	encode zstd gzip
-	reverse_proxy api:8000
+	import app_proxy
+	reverse_proxy https://api:8000 {
+		import forward_headers
+		import internal_tls api
+	}
+}
+
+# The API is not for manual browsing, so plain-HTTP requests are refused instead of redirected:
+# a client that sent a cookie or body over HTTP should fail loudly, not be silently "fixed"
+# (ASVS V4.1.2).
+http://api.{$APP_DOMAIN} {
+	respond "HTTPS required" 403
 }

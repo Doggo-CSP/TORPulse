@@ -24,6 +24,7 @@ import { QualificationMatchModel } from '../../modules/qualification/qualificati
 import { isMatchStale } from '../../modules/qualification/qualification-match.service.js'
 import { TorModel } from '../../modules/tor/tor.model.js'
 import { BidderProfileModel } from '../../modules/user/bidder-profile.model.js'
+import { log } from '../../lib/logger.js'
 
 // Sends one email for the next user with due notifications. Returns false when nothing was due.
 export async function processNextBatch(
@@ -123,9 +124,9 @@ export async function processNextBatch(
       workerId,
       randomUUID(),
     )
-    console.log(`Sent ${sendable.length} qualifying TOR(s) to user ${user._id}`)
+    log.info(`Sent ${sendable.length} qualifying TOR(s) to user ${user._id}`)
   } catch (error) {
-    console.error(`Notification email to user ${user._id} failed`, error)
+    log.error(`Notification email to user ${user._id} failed`, error)
     await markNotificationsFailed(sendable, workerId, error)
   }
 
@@ -139,7 +140,7 @@ export async function startNotificationWorker(
   const workerId = `notification-${randomUUID()}`
 
   await TorNotificationModel.init()
-  console.log(`Notification worker started: ${workerId}`)
+  log.info(`Notification worker started: ${workerId}`)
 
   while (!signal.aborted) {
     let didWork = false
@@ -147,7 +148,7 @@ export async function startNotificationWorker(
     try {
       didWork = await processNextBatch(workerId, mailer)
     } catch (error) {
-      console.error('Notification batch failed', error)
+      log.error('Notification batch failed', error)
     }
 
     // Drain every due user back to back; wait only once the queue is empty.
@@ -164,5 +165,5 @@ export async function startNotificationWorker(
     }
   }
 
-  console.log('Notification worker stopped')
+  log.info('Notification worker stopped')
 }

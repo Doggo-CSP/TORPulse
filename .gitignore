@@ -41,3 +41,7 @@ ehthumbs.db
 # Claude Code local config
 .claude/
 app/backend/sandbox-output
+
+# Production secrets (deploy/init-secrets.sh)
+deploy/secrets/
+deploy/prod.env

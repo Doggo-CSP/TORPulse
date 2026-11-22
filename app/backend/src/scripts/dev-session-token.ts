@@ -34,7 +34,8 @@ export function signSessionId(sessionId: string, secret: string): string {
   return encodeURIComponent(`s:${sessionId}.${signature}`)
 }
 
-// What express-session + passport store after a real login.
+// What express-session + passport store after a real login and a completed MFA code check.
+// The first request binds it to a browser (uaHash) and starts the idle/absolute timers.
 export function buildSessionData(userId: string, now = new Date()): SessionData {
   return {
     cookie: {
@@ -46,6 +47,7 @@ export function buildSessionData(userId: string, now = new Date()): SessionData 
       secure: false,
     },
     passport: { user: userId },
+    mfaVerifiedAt: now.getTime(),
   } as unknown as SessionData
 }
 

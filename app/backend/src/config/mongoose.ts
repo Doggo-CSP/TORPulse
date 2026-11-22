@@ -1,6 +1,7 @@
 import mongoose, { type Mongoose } from 'mongoose'
 
 import { env } from './env.js'
+import { log } from '../lib/logger.js'
 
 class MongooseDatabase {
   private connectionPromise: Promise<Mongoose> | undefined
@@ -27,7 +28,7 @@ class MongooseDatabase {
       }
 
       await connection.connection.db.admin().ping()
-      console.log(`MongoDB connected ${env.MONGODB_DATABASE}`)
+      log.info(`MongoDB connected ${env.MONGODB_DATABASE}`)
 
       return connection
     } catch (error) {
@@ -40,7 +41,7 @@ class MongooseDatabase {
     await mongoose.disconnect()
     this.connectionPromise = undefined
 
-    console.log('MongoDB disconnected')
+    log.info('MongoDB disconnected')
   }
 }
 

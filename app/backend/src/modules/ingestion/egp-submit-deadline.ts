@@ -3,6 +3,7 @@ import {
   OcrRequiredError,
 } from './extraction/opendataloader-text-extractor.js'
 import { parseThaiDate } from './thai-date.js'
+import { allowlistedFetch } from '../../lib/outbound.js'
 
 const EGP_ORIGIN = 'https://process5.gprocurement.go.th'
 
@@ -42,7 +43,7 @@ export interface SubmitDeadline {
 
 export async function fetchAnnouncementTemplateId(
   projectId: string,
-  { fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS }: FetchOptions = {},
+  { fetchImpl = allowlistedFetch, timeoutMs = DEFAULT_TIMEOUT_MS }: FetchOptions = {},
 ): Promise<string | null> {
   const url = new URL(ANNOUNCEMENT_ZIP_INFO_URL)
   url.searchParams.set('projectId', projectId)
@@ -61,7 +62,7 @@ export async function fetchAnnouncementTemplateId(
 
 export async function fetchAnnouncementPdf(
   templateId: string,
-  { fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS }: FetchOptions = {},
+  { fetchImpl = allowlistedFetch, timeoutMs = DEFAULT_TIMEOUT_MS }: FetchOptions = {},
 ): Promise<Buffer> {
   const url = new URL(TEMPLATE_PDF_URL)
   url.searchParams.set('templateId', templateId)

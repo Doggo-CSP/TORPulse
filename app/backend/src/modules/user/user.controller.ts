@@ -1,6 +1,8 @@
 import { isObjectIdOrHexString } from 'mongoose'
 import type { Request, Response } from 'express'
 
+import { hasRecentAuth, reauthRequiredBody } from '../../middleware/session-context.middleware.js'
+
 import { getActiveCategoryKeys } from '../category/category.repository.js'
 import { missingNotificationFields } from '../notification/eligibility.js'
 import { enqueueForUser, enqueueInBackground } from '../notification/notification.service.js'
@@ -99,6 +101,18 @@ export const updateProfileHandler = async (req: Request, res: Response): Promise
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.flatten() })
     return
+  }
+
+  // The contact email is where notifications go, so changing it needs a fresh Google
+  // re-authentication (ASVS V7.5.1). Sending the current value again is not a change.
+  if (parsed.data.contactEmail !== undefined) {
+    const current = await findUserById(req.user._id)
+    const currentContact = (current?.contactEmail || current?.email || '').toLowerCase()
+    const requested = (parsed.data.contactEmail || current?.email || '').toLowerCase()
+    if (requested !== currentContact && !hasRecentAuth(req)) {
+      res.status(403).json(reauthRequiredBody(req))
+      return
+    }
   }
 
   const updatedUser = await updateUserProfile(req.user._id, parsed.data)

@@ -48,3 +48,37 @@ test('interests are limited in count and length', () => {
   assert.equal(updateInterestsSchema.safeParse({ interests: ['x'.repeat(101)] }).success, false)
   assert.equal(updateInterestsSchema.safeParse({ interests: ['software'] }).success, true)
 })
+
+test('bidder profile refuses inconsistent combinations', async () => {
+  const { organizationSchema, personSchema, createProjectSchema } =
+    await import('./bidder-profile.validation.js')
+  const nextYear = new Date().getFullYear() + 1
+
+  assert.equal(
+    organizationSchema.safeParse({
+      certifications: [{ name: 'ISO 27001', issuedAt: '2025-06-01', expiresAt: '2024-06-01' }],
+    }).success,
+    false,
+  )
+  assert.equal(
+    organizationSchema.safeParse({ registeredDate: `${nextYear + 1}-01-01` }).success,
+    false,
+  )
+  assert.equal(
+    personSchema.safeParse({ education: [{ level: 'bachelor', graduatedYear: nextYear + 5 }] })
+      .success,
+    false,
+  )
+  assert.equal(
+    createProjectSchema.safeParse({ name: 'X', startDate: '2025-05-01', endDate: '2025-01-01' })
+      .success,
+    false,
+  )
+  assert.equal(
+    organizationSchema.safeParse({
+      registeredDate: '2015-01-01',
+      certifications: [{ name: 'ISO 27001', issuedAt: '2024-06-01', expiresAt: '2027-06-01' }],
+    }).success,
+    true,
+  )
+})

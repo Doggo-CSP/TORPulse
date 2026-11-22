@@ -22,6 +22,7 @@ import {
   matchInputVersion,
 } from './qualification-match.service.js'
 import { countRecentAiCalls, isBidderReady } from './qualification-precompute.service.js'
+import { log } from '../../lib/logger.js'
 
 const toMatchResponse = (match: QualificationMatchDocument) => ({
   percentage: match.percentage,
@@ -135,7 +136,7 @@ export const evaluateQualificationMatchHandler = async (
   try {
     result = await evaluateQualification(user, profile, tor)
   } catch (error) {
-    console.error(`Qualification match failed (user ${user._id}, TOR ${tor._id})`, error)
+    log.error(`Qualification match failed (user ${user._id}, TOR ${tor._id})`, error)
     res.status(502).json({ error: 'The AI could not evaluate this TOR. Try again later.' })
     return
   }

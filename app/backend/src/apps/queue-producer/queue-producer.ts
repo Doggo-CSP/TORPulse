@@ -23,6 +23,7 @@ import { IngestionJobModel } from '../../modules/ingestion/ingestion-job.model.j
 import { enqueueDiscoveredProjects } from '../../modules/ingestion/ingestion-job.repository.js'
 import { getThaiFiscalYear } from '../../modules/ingestion/thai-date.js'
 import { updateTorSourceMetadata } from '../../modules/tor/tor.repository.js'
+import { log } from '../../lib/logger.js'
 
 const BMA_PAGE_SIZE = 100
 
@@ -54,7 +55,7 @@ export async function startQueueProducer(signal: AbortSignal): Promise<void> {
   const producerId = `queue-producer-${randomUUID()}`
 
   await Promise.all([DataSourceModel.init(), IngestionJobModel.init()])
-  console.log(
+  log.info(
     `Queue producer started: ${producerId} (${sources.map(({ label }) => label).join(', ')})`,
   )
 
@@ -64,7 +65,7 @@ export async function startQueueProducer(signal: AbortSignal): Promise<void> {
         await runScheduledSync(source, producerId, signal)
       } catch (error) {
         if (!signal.aborted) {
-          console.error(`${source.label} sync failed`, error)
+          log.error(`${source.label} sync failed`, error)
         }
       }
     }
@@ -78,7 +79,7 @@ export async function startQueueProducer(signal: AbortSignal): Promise<void> {
     }
   }
 
-  console.log('Queue producer stopped')
+  log.info('Queue producer stopped')
 }
 
 function bmaSource(adapter: BmaDiscoveryAdapter): DiscoverySource {
@@ -109,13 +110,13 @@ export async function runScheduledSync(
   // Only scheduled runs honour the admin switch; a manual "sync now" always runs.
   const { ingestionEnabled } = await getSettings()
   if (!ingestionEnabled) {
-    console.log(`${source.label} sync skipped because automatic ingestion is turned off`)
+    log.info(`${source.label} sync skipped because automatic ingestion is turned off`)
     return
   }
 
   const begin = await beginSync(source, producerId, { trigger: 'scheduled' })
   if (!begin.claim) {
-    console.log(
+    log.info(
       begin.reason === 'disabled'
         ? `${source.label} sync skipped because the data source is disabled`
         : `${source.label} sync skipped because another producer owns the lease`,
@@ -189,7 +190,7 @@ async function completeSync(
       throw new Error(`${source.label} keywords failed: ${totals.failedKeywords.join(', ')}`)
     }
 
-    console.log(`${source.label} sync completed`, {
+    log.info(`${source.label} sync completed`, {
       ...totals,
       durationMs: Date.now() - startedAt,
     })
@@ -254,7 +255,7 @@ async function recordRunResult(
       metadata: { trigger: trigger.trigger, source: source.label, ...counts, errorMessage },
     })
   } catch (error) {
-    console.error(`Could not record the ${source.label} sync result`, error)
+    log.error(`Could not record the ${source.label} sync result`, error)
   }
 }
 
@@ -318,7 +319,7 @@ async function syncBmaProjects(
         if (!totals.failedKeywords.includes(keyword)) {
           totals.failedKeywords.push(keyword)
         }
-        console.error('BMA keyword sync failed', { keyword, budgetYear, error })
+        log.error('BMA keyword sync failed', { keyword, budgetYear, error })
       }
     }
   }

@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import './secrets.js'
 const port = Number(process.env.PORT ?? 8000)
 const mongodbUri = process.env.MONGODB_URI
 const mongodbDatabase = process.env.MONGODB_DATABASE

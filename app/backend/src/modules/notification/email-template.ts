@@ -1,3 +1,5 @@
+import { escapeHtml, headerSafe } from '../../lib/html.js'
+
 export interface QualifyingTorItem {
   id: string
   projectTitle: string
@@ -22,16 +24,6 @@ const dateFormatter = new Intl.DateTimeFormat('th-TH', {
   dateStyle: 'long',
   timeZone: 'Asia/Bangkok',
 })
-
-// TOR text comes from source documents and the LLM, so it is escaped before going into HTML.
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
 
 function formatBudget(budgetBaht: number | null): string {
   return budgetBaht === null ? 'ไม่ระบุ' : bahtFormatter.format(budgetBaht)
@@ -95,5 +87,5 @@ export function buildQualifyingTorEmail(
   </body>
 </html>`
 
-  return { subject, html, text }
+  return { subject: headerSafe(subject), html, text }
 }

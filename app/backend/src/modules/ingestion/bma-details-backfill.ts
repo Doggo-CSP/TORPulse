@@ -6,6 +6,7 @@ import { TorModel } from '../tor/tor.model.js'
 import { torFieldsFromSourceMetadata } from '../tor/tor.repository.js'
 import { BmaDiscoveryAdapter, type BmaProjectDetails } from './adapters/bma-discovery.adapter.js'
 import { IngestionJobModel } from './ingestion-job.model.js'
+import { log } from '../../lib/logger.js'
 
 // Pause between projects so a full backfill stays polite to the BMA API.
 const REQUEST_GAP_MS = 200
@@ -28,7 +29,7 @@ export async function enrichBmaTorRecords(
   loadDetails: (externalId: string) => Promise<BmaProjectDetails | null>,
   updateRecord: (record: BackfillTor, details: BmaProjectDetails) => Promise<void>,
   onError: (externalId: string, error: unknown) => void = (externalId, error) =>
-    console.error(`Failed to enrich BMA TOR ${externalId}:`, error),
+    log.error(`Failed to enrich BMA TOR ${externalId}:`, error),
 ): Promise<BmaBackfillResult> {
   const result: BmaBackfillResult = { updated: 0, notFound: 0, failed: 0 }
 
@@ -83,7 +84,7 @@ export async function backfillBmaTorDetails(
       // Null detail fields are dropped so a partial BMA response never erases stored values.
       const fields = torFieldsFromSourceMetadata(details)
       if (dryRun) {
-        console.log(`[dry-run] ${record.externalId}`, fields)
+        log.info(`[dry-run] ${record.externalId}`, fields)
         return
       }
 

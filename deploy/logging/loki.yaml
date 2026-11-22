@@ -1,0 +1,43 @@
+# Loki: the separate log store (ASVS V16.4.2, V16.4.3). It is on its own internal network
+# (`loki-store`) that only the Loki gateway joins; Alloy (push-only account) and Grafana
+# (read-only account) reach it through that gateway over TLS. Application containers have no
+# path to it at all, so a compromised app cannot rewrite or delete stored logs. 90 days kept.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  log_level: warn
+
+common:
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+
+schema_config:
+  configs:
+    - from: 2026-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 2160h
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false

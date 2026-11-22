@@ -1,0 +1,56 @@
+// Grafana Alloy: reads the JSON log lines of the TORPulse containers from Docker (read-only
+// socket) and pushes them to Loki through the authenticated TLS gateway (ASVS V16.4.3). Labels: service, level, category, event.
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project"]
+  }
+}
+
+discovery.relabel "torpulse" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "container"
+  }
+  // Only application containers; the logging stack does not ship its own logs into itself
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "api|frontend|caddy|mongo|egress-proxy|loki-gateway|ingestion-worker|queue-producer|notification-worker|qualification-worker"
+    action        = "keep"
+  }
+}
+
+loki.source.docker "torpulse" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.torpulse.output
+  forward_to = [loki.process.json.receiver]
+}
+
+loki.process "json" {
+  stage.json {
+    expressions = { level = "level", service = "service", category = "category", event = "event" }
+  }
+  stage.labels {
+    values = { level = "", service = "", category = "", event = "" }
+  }
+  forward_to = [loki.write.local.receiver]
+}
+
+// Through the gateway: TLS verified against the internal CA, and the push-only "alloy" account
+loki.write "local" {
+  endpoint {
+    url = "https://loki-gateway:3100/loki/api/v1/push"
+    basic_auth {
+      username      = "alloy"
+      password_file = "/run/secrets/loki_writer_password"
+    }
+    tls_config {
+      ca_file     = "/run/secrets/internal_ca"
+      server_name = "loki-gateway"
+    }
+  }
+}

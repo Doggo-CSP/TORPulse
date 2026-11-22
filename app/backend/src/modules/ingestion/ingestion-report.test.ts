@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import express from 'express'
 import request from 'supertest'
+import { Types } from 'mongoose'
 
 import { IngestionJobModel } from './ingestion-job.model.js'
 import { buildPipelineReport, renderPipelineHtml } from './ingestion-report.js'
@@ -53,8 +54,26 @@ test('GET /report serves HTML and ?format=json serves the numbers', async (conte
   context.mock.method(IngestionJobModel, 'aggregate', async () =>
     rows.map(({ status, stage, count }) => ({ _id: { status, stage }, count })),
   )
+  let user: Express.User | undefined
   const app = express()
+  app.use((req, _res, next) => {
+    req.user = user
+    next()
+  })
   app.use('/ingestion', router)
+
+  // Operators only: guests and regular users are refused
+  assert.equal((await request(app).get('/ingestion/report')).status, 401)
+  user = {
+    _id: new Types.ObjectId(),
+    googleId: 'g',
+    name: 'u',
+    email: 'u@example.com',
+    image: null,
+    role: 'user',
+  }
+  assert.equal((await request(app).get('/ingestion/report')).status, 403)
+  user = { ...user, role: 'admin', status: 'active' }
 
   const html = await request(app).get('/ingestion/report')
   assert.equal(html.status, 200)

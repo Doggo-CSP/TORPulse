@@ -1,15 +1,19 @@
 import { database } from '../../config/mongoose.js'
 import { startQueueProducer } from './queue-producer.js'
+import { log } from '../../lib/logger.js'
+import { installProcessErrorHandlers } from '../../middleware/error.middleware.js'
+
+installProcessErrorHandlers('queue-producer')
 
 const shutdownController = new AbortController()
 
 process.once('SIGINT', () => {
-  console.log('SIGINT received')
+  log.info('SIGINT received')
   shutdownController.abort()
 })
 
 process.once('SIGTERM', () => {
-  console.log('SIGTERM received')
+  log.info('SIGTERM received')
   shutdownController.abort()
 })
 
@@ -24,6 +28,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error('Queue producer failed:', error)
+  log.error('Queue producer failed:', error)
   process.exitCode = 1
 })

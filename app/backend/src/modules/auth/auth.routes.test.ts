@@ -10,6 +10,7 @@ import { Types } from 'mongoose'
 import { createApiApp } from '../../apps/api/app.js'
 import type { ApiAuthConfig } from './auth.config.js'
 import { createAuthRouter } from './auth.routes.js'
+import type { GoogleIdTokenClaims } from './oidc.js'
 import { createPassport } from './passport.js'
 import { User } from './user.model.js'
 
@@ -100,7 +101,11 @@ test('POST /auth/logout clears the named session cookie', async () => {
 test('production uses a Secure __Host- session cookie', async () => {
   const app = createApiApp(
     { ...config, isProduction: true },
-    { sessionStore: new session.MemoryStore(), authPassport: new passport.Passport() },
+    {
+      sessionStore: new session.MemoryStore(),
+      authPassport: new passport.Passport(),
+      mailer: { send: async () => {} },
+    },
   )
 
   const response = await request(app).post('/auth/logout')
@@ -147,24 +152,42 @@ test('deserializeUser keeps an active account logged in', async (t) => {
 })
 
 type GoogleVerify = (
+  req: unknown,
   accessToken: string,
   refreshToken: string,
+  params: { id_token?: string },
   profile: unknown,
-  done: (error: unknown, user?: unknown) => void,
+  done: (error: unknown, user?: unknown, info?: unknown) => void,
 ) => void
 
-const runGoogleVerify = (authPassport: passport.Authenticator, profile: unknown) =>
-  new Promise<unknown>((resolve, reject) => {
+const NONCE = 'test-nonce'
+
+const fakeVerifier = (claims: Record<string, unknown>) => async (): Promise<GoogleIdTokenClaims> =>
+  ({ sub: 'google-1', email_verified: true, nonce: NONCE, ...claims }) as GoogleIdTokenClaims
+
+const runGoogleVerify = (
+  authPassport: passport.Authenticator,
+  profile: { id: string } & Record<string, unknown>,
+  session: Record<string, unknown> = { oidcNonce: NONCE },
+  user?: unknown,
+) =>
+  new Promise<{ user: unknown; info: unknown }>((resolve, reject) => {
     const strategy = (
       authPassport as unknown as { _strategy(name: string): { _verify: GoogleVerify } }
     )._strategy('google')
-    strategy._verify('access', 'refresh', profile, (error, user) =>
-      error ? reject(error) : resolve(user),
+    strategy._verify(
+      { session, user },
+      'access',
+      'refresh',
+      { id_token: 'signed.jwt.token' },
+      profile,
+      (error, verifiedUser, info) =>
+        error ? reject(error) : resolve({ user: verifiedUser, info }),
     )
   })
 
 test('Google login creates new accounts as active users', async (t) => {
-  const authPassport = createPassport(config)
+  const authPassport = createPassport(config, { verifyIdToken: fakeVerifier({ sub: 'google-1' }) })
   const stored = { _id: new Types.ObjectId(), status: 'active' }
   let capturedUpdate: Record<string, Record<string, unknown>> | undefined
 
@@ -173,7 +196,7 @@ test('Google login creates new accounts as active users', async (t) => {
     return stored
   })
 
-  const user = await runGoogleVerify(authPassport, {
+  const { user } = await runGoogleVerify(authPassport, {
     id: 'google-1',
     displayName: 'Officer',
     emails: [{ value: 'Officer@DGA.go.th', verified: true }],
@@ -189,18 +212,79 @@ test('Google login creates new accounts as active users', async (t) => {
 })
 
 test('Google login rejects a suspended account', async (t) => {
-  const authPassport = createPassport(config)
+  const authPassport = createPassport(config, { verifyIdToken: fakeVerifier({ sub: 'google-2' }) })
 
   t.mock.method(User, 'findOneAndUpdate', async () => ({
     _id: new Types.ObjectId(),
     status: 'suspended',
   }))
 
-  const user = await runGoogleVerify(authPassport, {
+  const { user, info } = await runGoogleVerify(authPassport, {
     id: 'google-2',
     displayName: 'Suspended',
     emails: [{ value: 'suspended@example.com', verified: true }],
   })
 
   assert.equal(user, false)
+  assert.equal((info as { reason: string }).reason, 'suspended')
+})
+
+test('ID token is refused on a nonce mismatch, an unverified email, or another subject', async () => {
+  const profile = { id: 'google-1', emails: [{ value: 'a@example.com' }] }
+  const cases: Array<[Record<string, unknown>, string]> = [
+    [{ nonce: 'someone-else' }, 'nonce_mismatch'],
+    [{ email_verified: false }, 'email_not_verified'],
+    [{ sub: 'google-999' }, 'subject_mismatch'],
+  ]
+
+  for (const [claims, reason] of cases) {
+    const authPassport = createPassport(config, { verifyIdToken: fakeVerifier(claims) })
+    const { user, info } = await runGoogleVerify(authPassport, profile)
+    assert.equal(user, false, reason)
+    assert.equal((info as { reason: string }).reason, reason)
+  }
+})
+
+test('ID token whose signature check fails is refused', async () => {
+  const authPassport = createPassport(config, {
+    verifyIdToken: async () => {
+      throw new Error('signature verification failed')
+    },
+  })
+
+  const { user, info } = await runGoogleVerify(authPassport, { id: 'google-1' })
+
+  assert.equal(user, false)
+  assert.match((info as { reason: string }).reason, /^id_token_invalid/)
+})
+
+test('re-authentication needs an auth_time after the flow started, for the same account', async () => {
+  const startedAt = Date.now()
+  const current = { _id: new Types.ObjectId(), googleId: 'google-1' }
+  const reauthSession = () => ({
+    oidcNonce: NONCE,
+    oauthMode: 'reauth',
+    reauth: { startedAt, returnTo: '/admin' },
+  })
+  const profile = { id: 'google-1' }
+
+  const stale = createPassport(config, {
+    verifyIdToken: fakeVerifier({ auth_time: Math.floor(startedAt / 1000) - 3600 }),
+  })
+  const staleResult = await runGoogleVerify(stale, profile, reauthSession(), current)
+  assert.equal(staleResult.user, false)
+  assert.equal((staleResult.info as { reason: string }).reason, 'reauth_not_fresh')
+
+  const fresh = createPassport(config, {
+    verifyIdToken: fakeVerifier({ auth_time: Math.floor(startedAt / 1000) + 5 }),
+  })
+  const freshResult = await runGoogleVerify(fresh, profile, reauthSession(), current)
+  assert.equal(freshResult.user, current)
+
+  const other = createPassport(config, {
+    verifyIdToken: fakeVerifier({ sub: 'google-2', auth_time: Math.floor(startedAt / 1000) + 5 }),
+  })
+  const otherResult = await runGoogleVerify(other, { id: 'google-2' }, reauthSession(), current)
+  assert.equal(otherResult.user, false)
+  assert.equal((otherResult.info as { reason: string }).reason, 'reauth_different_account')
 })

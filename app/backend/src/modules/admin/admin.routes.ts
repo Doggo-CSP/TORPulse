@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { requireAdmin, requireScope } from '../../middleware/admin.middleware.js'
+import { requireRecentAuth } from '../../middleware/session-context.middleware.js'
 import {
   getAdminStats,
   getAdminUserById,
@@ -28,7 +29,8 @@ import {
 
 const router = Router()
 
-// Every /admin route is admin-only, and each route also checks the scope it needs
+// Every /admin route is admin-only, and each route also checks the scope it needs.
+// Changes that are hard to undo also need a Google re-authentication in the last 5 minutes.
 router.use(requireAdmin)
 
 router.get('/stats', requireScope('stats:read'), getAdminStats)
@@ -38,17 +40,22 @@ router.patch('/ingestion/sources/:key', requireScope('ingestion:write'), updateD
 router.get('/users', requireScope('users:read'), getAdminUsers)
 router.get('/users/:userId', requireScope('users:read'), getAdminUserById)
 router.patch('/users/:userId', requireScope('users:write'), updateAdminUser)
-router.patch('/users/:userId/role', requireScope('users:manage'), updateUserRole)
-router.patch('/users/:userId/status', requireScope('users:manage'), updateUserStatus)
+router.patch('/users/:userId/role', requireScope('users:manage'), requireRecentAuth, updateUserRole)
+router.patch(
+  '/users/:userId/status',
+  requireScope('users:manage'),
+  requireRecentAuth,
+  updateUserStatus,
+)
 router.get('/activity', requireScope('activity:read'), getAdminActivity)
 router.get('/settings', requireScope('settings:read'), getAdminSettings)
-router.patch('/settings', requireScope('settings:write'), updateAdminSettings)
+router.patch('/settings', requireScope('settings:write'), requireRecentAuth, updateAdminSettings)
 router.get('/tors', requireScope('tors:read'), getAdminTors)
 router.get('/tors/:torId', requireScope('tors:read'), getAdminTorById)
 router.patch('/tors/:torId', requireScope('tors:write'), updateAdminTor)
 router.post('/tors/:torId/verify', requireScope('tors:write'), verifyAdminTor)
 router.post('/tors/:torId/archive', requireScope('tors:write'), archiveAdminTor)
-router.delete('/tors/:torId', requireScope('tors:delete'), deleteAdminTor)
+router.delete('/tors/:torId', requireScope('tors:delete'), requireRecentAuth, deleteAdminTor)
 router.get('/categories', requireScope('categories:read'), getAdminCategories)
 router.post('/categories', requireScope('categories:write'), createAdminCategory)
 router.patch('/categories/:categoryId', requireScope('categories:write'), updateAdminCategory)
@@ -57,6 +64,11 @@ router.patch(
   requireScope('categories:write'),
   setAdminCategoryStatus,
 )
-router.delete('/categories/:categoryId', requireScope('categories:write'), deleteAdminCategory)
+router.delete(
+  '/categories/:categoryId',
+  requireScope('categories:write'),
+  requireRecentAuth,
+  deleteAdminCategory,
+)
 
 export default router

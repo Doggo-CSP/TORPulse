@@ -60,6 +60,8 @@ test('admin routes: requireAdmin guard', async (t) => {
   app.use(express.json())
   app.use((req, _res, next) => {
     req.user = currentUser
+    // These suites test the admin handlers; the re-authentication check has its own tests
+    req.session = { reauthAt: Date.now() } as unknown as typeof req.session
     next()
   })
   app.use('/admin', router)
@@ -186,6 +188,8 @@ test('admin routes: user accounts & roles (UC-13)', async (t) => {
   app.use(express.json())
   app.use((req, _res, next) => {
     req.user = currentUser
+    // These suites test the admin handlers; the re-authentication check has its own tests
+    req.session = { reauthAt: Date.now() } as unknown as typeof req.session
     next()
   })
   app.use('/admin', router)
@@ -490,6 +494,8 @@ test('admin routes: transactional role changes and the audit activity feed', asy
   app.use(express.json())
   app.use((req, _res, next) => {
     req.user = actors.get(req.header('x-test-actor') ?? '')
+    // These suites test the admin handlers; the re-authentication check has its own tests
+    req.session = { reauthAt: Date.now() } as unknown as typeof req.session
     next()
   })
   app.use('/admin', router)
@@ -669,6 +675,8 @@ test('admin routes: TOR management (UC-14)', async (t) => {
   app.use(express.json())
   app.use((req, _res, next) => {
     req.user = currentUser
+    // These suites test the admin handlers; the re-authentication check has its own tests
+    req.session = { reauthAt: Date.now() } as unknown as typeof req.session
     next()
   })
   app.use('/admin', router)
@@ -967,6 +975,8 @@ test('admin routes: system settings', async (t) => {
   app.use(express.json())
   app.use((req, _res, next) => {
     req.user = currentUser
+    // These suites test the admin handlers; the re-authentication check has its own tests
+    req.session = { reauthAt: Date.now() } as unknown as typeof req.session
     next()
   })
   app.use('/admin', router)
@@ -1128,6 +1138,8 @@ test('admin routes: e-GP sync status and manual sync', async (t) => {
   app.use(express.json())
   app.use((req, _res, next) => {
     req.user = currentUser
+    // These suites test the admin handlers; the re-authentication check has its own tests
+    req.session = { reauthAt: Date.now() } as unknown as typeof req.session
     next()
   })
   app.use('/admin', router)
@@ -1260,6 +1272,8 @@ test('admin routes: GET /admin/stats overview numbers', async (t) => {
   const app = express()
   app.use((req, _res, next) => {
     req.user = makeUser({ role: 'admin', status: 'active' })
+    // These suites test the admin handlers; the re-authentication check has its own tests
+    req.session = { reauthAt: Date.now() } as unknown as typeof req.session
     next()
   })
   app.use('/admin', router)

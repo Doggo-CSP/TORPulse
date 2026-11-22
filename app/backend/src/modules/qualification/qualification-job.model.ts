@@ -1,4 +1,5 @@
 import mongoose, { Schema, model, type HydratedDocument, type Model } from 'mongoose'
+import { RETENTION_SECONDS } from '../../config/retention.js'
 
 // queued → processing → done | skipped | failed. A queued job waits until runAfter.
 export const QUALIFICATION_JOB_STATUSES = [
@@ -42,6 +43,15 @@ const qualificationJobSchema = new Schema<QualificationJobRecord>(
 
 qualificationJobSchema.index({ userId: 1, torId: 1 }, { unique: true })
 qualificationJobSchema.index({ status: 1, runAfter: 1 })
+// Retention: finished jobs are removed after 30 days (src/config/retention.ts)
+qualificationJobSchema.index(
+  { updatedAt: 1 },
+  {
+    expireAfterSeconds: RETENTION_SECONDS.finishedQualificationJobs,
+    partialFilterExpression: { status: { $in: ['done', 'skipped', 'failed'] } },
+    name: 'retention_finished',
+  },
+)
 
 export type QualificationJobDocument = HydratedDocument<QualificationJobRecord>
 

@@ -1,0 +1,18 @@
+# Grafana reads Loki through the gateway with the read-only "grafana" account, over TLS
+# verified against the internal CA. Values in $__file{} are read from Docker secrets.
+apiVersion: 1
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: https://loki-gateway:3100
+    isDefault: true
+    editable: false
+    basicAuth: true
+    basicAuthUser: grafana
+    jsonData:
+      tlsAuthWithCACert: true
+      serverName: loki-gateway
+    secureJsonData:
+      basicAuthPassword: $__file{/run/secrets/loki_reader_password}
+      tlsCACert: $__file{/run/secrets/internal_ca}

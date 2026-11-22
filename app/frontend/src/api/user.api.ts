@@ -1,3 +1,4 @@
+import { isReauthRequired, promptReauth } from "@/lib/reauth";
 export interface CompanyQualification {
   registeredCapitalBaht: number | null;
   yearsInBusiness: number | null;
@@ -113,6 +114,9 @@ export async function updateUserProfile(profileData: Partial<UserProfile>): Prom
     let detail = "";
     try {
       const errBody = await res.json();
+      if (isReauthRequired(res.status, errBody)) {
+        promptReauth();
+      }
       detail = errBody?.message || errBody?.error || JSON.stringify(errBody);
     } catch {
       detail = await res.text().catch(() => "");

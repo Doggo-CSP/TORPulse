@@ -5,6 +5,7 @@ import {
   CentralEgpAdapter,
   type CentralEgpProjectDetails,
 } from './adapters/central-egp.adapters.js'
+import { log } from '../../lib/logger.js'
 
 interface BackfillTor {
   _id: Types.ObjectId
@@ -17,7 +18,7 @@ export async function enrichCentralEgpTorRecords(
   loadDetails: (externalId: string) => Promise<CentralEgpProjectDetails>,
   updateRecord: (id: Types.ObjectId, details: CentralEgpProjectDetails) => Promise<void>,
   onError: (externalId: string, error: unknown) => void = (externalId, error) =>
-    console.error(`Failed to enrich Central eGP TOR ${externalId}:`, error),
+    log.error(`Failed to enrich Central eGP TOR ${externalId}:`, error),
 ): Promise<{ updated: number; failed: number }> {
   let updated = 0
   let failed = 0

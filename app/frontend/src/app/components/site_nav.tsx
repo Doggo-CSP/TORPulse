@@ -17,7 +17,7 @@ import {
   NavbarSection,
   NavbarSpacer,
 } from "@/components/navbar";
-import {
+import { ShieldCheckIcon,
   ArrowRightStartOnRectangleIcon,
   ChevronDownIcon,
   Cog8ToothIcon,
@@ -73,6 +73,11 @@ export function SiteNav() {
               <DropdownItem href="/settings">
                 <Cog8ToothIcon className="size-4" />
                 <DropdownLabel>ตั้งค่า</DropdownLabel>
+              </DropdownItem>
+              {/* Review or revoke what TORPulse may access, at Google (ASVS V10.7.3) */}
+              <DropdownItem href="https://myaccount.google.com/connections">
+                <ShieldCheckIcon className="size-4" />
+                <DropdownLabel>จัดการสิทธิ์การเข้าถึงบัญชี Google</DropdownLabel>
               </DropdownItem>
               <DropdownDivider />
               <DropdownItem onClick={() => void signOut()}>

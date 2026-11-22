@@ -1,6 +1,8 @@
 import type { RequestHandler } from 'express'
 import helmet from 'helmet'
 
+import { securityEvent } from '../lib/logger.js'
+
 // Security response headers for the API (ASVS V3.2.1, V3.4.x).
 // The API serves JSON plus one small HTML page (/api/v1/ingestion/report) that uses inline
 // styles and no scripts, so the CSP allows nothing except inline styles, and `sandbox` stops a
@@ -53,10 +55,37 @@ export const createOriginCheck = (allowedOrigin: string): RequestHandler => {
     const crossSiteWithoutOrigin = origin === undefined && fetchSite === 'cross-site'
 
     if (foreignOrigin || crossSiteWithoutOrigin) {
+      securityEvent('csrf.blocked', {
+        requestId: req.requestId,
+        method: req.method,
+        path: req.path,
+        ip: req.ip,
+        origin: origin ?? null,
+        fetchSite: fetchSite ?? null,
+      })
       res.status(403).json({ success: false, message: 'คำขอจากต้นทางที่ไม่ได้รับอนุญาต' })
       return
     }
 
     next()
   }
+}
+
+// API responses carry account data, so neither the browser nor any proxy may keep a copy
+// (ASVS V14.3.2, V14.2.2).
+export const noStore: RequestHandler = (_req, res, next) => {
+  res.set('Cache-Control', 'no-store')
+  res.set('Pragma', 'no-cache')
+  next()
+}
+
+// TRACE/TRACK echo the request (including cookies) back; they are refused outright (V13.4.4).
+// Express would otherwise answer them like an unknown route.
+export const blockTrace: RequestHandler = (req, res, next) => {
+  if (req.method === 'TRACE' || req.method === 'TRACK') {
+    res.set('Allow', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS')
+    res.status(405).end()
+    return
+  }
+  next()
 }

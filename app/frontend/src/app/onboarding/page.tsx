@@ -342,7 +342,7 @@ function InterestsStep({
 export default function OnboardingPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user: authUser, loading: authLoading } = useAuth();
+  const { user: authUser, loading: authLoading, signOut } = useAuth();
   const { profile, loading, updateProfile } = useUserProfile(!!authUser);
   const bidder = useBidderProfile(!!authUser);
   const bidderProfile = bidder.profile;
@@ -409,9 +409,19 @@ export default function OnboardingPage() {
     <div className="grid min-h-screen bg-[#f5f0e8] md:grid-cols-[300px_1fr]">
       {/* ── Steps and progress ── */}
       <aside className="border-b border-[#e8e0d0] bg-white px-7 py-8 md:border-b-0 md:border-r">
-        <Link href="/homepage" className="font-display text-xl font-bold text-[#4a7c59]">
-          TORPulse
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href="/homepage" className="font-display text-xl font-bold text-[#4a7c59]">
+            TORPulse
+          </Link>
+          {/* Every signed-in page offers logout (ASVS V7.4.4) */}
+          <button
+            type="button"
+            onClick={() => void signOut().then(() => router.push("/auth"))}
+            className="text-[13px] text-[#998f80] hover:text-[#CC0000]"
+          >
+            ออกจากระบบ
+          </button>
+        </div>
         <div className="mt-7 flex items-center justify-between text-[13px] text-[#5c5446]">
           <span>ความครบของโปรไฟล์</span>
           <b className="text-[#4a7c59]">{completeness.percentage}%</b>

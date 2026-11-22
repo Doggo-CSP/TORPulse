@@ -1,4 +1,5 @@
 import mongoose, { Schema, model, type HydratedDocument, type Model } from 'mongoose'
+import { RETENTION_SECONDS } from '../../config/retention.js'
 
 export const TOR_NOTIFICATION_STATUSES = [
   'pending',
@@ -47,6 +48,15 @@ const torNotificationSchema = new Schema<TorNotificationRecord>(
 
 torNotificationSchema.index({ userId: 1, torId: 1 }, { unique: true })
 torNotificationSchema.index({ status: 1, nextRetryAt: 1, lockedUntil: 1 })
+// Retention: finished rows are removed after one year (src/config/retention.ts)
+torNotificationSchema.index(
+  { updatedAt: 1 },
+  {
+    expireAfterSeconds: RETENTION_SECONDS.finishedNotifications,
+    partialFilterExpression: { status: { $in: ['sent', 'failed', 'skipped'] } },
+    name: 'retention_finished',
+  },
+)
 
 export type TorNotificationDocument = HydratedDocument<TorNotificationRecord>
 

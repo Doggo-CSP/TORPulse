@@ -1,0 +1,18 @@
+{
+  // Production build (Docker image): no tests and no development-only tools (ASVS V15.2.3).
+  // Operations scripts (migrations, backfills, set-admin, seed-categories) stay in.
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/*.test.ts",
+    "src/scripts/dev-session-token.ts",
+    "src/scripts/dev-simulate-reingest.ts",
+    "src/scripts/sandbox-egp-announcements.ts",
+    "src/scripts/discover-egp-announcements.ts",
+    "src/scripts/test-ingestion-queue.ts",
+    "src/scripts/seed-homepage-tors.ts",
+    "src/scripts/seed-procurement-reports.ts",
+    "src/scripts/seed-notification-user.ts"
+  ]
+}

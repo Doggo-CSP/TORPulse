@@ -1,0 +1,19 @@
+# Hosts the backend may reach (one per line; a leading dot also matches subdomains).
+# Keep in sync with OUTBOUND_ALLOWLIST in app/backend/src/lib/outbound.ts and report §11.6.
+
+# Google sign-in (OpenID Connect) and signing keys
+accounts.google.com
+oauth2.googleapis.com
+www.googleapis.com
+
+# Gemini (AI Studio API or Vertex AI regional endpoints)
+generativelanguage.googleapis.com
+.aiplatform.googleapis.com
+
+# Procurement sources
+process5.gprocurement.go.th
+egp2.bangkok.go.th
+adminapiegp.bangkok.go.th
+
+# SMTP server: replace with SMTP_HOST from deploy/prod.env
+smtp.example.com

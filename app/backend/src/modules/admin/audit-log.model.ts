@@ -1,4 +1,5 @@
 import { InferSchemaType, Schema, model } from 'mongoose'
+import { RETENTION_SECONDS } from '../../config/retention.js'
 
 const auditLogSchema = new Schema(
   {
@@ -63,6 +64,11 @@ const auditLogSchema = new Schema(
 
 auditLogSchema.index({ targetType: 1, targetId: 1, createdAt: -1 })
 auditLogSchema.index({ createdAt: -1 })
+// Retention: removed after one year (src/config/retention.ts)
+auditLogSchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: RETENTION_SECONDS.auditLogs, name: 'retention_createdAt' },
+)
 
 export type AuditLog = InferSchemaType<typeof auditLogSchema>
 

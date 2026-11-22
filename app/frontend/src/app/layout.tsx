@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/providers/query-provider";
@@ -18,7 +19,9 @@ export const metadata: Metadata = {
   description: "TOR Search, Analysis & Recommendation Platform",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// Every page renders per request so the CSP nonce from proxy.ts reaches Next.js's scripts
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  await connection();
   return (
     <html
       lang="en"

@@ -4,13 +4,20 @@ import test from 'node:test'
 import express from 'express'
 import request from 'supertest'
 
-import { createOriginCheck, createSecurityHeaders } from './security.middleware.js'
+import {
+  blockTrace,
+  createOriginCheck,
+  createSecurityHeaders,
+  noStore,
+} from './security.middleware.js'
 
 const FRONTEND = 'http://localhost:3000'
 
 const buildApp = (isProduction = false) => {
   const app = express()
+  app.use(blockTrace)
   app.use(createSecurityHeaders({ isProduction }))
+  app.use(noStore)
   app.use(createOriginCheck(FRONTEND))
   app.get('/data', (_req, res) => {
     res.json({ ok: true })
@@ -62,4 +69,17 @@ test('origin check allows the frontend, non-browser clients, and safe methods', 
   assert.equal((await request(app).post('/data').set('Origin', FRONTEND)).status, 200)
   assert.equal((await request(app).post('/data')).status, 200)
   assert.equal((await request(app).get('/data').set('Origin', 'https://evil.example')).status, 200)
+})
+
+test('API responses are not cacheable', async () => {
+  const response = await request(buildApp()).get('/data')
+
+  assert.equal(response.headers['cache-control'], 'no-store')
+})
+
+test('TRACE and TRACK are refused with 405', async () => {
+  const app = buildApp()
+
+  assert.equal((await request(app).trace('/data')).status, 405)
+  assert.equal((await request(app).options('/data')).status !== 405, true)
 })

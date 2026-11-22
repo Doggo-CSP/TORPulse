@@ -1,5 +1,7 @@
 import mongoose, { isObjectIdOrHexString, type Types } from 'mongoose'
 
+import { securityEvent } from '../../lib/logger.js'
+
 // Name of the connect-mongo collection set in apps/api/app.ts
 export const SESSIONS_COLLECTION = 'sessions'
 
@@ -22,5 +24,6 @@ export const revokeUserSessions = async (userId: Types.ObjectId | string): Promi
     .collection(SESSIONS_COLLECTION)
     .deleteMany({ session: { $regex: `"passport":\\{"user":"${id}"\\}` } })
 
+  securityEvent('session.revoked', { userId: id, sessions: result.deletedCount }, 'info')
   return result.deletedCount
 }

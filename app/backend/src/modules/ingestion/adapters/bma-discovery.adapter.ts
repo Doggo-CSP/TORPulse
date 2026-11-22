@@ -3,6 +3,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 
 import type { DiscoveredProcurementProject, ProjectAnnouncement } from './discovered-project.js'
+import { log } from '../../../lib/logger.js'
+import { allowlistedFetch } from '../../../lib/outbound.js'
 
 const BMA_PROJECT_SEARCH_URL = 'https://egp2.bangkok.go.th/appapi/api/Projects/GetProjectFromFilter'
 const BMA_PROJECT_DETAIL_URL = 'https://egp2.bangkok.go.th/appapi/api/Projects/GetProjectDetail'
@@ -114,7 +116,7 @@ export class BmaDiscoveryAdapter {
   private readonly requestTimeoutMs: number
 
   public constructor(options: BmaDiscoveryAdapterOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? allowlistedFetch
     this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000
   }
 
@@ -203,7 +205,7 @@ export class BmaDiscoveryAdapter {
       if (signal?.aborted) {
         throw error
       }
-      console.warn(`BMA ${label} failed`, { projectId, error })
+      log.warn(`BMA ${label} failed`, { projectId, error })
       return null
     }
   }

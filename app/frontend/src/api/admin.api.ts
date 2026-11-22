@@ -1,3 +1,5 @@
+import { isReauthRequired, promptReauth } from "@/lib/reauth";
+
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
 // Every admin call goes to the real backend. A failed call throws AdminApiError with the
@@ -31,6 +33,9 @@ async function adminRequest<T>(
   }
 
   const body: unknown = await res.json().catch(() => null);
+  if (isReauthRequired(res.status, body)) {
+    promptReauth();
+  }
   if (!res.ok) {
     const data = (body ?? {}) as { message?: unknown; error?: unknown };
     const message =

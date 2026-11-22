@@ -1,5 +1,6 @@
 import { parseThaiDate } from '../thai-date.js'
 import type { DiscoveredProcurementProject } from './discovered-project.js'
+import { allowlistedFetch } from '../../../lib/outbound.js'
 
 const ANNOUNCEMENT_URL =
   'https://process5.gprocurement.go.th/egp-oann10-service/pb/a-egp-allt-project/announcement'
@@ -60,7 +61,7 @@ export async function fetchAnnouncements({
   budgetYear,
   announceType,
   page,
-  fetchImpl = fetch,
+  fetchImpl = allowlistedFetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }: ListAnnouncementsInput): Promise<EgpAnnouncement[]> {
   const url = new URL(ANNOUNCEMENT_URL)

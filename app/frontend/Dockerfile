@@ -30,7 +30,9 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=node:node /app/public ./public
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
+COPY --chown=node:node tls-entry.mjs ./tls-entry.mjs
 
 USER node
 EXPOSE 3000
-CMD ["node", "server.js"]
+# Plain Next.js by default; HTTPS in front of it when TLS_CERT_FILE/TLS_KEY_FILE are set
+CMD ["node", "tls-entry.mjs"]

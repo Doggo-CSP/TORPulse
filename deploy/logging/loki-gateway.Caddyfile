@@ -1,0 +1,44 @@
+# Loki gateway (ASVS V13.2.1, V12.3.1): the only way to reach Loki. TLS with a certificate from
+# the internal CA, and a separate account per client with only what it needs:
+#   alloy   -> may only push logs (POST /loki/api/v1/push)
+#   grafana -> may only read (queries, labels, series); cannot push or delete
+# Loki itself sits on its own network that only this gateway joins.
+{
+	admin off
+	auto_https off
+}
+
+https://:3100 {
+	tls /run/secrets/loki_gateway_crt /run/secrets/loki_gateway_key {
+		protocols tls1.2 tls1.3
+	}
+
+	@push {
+		method POST
+		path /loki/api/v1/push
+	}
+	handle @push {
+		basic_auth {
+			alloy {file./run/secrets/loki_writer_hash}
+		}
+		reverse_proxy loki:3100
+	}
+
+	# Read-only: queries and metadata. Deletion and push are excluded even for this account.
+	@read {
+		method GET POST
+		path /loki/api/v1/* /ready
+		not path /loki/api/v1/push /loki/api/v1/delete* /loki/api/v1/cache/*
+	}
+	handle @read {
+		basic_auth {
+			grafana {file./run/secrets/loki_reader_hash}
+		}
+		reverse_proxy loki:3100
+	}
+
+	# Everything else (deletes, admin, ruler, config) is refused
+	handle {
+		respond 403
+	}
+}

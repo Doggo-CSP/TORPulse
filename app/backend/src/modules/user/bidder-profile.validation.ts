@@ -20,6 +20,12 @@ const nullableDate = z.iso
   .nullable()
   .transform((value) => (value === null ? null : new Date(value)))
 
+// Dates that describe something that already happened cannot be in the future (one day of
+// slack for time zones). ASVS V2.2.3: related values must make sense together.
+const notInFuture = (date: Date | null | undefined) =>
+  !date || date.getTime() <= Date.now() + 24 * 60 * 60 * 1000
+const pastDate = nullableDate.refine(notInFuture, 'date must not be in the future')
+
 const uniqueStrings = (schema: z.ZodType<string>, max: number) =>
   z
     .array(schema)
@@ -29,18 +35,30 @@ const uniqueStrings = (schema: z.ZodType<string>, max: number) =>
 const tagList = uniqueStrings(z.string().trim().min(1).max(100), 50)
 
 // Stored by name, e.g. "ISO/IEC 27001:2022" or "PMP"; the AI matcher reads the name
-const certificationSchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  issuer: z.string().trim().max(200).default(''),
-  issuedAt: nullableDate.default(null),
-  expiresAt: nullableDate.default(null),
-})
+const certificationSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    issuer: z.string().trim().max(200).default(''),
+    issuedAt: pastDate.default(null),
+    expiresAt: nullableDate.default(null),
+  })
+  .refine((c) => !c.issuedAt || !c.expiresAt || c.issuedAt <= c.expiresAt, {
+    message: 'expiresAt must not be before issuedAt',
+    path: ['expiresAt'],
+  })
 
 const educationSchema = z.object({
   level: z.enum(EDUCATION_LEVELS),
   field: z.string().trim().max(200).default(''),
   institution: z.string().trim().max(200).default(''),
-  graduatedYear: z.number().int().min(1950).max(2100).nullable().default(null), // ค.ศ.
+  // ค.ศ.; at most next year (expected graduation)
+  graduatedYear: z
+    .number()
+    .int()
+    .min(1950)
+    .refine((year) => year <= new Date().getFullYear() + 1, 'graduatedYear is too far ahead')
+    .nullable()
+    .default(null),
 })
 
 export const personSchema = z.object({
@@ -49,7 +67,7 @@ export const personSchema = z.object({
   roles: uniqueStrings(z.enum(STAFF_ROLE_KEYS), STAFF_ROLE_KEYS.length).optional(),
   yearsExperience: z.number().min(0).max(60).nullable().optional(),
   employmentType: z.enum(EMPLOYMENT_TYPES).nullable().optional(),
-  joinedAt: nullableDate.optional(),
+  joinedAt: pastDate.optional(),
   education: z.array(educationSchema).max(10).optional(),
   certifications: z.array(certificationSchema).max(30).optional(),
   skills: tagList.optional(),
@@ -57,7 +75,7 @@ export const personSchema = z.object({
 
 export const organizationSchema = z.object({
   juristicType: z.enum(JURISTIC_TYPES).nullable().optional(),
-  registeredDate: nullableDate.optional(),
+  registeredDate: pastDate.optional(),
   registeredCapitalBaht: nullableAmount.optional(),
   isSme: z.boolean().nullable().optional(),
   hasPositiveNetWorth: z.boolean().nullable().optional(),
@@ -83,7 +101,7 @@ const pastProjectFields = {
   clientName: z.string().trim().max(300).optional(),
   clientType: z.enum(PROJECT_CLIENT_TYPES).nullable().optional(),
   contractValueBaht: nullableAmount.optional(),
-  startDate: nullableDate.optional(),
+  startDate: pastDate.optional(),
   endDate: nullableDate.optional(),
   role: z.enum(PROJECT_ROLES).nullable().optional(),
   categories: tagList.optional(),

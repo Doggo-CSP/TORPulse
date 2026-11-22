@@ -1,4 +1,5 @@
 import mongoose, { Schema, model, type HydratedDocument, type Model } from 'mongoose'
+import { RETENTION_SECONDS } from '../../config/retention.js'
 
 export const REQUIREMENT_CATEGORIES = [
   'legal',
@@ -73,6 +74,11 @@ const qualificationMatchSchema = new Schema<QualificationMatchRecord>(
 )
 
 qualificationMatchSchema.index({ userId: 1, torId: 1 }, { unique: true })
+// Retention: AI results are removed 180 days after they were computed (src/config/retention.ts)
+qualificationMatchSchema.index(
+  { evaluatedAt: 1 },
+  { expireAfterSeconds: RETENTION_SECONDS.qualificationMatches, name: 'retention_evaluatedAt' },
+)
 
 export type QualificationMatchDocument = HydratedDocument<QualificationMatchRecord>
 

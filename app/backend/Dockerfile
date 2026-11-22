@@ -8,7 +8,7 @@ RUN npm ci
 
 # ---- build: compile TypeScript -> dist ----
 FROM deps AS build
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import type { Request, Response } from 'express'
+import { respondServerError } from '../../middleware/error.middleware.js'
 import { beginBmaSync, completeBmaSync } from '../../apps/queue-producer/queue-producer.js'
 import { env } from '../../config/env.js'
 import { BmaDiscoveryAdapter } from '../ingestion/adapters/bma-discovery.adapter.js'
@@ -57,6 +58,7 @@ import {
 } from './admin.validation.js'
 import { activityGroupOf, createAuditLog, listAuditLogs } from './audit-log.repository.js'
 import { getSettings, getSettingsUpdatedAt, updateSettings } from './settings.repository.js'
+import { log } from '../../lib/logger.js'
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -151,9 +153,7 @@ export const getAdminStats = async (_req: Request, res: Response): Promise<void>
       },
     })
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: 'Failed to fetch admin stats', error: (error as Error).message })
+    respondServerError(_req, res, error)
   }
 }
 
@@ -207,7 +207,7 @@ export const getAdminUsers = async (req: Request, res: Response): Promise<void> 
 
     res.json({ users, total: users.length })
   } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch users', error: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -276,7 +276,7 @@ export const updateAdminUser = async (req: Request, res: Response): Promise<void
 
     res.json({ success: true, message: 'แก้ไขข้อมูลผู้ใช้งานสำเร็จ', user: updated })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -320,7 +320,7 @@ export const getAdminUserById = async (req: Request, res: Response): Promise<voi
       },
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -424,7 +424,7 @@ export const updateUserRole = async (req: Request, res: Response): Promise<void>
       user: updated,
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -539,7 +539,7 @@ export const updateUserStatus = async (req: Request, res: Response): Promise<voi
       user: updated,
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -596,7 +596,7 @@ export const getAdminActivity = async (req: Request, res: Response): Promise<voi
 
     res.json({ items, total, page, limit })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -728,7 +728,7 @@ export const getAdminTors = async (req: Request, res: Response): Promise<void> =
 
     res.json({ tors, total, page, totalPages })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -749,7 +749,7 @@ export const getAdminTorById = async (req: Request, res: Response): Promise<void
 
     res.json({ tor: toAdminTorDetail(tor, await getCategoryNameMap()) })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -853,7 +853,7 @@ export const updateAdminTor = async (req: Request, res: Response): Promise<void>
       tor: toAdminTorDetail(updated, await getCategoryNameMap()),
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -938,7 +938,7 @@ const changeTorReviewStatus = async (
 
     res.json({ success: true, message: successMessage, reviewStatus: nextStatus })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -1029,7 +1029,7 @@ export const getIngestionStatus = async (_req: Request, res: Response): Promise<
       },
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(_req, res, error)
   }
 }
 
@@ -1073,7 +1073,7 @@ export const triggerIngestionSync = async (req: Request, res: Response): Promise
       new AbortController().signal,
       trigger,
     ).catch((error: unknown) => {
-      console.error('Manual BMA sync failed', error)
+      log.error('Manual BMA sync failed', error)
     })
 
     res.status(202).json({
@@ -1082,7 +1082,7 @@ export const triggerIngestionSync = async (req: Request, res: Response): Promise
       runId: claim.runId.toString(),
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -1144,7 +1144,7 @@ export const updateDataSource = async (req: Request, res: Response): Promise<voi
       source: toDataSourceResponse(saved),
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -1163,7 +1163,7 @@ export const getAdminSettings = async (_req: Request, res: Response): Promise<vo
   try {
     res.json({ settings: toSettingsResponse(await getSettings()) })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(_req, res, error)
   }
 }
 
@@ -1220,7 +1220,7 @@ export const updateAdminSettings = async (req: Request, res: Response): Promise<
       settings: toSettingsResponse(saved),
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -1302,7 +1302,7 @@ export const getAdminCategories = async (req: Request, res: Response): Promise<v
       activeCount,
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -1385,7 +1385,7 @@ export const createAdminCategory = async (req: Request, res: Response): Promise<
       category: toAdminCategory(created, 0),
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -1474,7 +1474,7 @@ export const updateAdminCategory = async (req: Request, res: Response): Promise<
       category: toAdminCategory(updated, userCounts.get((updated as CategoryLean).key) ?? 0),
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -1569,7 +1569,7 @@ export const setAdminCategoryStatus = async (req: Request, res: Response): Promi
       category: toAdminCategory(updated, userCounts.get((updated as CategoryLean).key) ?? 0),
     })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }
 
@@ -1654,6 +1654,6 @@ export const deleteAdminCategory = async (req: Request, res: Response): Promise<
 
     res.json({ success: true, message: 'ลบหมวดหมู่สำเร็จ' })
   } catch (error) {
-    res.status(500).json({ success: false, message: (error as Error).message })
+    respondServerError(req, res, error)
   }
 }

@@ -1,5 +1,7 @@
 import type { CookieOptions, RequestHandler } from 'express'
 
+import { securityEvent } from '../lib/logger.js'
+
 declare module 'express-session' {
   interface SessionData {
     // First authenticated request of this login (ms since epoch)
@@ -40,6 +42,16 @@ export const createSessionTimeout = ({
     const lastSeenAt = req.session.lastSeenAt ?? current
 
     if (current - lastSeenAt > idleMs || current - authAt > absoluteMs) {
+      securityEvent(
+        'session.expired',
+        {
+          requestId: req.requestId,
+          userId: req.user._id.toString(),
+          ip: req.ip,
+          reason: current - lastSeenAt > idleMs ? 'idle' : 'absolute',
+        },
+        'info',
+      )
       req.session.destroy((error) => {
         if (error) {
           next(error)

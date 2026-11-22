@@ -6,9 +6,18 @@ import type passport from 'passport'
 
 import { env } from '../../config/env.js'
 import { errorHandler, notFoundHandler } from '../../middleware/error.middleware.js'
-import { createOriginCheck, createSecurityHeaders } from '../../middleware/security.middleware.js'
+import { requestLogger } from '../../middleware/request-log.middleware.js'
+import {
+  blockTrace,
+  createOriginCheck,
+  createSecurityHeaders,
+  noStore,
+} from '../../middleware/security.middleware.js'
 import { createApiLimiter, createLoginLimiter } from '../../middleware/rate-limit.middleware.js'
 import { createSessionTimeout } from '../../middleware/session-timeout.middleware.js'
+import { createSessionGate } from '../../middleware/session-context.middleware.js'
+import type { IdTokenVerifier } from '../../modules/auth/oidc.js'
+import { createSmtpMailer, type Mailer } from '../../modules/notification/mailer.js'
 import {
   DEFAULT_SESSION_ABSOLUTE_TIMEOUT_MS,
   DEFAULT_SESSION_IDLE_TIMEOUT_MS,
@@ -30,11 +39,20 @@ interface CreateApiAppOptions {
   authPassport?: passport.Authenticator
   // Tests pass tiny limits; the API otherwise reads them from env
   rateLimit?: RateLimitOverrides
+  // Tests pass a fake mailer (MFA codes) and ID-token verifier
+  mailer?: Mailer
+  verifyIdToken?: IdTokenVerifier
 }
 
 export const createApiApp = (authConfig: ApiAuthConfig, options: CreateApiAppOptions = {}) => {
   const app = express()
-  const authPassport = options.authPassport ?? createPassport(authConfig)
+  const authPassport =
+    options.authPassport ?? createPassport(authConfig, { verifyIdToken: options.verifyIdToken })
+  const mailer = options.mailer ?? (env.SMTP_HOST ? createSmtpMailer() : undefined)
+  if (authConfig.isProduction && !mailer) {
+    // Sign-in codes (MFA) and new-device alerts are emailed; production cannot run without SMTP
+    throw new Error('SMTP_HOST is required in production: MFA codes are sent by email')
+  }
   const frontendOrigin = new URL(authConfig.frontendUrl).origin
   const cookieName = sessionCookieName(authConfig.isProduction)
   const idleMs = authConfig.sessionIdleTimeoutMs ?? DEFAULT_SESSION_IDLE_TIMEOUT_MS
@@ -51,12 +69,15 @@ export const createApiApp = (authConfig: ApiAuthConfig, options: CreateApiAppOpt
     })
 
   app.disable('x-powered-by')
+  app.use(requestLogger)
+  app.use(blockTrace)
 
   if (authConfig.isProduction) {
     app.set('trust proxy', 1)
   }
 
   app.use(createSecurityHeaders({ isProduction: authConfig.isProduction }))
+  app.use(noStore)
   app.use(
     cors({
       origin: (requestOrigin, callback) => {
@@ -91,6 +112,7 @@ export const createApiApp = (authConfig: ApiAuthConfig, options: CreateApiAppOpt
   app.use(authPassport.initialize())
   app.use(authPassport.session())
   app.use(createSessionTimeout({ idleMs, absoluteMs, cookieName, cookieOptions }))
+  app.use(createSessionGate({ cookieName, cookieOptions }))
 
   const loginLimiter = createLoginLimiter({
     windowMs: rateLimitWindowMs,
@@ -105,7 +127,17 @@ export const createApiApp = (authConfig: ApiAuthConfig, options: CreateApiAppOpt
   app.get('/', (_req, res) => {
     res.json({ service: 'torpulse-api' })
   })
-  app.use('/auth', createAuthRouter(authPassport, authConfig, { loginLimiter }))
+  app.use(
+    '/auth',
+    createAuthRouter(authPassport, authConfig, {
+      loginLimiter,
+      mfa: {
+        mailer,
+        secret: authConfig.sessionSecret,
+        isProduction: authConfig.isProduction,
+      },
+    }),
+  )
   app.use('/api/v1', apiLimiter, r)
 
   app.use(notFoundHandler)

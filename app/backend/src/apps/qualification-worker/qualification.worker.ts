@@ -32,6 +32,7 @@ import {
   sweepMatches,
 } from '../../modules/qualification/qualification-precompute.service.js'
 import { BidderProfileModel } from '../../modules/user/bidder-profile.model.js'
+import { log } from '../../lib/logger.js'
 
 const BUDGET_RETRY_MS = 60 * 60_000
 
@@ -80,10 +81,10 @@ export async function processNextJob(workerId: string, scope?: JobScope): Promis
       result,
     )
     await finishJob(job, workerId, 'done')
-    console.log(`Matched user ${user._id} with TOR ${tor._id}: ${result.percentage}%`)
+    log.info(`Matched user ${user._id} with TOR ${tor._id}: ${result.percentage}%`)
     enqueueInBackground(`match ${user._id}/${tor._id}`, () => enqueueForUser(user._id, [tor._id]))
   } catch (error) {
-    console.error(`Qualification match failed (user ${user._id}, TOR ${tor._id})`, error)
+    log.error(`Qualification match failed (user ${user._id}, TOR ${tor._id})`, error)
     await failJob(job, workerId, error)
   }
 
@@ -94,7 +95,7 @@ export async function startQualificationWorker(signal: AbortSignal): Promise<voi
   const workerId = `qualification-${randomUUID()}`
 
   await QualificationJobModel.init()
-  console.log(`Qualification worker started: ${workerId}`)
+  log.info(`Qualification worker started: ${workerId}`)
 
   let lastSweepAt = 0
   while (!signal.aborted) {
@@ -102,9 +103,9 @@ export async function startQualificationWorker(signal: AbortSignal): Promise<voi
       lastSweepAt = Date.now()
       try {
         const queued = await sweepMatches()
-        if (queued > 0) console.log(`Sweep queued ${queued} qualification match(es)`)
+        if (queued > 0) log.info(`Sweep queued ${queued} qualification match(es)`)
       } catch (error) {
-        console.error('Qualification sweep failed', error)
+        log.error('Qualification sweep failed', error)
       }
     }
 
@@ -112,7 +113,7 @@ export async function startQualificationWorker(signal: AbortSignal): Promise<voi
     try {
       didWork = await processNextJob(workerId)
     } catch (error) {
-      console.error('Qualification job failed', error)
+      log.error('Qualification job failed', error)
     }
 
     // One job after another while the queue has work; wait only once it is empty.
@@ -127,5 +128,5 @@ export async function startQualificationWorker(signal: AbortSignal): Promise<voi
     }
   }
 
-  console.log('Qualification worker stopped')
+  log.info('Qualification worker stopped')
 }

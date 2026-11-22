@@ -14,6 +14,8 @@ import type {
   ProcurementProject,
   ProcurementSourceAdapter,
 } from './procurement-source.adapter.js'
+import { log } from '../../../lib/logger.js'
+import { allowlistedFetch } from '../../../lib/outbound.js'
 
 const EGP_ORIGIN = 'https://process5.gprocurement.go.th'
 
@@ -201,7 +203,7 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
   private readonly archiveByProjectId = new Map<string, ArchiveMetadata>()
 
   public constructor(options: CentralEgpAdapterOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? fetch
+    this.fetchImpl = options.fetchImpl ?? allowlistedFetch
 
     this.requestTimeoutMs = options.requestTimeoutMs ?? 60_000
   }
@@ -305,7 +307,7 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
       const pdf = await fetchAnnouncementPdf(templateId, { fetchImpl })
       return await extractSubmitDeadlineFromPdf(pdf)
     } catch (error) {
-      console.warn(
+      log.warn(
         `[Central eGP] Could not read the submit deadline for ${projectId}: ` +
           (error instanceof Error ? error.message : String(error)),
       )
@@ -552,7 +554,7 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
 
         const delayMs = getBackoffDelay(attempt)
 
-        console.warn(
+        log.warn(
           `[Central eGP] ${label} network error for ${projectId}. ` +
             `Retrying in ${formatDelay(delayMs)} ` +
             `(attempt ${attempt + 1}/${EGP_MAX_RETRIES + 1})`,
@@ -580,7 +582,7 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
         const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'))
 
         if (attempt >= EGP_MAX_RETRIES) {
-          console.error(
+          log.error(
             `[Central eGP] Rate limit still active after ${EGP_MAX_RETRIES + 1} attempts for ${projectId}`,
           )
 
@@ -589,7 +591,7 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
 
         const delayMs = retryAfterMs ?? getBackoffDelay(attempt)
 
-        console.warn(
+        log.warn(
           `[Central eGP] HTTP 429 while requesting ${label} for ${projectId}. ` +
             `Retrying in ${formatDelay(delayMs)} ` +
             `(attempt ${attempt + 1}/${EGP_MAX_RETRIES + 1})`,
@@ -610,7 +612,7 @@ export class CentralEgpAdapter implements ProcurementSourceAdapter {
 
         const delayMs = getBackoffDelay(attempt)
 
-        console.warn(
+        log.warn(
           `[Central eGP] HTTP ${response.status} while requesting ${label} for ${projectId}. ` +
             `Retrying in ${formatDelay(delayMs)} ` +
             `(attempt ${attempt + 1}/${EGP_MAX_RETRIES + 1})`,

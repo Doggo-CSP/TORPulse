@@ -27,8 +27,17 @@ export interface UserRecord {
   notificationPrefs?: { emailEnabled: boolean }
   // null until the user finishes or skips the onboarding wizard after their first login
   onboardingStatus?: 'completed' | 'dismissed' | null
+  // Devices that completed sign-in before; a sign-in from any other device triggers an email
+  // alert (ASVS V6.3.5). Only a keyed hash of the device is stored, never the raw user agent/IP.
+  knownDevices?: KnownDevice[]
   createdAt: Date
   updatedAt: Date
+}
+
+export interface KnownDevice {
+  hash: string
+  label: string
+  lastSeenAt: Date
 }
 
 const qualificationSchema = new Schema<CompanyQualification>(
@@ -76,6 +85,21 @@ const userSchema = new Schema<UserRecord>(
     notificationPrefs: {
       type: new Schema({ emailEnabled: { type: Boolean, default: true } }, { _id: false }),
       default: () => ({}),
+    },
+    knownDevices: {
+      type: [
+        new Schema(
+          {
+            hash: { type: String, required: true },
+            label: { type: String, default: '' },
+            lastSeenAt: { type: Date, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+      // Never sent to clients by accident through a .lean() spread
+      select: false,
     },
   },
   { timestamps: true },

@@ -73,6 +73,8 @@ test('admin routes: category management (UC-16)', async (t) => {
   app.use(express.json())
   app.use((req, _res, next) => {
     req.user = currentUser
+    // These suites test the admin handlers; the re-authentication check has its own tests
+    req.session = { reauthAt: Date.now() } as unknown as typeof req.session
     next()
   })
   app.use('/admin', router)

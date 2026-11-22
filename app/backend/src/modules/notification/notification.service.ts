@@ -7,6 +7,7 @@ import { TorModel } from '../tor/tor.model.js'
 import { BidderProfileModel } from '../user/bidder-profile.model.js'
 import { canReceiveNotification, isNotifiableMatch, isTorRelevant } from './eligibility.js'
 import { enqueueNotifications } from './tor-notification.repository.js'
+import { log } from '../../lib/logger.js'
 
 // Emails follow the AI qualification score: a (user, TOR) pair is queued once its up-to-date
 // match reaches 100%. The unique index keeps each pair to one email, ever.
@@ -73,6 +74,6 @@ export async function enqueueForUser(
 // Triggers must never break the request or job that fired them.
 export function enqueueInBackground(label: string, task: () => Promise<unknown>): void {
   task().catch((error: unknown) => {
-    console.error(`Notification enqueue failed (${label})`, error)
+    log.error(`Notification enqueue failed (${label})`, error)
   })
 }

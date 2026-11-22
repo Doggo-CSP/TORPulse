@@ -1,5 +1,7 @@
 import { Router } from 'express'
 
+import { requireAdmin, requireScope } from '../../middleware/admin.middleware.js'
+
 import {
   buildPipelineReport,
   fetchStatusStageCounts,
@@ -7,6 +9,9 @@ import {
 } from './ingestion-report.js'
 
 const router = Router()
+
+// Pipeline internals (job counts, failures) are for operators only (threat T12)
+router.use(requireAdmin, requireScope('ingestion:read'))
 
 // GET /api/v1/ingestion/report        -> HTML pipeline diagram
 // GET /api/v1/ingestion/report?format=json -> the same numbers as JSON
