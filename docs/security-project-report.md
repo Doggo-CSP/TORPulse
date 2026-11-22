@@ -662,7 +662,7 @@ With `APP_DOMAIN=localhost`, Caddy uses its own local CA instead of Let's Encryp
 
 ## 6. Advanced security features · Criterion 18
 
-All backend paths are relative to `app/backend/src/`. Four features are implemented. Each has unit tests in `npm run test:auth` (26 tests passing) and was checked end to end against a running API.
+All backend paths are relative to `app/backend/src/`. Five features are implemented, one more than the four required. Each has unit tests in `npm run test:auth` (48 tests passing on 22 Nov 2026) and was checked end to end against a running API.
 
 | Feature | Status | Details |
 |---|---|---|
@@ -671,8 +671,8 @@ All backend paths are relative to `app/backend/src/`. Four features are implemen
 | **Rate limit for backend APIs** | ✅ | See 6.2. The daily AI quota remains as an extra cost limit: 200 calls system-wide (`QUALIFICATION_DAILY_CALL_LIMIT`) and 20 per user (`QUALIFICATION_USER_DAILY_CALL_LIMIT`), counted per call in `qualification_ai_calls`; HTTP 429 from `POST /tors/:id/qualification`. |
 | **Login timeout** | ✅ | See 6.3. |
 | **Multi-factor authentication (email OTP)** | ✅ | After Google sign-in, a 6-digit code is sent to the verified Google email: 10-minute expiry, 5 attempts, HMAC-stored, constant-time comparison. Lockout emails the owner, and a new device triggers an alert. Details in §11.1. |
-| Compromised-password check | ❌ (N/A) | There are no passwords. Design in §5.1. |
-| JWT expiration checking | ❌ (N/A) | We use server-side sessions, not JWTs. |
+| Compromised-password check | N/A | There are no passwords to check: sign-in is Google only. Design in §5.1. |
+| JWT expiration checking | N/A | We use server-side sessions, not JWTs. Session expiry is covered by the login timeout (6.3). |
 
 ### 6.1 Authorization with scope
 
