@@ -10,6 +10,7 @@ import {
   findActiveJobKeys,
   type MatchPair,
 } from './qualification-job.repository.js'
+import { AiCallModel, type AiCallSource } from './ai-call.model.js'
 import { QualificationMatchModel } from './qualification-match.model.js'
 import {
   hasRequirementText,
@@ -121,9 +122,49 @@ export async function sweepMatches(now = new Date()): Promise<number> {
   return enqueueMatchJobs(pairs, 0)
 }
 
-// AI calls made in the last 24 hours, by the worker and by on-demand POSTs alike.
+const AI_QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000
+
+const quotaWindowStart = (now: Date): Date => new Date(now.getTime() - AI_QUOTA_WINDOW_MS)
+
+// AI calls made in the last 24 hours, by the worker and by on-demand POSTs alike. Counts the
+// call log, not match documents, so re-evaluating the same TOR again and again is counted.
 export async function countRecentAiCalls(now = new Date()): Promise<number> {
-  return QualificationMatchModel.countDocuments({
-    evaluatedAt: { $gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+  return AiCallModel.countDocuments({ calledAt: { $gt: quotaWindowStart(now) } })
+}
+
+// On-demand AI calls one user triggered in the last 24 hours. Background precompute is left
+// out: it is bounded by the global quota and the user did not ask for it.
+export async function countRecentUserAiCalls(
+  userId: Types.ObjectId | string,
+  now = new Date(),
+): Promise<number> {
+  return AiCallModel.countDocuments({
+    userId,
+    source: 'api',
+    calledAt: { $gt: quotaWindowStart(now) },
   })
+}
+
+// Recorded before the AI is called, so a call that fails upstream still counts.
+export async function recordAiCall(
+  userId: Types.ObjectId | string,
+  torId: Types.ObjectId | string,
+  source: AiCallSource,
+  now = new Date(),
+): Promise<void> {
+  await AiCallModel.create({ userId, torId, source, calledAt: now })
+}
+
+export type AiQuotaBlock = 'global' | 'user'
+
+// Which daily limit, if any, stops an on-demand call for this user right now.
+export async function onDemandAiQuotaBlock(
+  userId: Types.ObjectId | string,
+  now = new Date(),
+): Promise<AiQuotaBlock | null> {
+  if ((await countRecentAiCalls(now)) >= env.QUALIFICATION_DAILY_CALL_LIMIT) return 'global'
+  if ((await countRecentUserAiCalls(userId, now)) >= env.QUALIFICATION_USER_DAILY_CALL_LIMIT) {
+    return 'user'
+  }
+  return null
 }

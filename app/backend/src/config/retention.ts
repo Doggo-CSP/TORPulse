@@ -10,6 +10,8 @@ export const RETENTION_SECONDS = {
   auditLogs: 365 * DAY_S,
   // AI match results are recomputed on demand; old ones are not needed
   qualificationMatches: 180 * DAY_S,
+  // One row per AI call; the daily quota only looks at the last 24 hours
+  qualificationAiCalls: 2 * DAY_S,
   // Finished AI jobs (done/skipped/failed); queued and running jobs are never removed
   finishedQualificationJobs: 30 * DAY_S,
   // Finished notification rows (sent/failed/skipped); pending ones are never removed

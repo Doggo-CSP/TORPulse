@@ -1,7 +1,6 @@
 import type { Request, Response } from 'express'
 import { Types, isObjectIdOrHexString } from 'mongoose'
 
-import { env } from '../../config/env.js'
 import { enqueueForUser, enqueueInBackground } from '../notification/notification.service.js'
 import { HIDDEN_TOR_REVIEW_STATUSES, PUBLIC_TOR_FILTER, TorModel } from '../tor/tor.model.js'
 import { findBidderProfile } from '../user/bidder-profile.repository.js'
@@ -21,7 +20,11 @@ import {
   isMatchStale,
   matchInputVersion,
 } from './qualification-match.service.js'
-import { countRecentAiCalls, isBidderReady } from './qualification-precompute.service.js'
+import {
+  isBidderReady,
+  onDemandAiQuotaBlock,
+  recordAiCall,
+} from './qualification-precompute.service.js'
 import { log } from '../../lib/logger.js'
 
 const toMatchResponse = (match: QualificationMatchDocument) => ({
@@ -118,19 +121,34 @@ export const evaluateQualificationMatchHandler = async (
     return
   }
 
-  // The daily AI budget covers on-demand evaluations too, so opening TOR pages or pressing
-  // re-evaluate again and again cannot run up the AI bill. The previous result is kept.
-  if ((await countRecentAiCalls()) >= env.QUALIFICATION_DAILY_CALL_LIMIT) {
+  // Two daily AI budgets cover on-demand evaluations (threat T17): the system-wide one, and a
+  // per-user one so a single account pressing re-evaluate cannot use up everyone's quota.
+  // Every call is counted, including repeated runs on the same TOR. The previous result is kept.
+  const blockedBy = await onDemandAiQuotaBlock(user._id)
+  if (blockedBy) {
     if (match) {
-      res.json({ match: toMatchResponse(match), isStale, completeness, limitReached: true })
+      res.json({
+        match: toMatchResponse(match),
+        isStale,
+        completeness,
+        limitReached: true,
+        limitScope: blockedBy,
+      })
       return
     }
     res.status(429).json({
-      error: 'The daily AI evaluation limit has been reached. Try again later.',
+      error:
+        blockedBy === 'user'
+          ? 'You have reached your daily AI evaluation limit. Try again tomorrow.'
+          : 'The daily AI evaluation limit has been reached. Try again later.',
+      limitScope: blockedBy,
       completeness,
     })
     return
   }
+
+  // Counted before the call, so a call that fails upstream still uses the budget
+  await recordAiCall(user._id, tor._id, 'api')
 
   let result
   try {

@@ -11,8 +11,10 @@ import { User } from '../auth/user.model.js'
 import torRouter from '../tor/tor.routes.js'
 import { TorModel } from '../tor/tor.model.js'
 import { BidderProfileModel } from '../user/bidder-profile.model.js'
+import { AiCallModel } from './ai-call.model.js'
 import { QualificationMatchModel } from './qualification-match.model.js'
 import { matchAi } from './qualification-match.service.js'
+import { countRecentAiCalls, countRecentUserAiCalls } from './qualification-precompute.service.js'
 
 const SEED_PREFIX = 'seed-qualification-match-test-'
 
@@ -92,6 +94,7 @@ test('qualification match routes: evaluate, cache, stale and errors', async (t) 
 
   t.after(async () => {
     await QualificationMatchModel.deleteMany({ userId: testUser._id })
+    await AiCallModel.deleteMany({ userId: testUser._id })
     await BidderProfileModel.deleteMany({ userId: testUser._id })
     await TorModel.deleteMany({ _id: { $in: [tor._id, otherTor._id, emptyTor._id] } })
     await User.deleteOne({ _id: testUser._id })
@@ -213,6 +216,64 @@ test('qualification match routes: evaluate, cache, stale and errors', async (t) 
       // Without one: 429
       const none = await request(app).post(`/tors/${otherTor._id.toString()}/qualification`)
       assert.equal(none.status, 429)
+      assert.equal(aiCalls, calls)
+    } finally {
+      env.QUALIFICATION_DAILY_CALL_LIMIT = original
+    }
+  })
+
+  await t.test('repeated runs on the same TOR count against the per-user limit (T17)', async () => {
+    await AiCallModel.deleteMany({ userId: testUser._id })
+    const original = env.QUALIFICATION_USER_DAILY_CALL_LIMIT
+    env.QUALIFICATION_USER_DAILY_CALL_LIMIT = 2
+    try {
+      const calls = aiCalls
+
+      const first = await request(app).post(`${url}?force=true`)
+      assert.equal(first.status, 200)
+
+      // A failed AI call has been paid for too, so it is counted
+      aiAnswer = async () => {
+        throw new Error('upstream down')
+      }
+      const failed = await request(app).post(`${url}?force=true`)
+      assert.equal(failed.status, 502)
+      aiAnswer = async () => AI_ANSWER
+      assert.equal(aiCalls, calls + 2)
+
+      // Still one match document, but two logged calls: the old count of match documents
+      // would have let this go on without limit
+      assert.equal(await QualificationMatchModel.countDocuments({ userId: testUser._id }), 1)
+      assert.equal(await countRecentUserAiCalls(testUser._id), 2)
+
+      const blocked = await request(app).post(`${url}?force=true`)
+      assert.equal(blocked.status, 200)
+      assert.equal(blocked.body.limitReached, true)
+      assert.equal(blocked.body.limitScope, 'user')
+      assert.equal(blocked.body.match.percentage, 50)
+
+      const none = await request(app).post(`/tors/${otherTor._id.toString()}/qualification`)
+      assert.equal(none.status, 429)
+      assert.equal(none.body.limitScope, 'user')
+      assert.equal(aiCalls, calls + 2)
+
+      // Other users keep their own budget
+      assert.equal(await countRecentUserAiCalls(new Types.ObjectId()), 0)
+    } finally {
+      env.QUALIFICATION_USER_DAILY_CALL_LIMIT = original
+      aiAnswer = async () => AI_ANSWER
+    }
+  })
+
+  await t.test('the global limit counts every AI call, not match documents', async () => {
+    const original = env.QUALIFICATION_DAILY_CALL_LIMIT
+    // The calls logged so far fill the global budget exactly
+    env.QUALIFICATION_DAILY_CALL_LIMIT = await countRecentAiCalls()
+    try {
+      const calls = aiCalls
+      const response = await request(app).post(`${url}?force=true`)
+      assert.equal(response.body.limitReached, true)
+      assert.equal(response.body.limitScope, 'global')
       assert.equal(aiCalls, calls)
     } finally {
       env.QUALIFICATION_DAILY_CALL_LIMIT = original

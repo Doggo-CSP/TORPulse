@@ -60,7 +60,7 @@ Status legend used throughout: ✅ implemented · ⚠️ partial · ❌ not impl
 |---|:-:|---|
 | ☑ Authorization with scope | ✅ | `modules/auth/scopes.ts`, `requireScope` in `middleware/admin.middleware.ts` |
 | ☑ Rate limit for login attempts | ✅ | `createLoginLimiter` in `middleware/rate-limit.middleware.ts` |
-| ☑ Rate limit for backend APIs | ✅ | `createApiLimiter` in `middleware/rate-limit.middleware.ts`, plus the daily AI quota |
+| ☑ Rate limit for backend APIs | ✅ | `createApiLimiter` in `middleware/rate-limit.middleware.ts`, plus the daily AI quota (system-wide and per user) |
 | ☑ Login timeout | ✅ | `middleware/session-timeout.middleware.ts`, `rolling: true` in `apps/api/app.ts` |
 | ☑ MFA (email OTP) | ✅ | `modules/auth/mfa.ts`, §11.1 |
 | ☐ Compromised-password check | N/A | No password login |
@@ -273,7 +273,7 @@ flowchart LR
 | T14 | R | **Repudiation**: an admin denies changing a role or deleting a TOR. Login activity cannot be traced. | 2 | 2 | 4 | P2 | Transactional audit log for admin actions. Log authentication events. |
 | T15 | T/E | **Vulnerable dependencies** (supply chain) | 2 | 3 | 6 | **P1** | `npm audit`, Semgrep, lockfiles, dependency updates |
 | T16 | I | **Missing transport security**: HTTP in deployment, no HSTS | 2 | 2 | 4 | P2 | TLS-terminating reverse proxy, HSTS, `Secure` cookie |
-| T17 | D | **AI cost exhaustion**: repeated "re-evaluate" calls run up the Gemini bill | 3 | 2 | 6 | **P1** | `QUALIFICATION_DAILY_CALL_LIMIT` (default 200 per rolling 24 h), cached results returned |
+| T17 | D | **AI cost exhaustion**: repeated "re-evaluate" calls run up the Gemini bill | 3 | 2 | 6 | **P1** | Every AI call logged; `QUALIFICATION_DAILY_CALL_LIMIT` (default 200 per rolling 24 h, all users) and `QUALIFICATION_USER_DAILY_CALL_LIMIT` (default 20 per user); cached results returned |
 
 **Implementation order:** P1 (T1–T9, T15, T17) first, then P2 (T10, T11, T14, T16), then P3 (T12, T13). [§8](#8-threat-model-verification-checklist--criterion-16) shows which ones are done.
 
@@ -308,7 +308,7 @@ Backend paths are relative to `app/backend/src/`. ✅ means followed. ⚠️ mea
 | P11 | Psychological acceptability | ✅ | A07 | T2, T6 | V7.3.1, V7.3.2, V14.3.1 |
 | P12 | Accountability | ✅ | A09 | T14 | V16.2.1, V16.3.1, V16.3.2, V16.4.2 |
 
-**Summary:** 9 principles are fully followed and 3 are followed with gaps (P1, P5, P10). All three gaps are small, and two of them come from the same shared resource: one MongoDB account and one AI quota for every user and service.
+**Summary:** 9 principles are fully followed and 3 are followed with gaps (P1, P5, P10). All three gaps are small. Two of them come from one shared MongoDB account for every service.
 
 ### 4.2 How each principle is applied
 
@@ -332,7 +332,7 @@ Backend paths are relative to `app/backend/src/`. ✅ means followed. ⚠️ mea
 - Google sign-in is refused unless the `state`, PKCE verifier and ID-token `nonce` all match, and unless Google says the email is verified (`modules/auth/passport.ts:60-61`, `:92-93`). Login also fails with no email address (`:126-129`) or a suspended account (`:149-151`).
 - A session that is idle for 30 minutes, or older than 7 days, is destroyed. The request then carries on as a guest, so it gets the route's normal 401 (`middleware/session-timeout.middleware.ts:44-64`).
 - The production image sets `NODE_ENV=production` (`app/backend/Dockerfile:22`), so the session cookie is `Secure` and uses the `__Host-` prefix unless someone deliberately runs a development build (`modules/auth/auth.config.ts`, `sessionCookieName`).
-- When the daily AI quota is used up, the API returns the cached result or HTTP 429. It never calls the AI past the limit (`modules/qualification/qualification-match.controller.ts:123-133`).
+- When either daily AI quota is used up, the system-wide one or the user's own, the API returns the cached result or HTTP 429. It never calls the AI past the limit (`modules/qualification/qualification-match.controller.ts:127-148`).
 - When the AI answers an item with a value we cannot read, that requirement counts as `unknown` and scores 0 points (`modules/qualification/qualification-match.service.ts:231`, `:271`). A bad answer can only lower a score, never raise it.
 
 #### P3 Complete mediation ✅
@@ -364,12 +364,9 @@ Backend paths are relative to `app/backend/src/`. ✅ means followed. ⚠️ mea
 - Each service now gets its own set of secret files instead of one shared `.env` (see P1).
 - Each user's data lives in their own documents (`bidder_profiles` is unique on `userId`), and each login has its own server-side session.
 - The API rate limit gives each logged-in user their own bucket, keyed on the user id rather than the IP (`middleware/rate-limit.middleware.ts:42`). One heavy user does not slow down others, even behind the same NAT.
-- **Gaps:**
-  - **The daily AI quota is one counter for everyone, and it counts documents, not AI calls.** `countRecentAiCalls` counts `qualification_matches` documents evaluated in the last 24 hours, with no user filter (`modules/qualification/qualification-precompute.service.ts:125-129`). Each user–TOR pair has only one document, which every new evaluation overwrites (`qualification-match.repository.ts:28-31`). So:
-    1. One user can use up the whole quota for every other user (T17).
-    2. Repeating `POST /api/v1/tors/:id/qualification?force=true` on the **same** TOR calls the AI each time without raising the count. Only the API rate limit (300 requests per 15 minutes) stops it.
-    The fix is a separate log of AI calls with a per-user and a global limit. This is not yet in §10.
-  - All services share one MongoDB account (see P1).
+- **The AI quota is split per user.** Every Gemini call writes one row to `qualification_ai_calls` before the call is made (`modules/qualification/ai-call.model.ts`, `qualification-precompute.service.ts:131-170`). A user who presses evaluate is limited to 20 calls a day of their own (`QUALIFICATION_USER_DAILY_CALL_LIMIT`), so one account cannot use up the system-wide 200 for everyone (T17). Background precompute counts only towards the system-wide limit.
+  - Earlier the quota counted `qualification_matches` documents. Each user–TOR pair has only one, overwritten on every run, so repeating `?force=true` on the same TOR was never counted. The test "repeated runs on the same TOR count against the per-user limit" in `qualification-match.routes.test.ts` covers this.
+- **Gap:** all services share one MongoDB account (see P1).
 
 #### P6 Defense in depth ✅
 
@@ -379,7 +376,7 @@ Backend paths are relative to `app/backend/src/`. ✅ means followed. ⚠️ mea
 - **User data:** router-level `requireAuth` → `requireScope` → handler scoped to `req.user._id` → Zod allow-list validation → Mongoose schema casting (`modules/user/user.routes.ts:29-34`, §5.4, §5.5).
 - **Cross-site attacks:** `SameSite=Lax` cookie → `Origin` check on state-changing requests (`apps/api/app.ts:89`) → single-origin CORS → a strict `default-src 'none'` CSP on the API and a nonce-based CSP on the frontend, with `frame-ancestors 'none'` and HSTS on both (`middleware/security.middleware.ts`, `app/frontend/src/proxy.ts`, `app/frontend/next.config.ts`).
 - **Injection:** Express 5's simple query parser stops `?x[$ne]=` objects, Zod enforces types and lengths, and user search text goes through `escapeRegex` before it becomes a regex (`modules/tor/tor.controller.ts:276`, `:335`). We chose not to turn on Mongoose `sanitizeFilter`, because it would also rewrite the `$in` and `$gte` filters our own code builds (§5.5).
-- **Abuse and cost:** per-IP login limit (10 per 15 minutes) → per-user API limit (300 per 15 minutes) → daily AI quota (`apps/api/app.ts:117-141`).
+- **Abuse and cost:** per-IP login limit (10 per 15 minutes) → per-user API limit (300 per 15 minutes) → daily AI quota per user and for the whole system (`apps/api/app.ts:117-141`, `qualification-precompute.service.ts:161-170`).
 - **Untrusted ZIP and PDF files from e-GP**, checked in order:
   1. the host must be on the outbound allowlist (`lib/outbound.ts`)
   2. download size (`modules/ingestion/adapters/central-egp.adapters.ts:352-356`)
@@ -453,7 +450,7 @@ This table reads §4.1 from the other direction. [§9](#9-mapping-to-owasp-top-1
 | A01 Broken Access Control | P1, P2, P3, P4, P6, P9 | ✅ | All services share one MongoDB account (P1) |
 | A02 Cryptographic Failures | P2, P7, P8 | ✅ | e-GP's hard-coded `RDCrypto` key, which we must use but do not rely on (P8) |
 | A03 Injection | P6 | ✅ | `sanitizeFilter` is off by design, so input checks happen before the query layer (P6) |
-| A04 Insecure Design | P4, P5, P6, P10 | ⚠️ | AI quota is global and counts documents, not calls (P5) |
+| A04 Insecure Design | P4, P5, P6, P10 | ✅ | AI quota check and call log are not atomic, so parallel requests can go a few calls over (P5) |
 | A05 Security Misconfiguration | P1, P9, P10 | ✅ | `.env.example` secret passes the startup check (P10) |
 | A06 Vulnerable and Outdated Components | P7 | ✅ | CodeQL not set up yet (R3) |
 | A07 Identification and Authentication Failures | P2, P3, P4, P6, P7, P11 | ✅ | Rate-limit counters reset on restart (P6) |
@@ -671,7 +668,7 @@ All backend paths are relative to `app/backend/src/`. Four features are implemen
 |---|---|---|
 | **Authorization with scope** | ✅ | See 6.1. |
 | **Rate limit for login attempts** | ✅ | See 6.2. |
-| **Rate limit for backend APIs** | ✅ | See 6.2. The daily AI quota (`QUALIFICATION_DAILY_CALL_LIMIT`, HTTP 429 from `POST /tors/:id/qualification`) remains as an extra cost limit. |
+| **Rate limit for backend APIs** | ✅ | See 6.2. The daily AI quota remains as an extra cost limit: 200 calls system-wide (`QUALIFICATION_DAILY_CALL_LIMIT`) and 20 per user (`QUALIFICATION_USER_DAILY_CALL_LIMIT`), counted per call in `qualification_ai_calls`; HTTP 429 from `POST /tors/:id/qualification`. |
 | **Login timeout** | ✅ | See 6.3. |
 | **Multi-factor authentication (email OTP)** | ✅ | After Google sign-in, a 6-digit code is sent to the verified Google email: 10-minute expiry, 5 attempts, HMAC-stored, constant-time comparison. Lockout emails the owner, and a new device triggers an alert. Details in §11.1. |
 | Compromised-password check | ❌ (N/A) | There are no passwords. Design in §5.1. |
@@ -910,7 +907,7 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 | T4 | P1 | Privilege escalation | `requireAdmin`, Zod strip / `.strict()`, separate role endpoint, last-admin and self guards, transactions | ✅ | `admin.routes.ts:32`, `admin.controller.ts:340-362`, tests |
 | T7 | P1 | Secrets leakage | Env vars, gitignore and dockerignore, startup validation | ✅ | `auth.config.ts:28-43`. Remaining: move the CI secret into GitHub Secrets. |
 | T8 | P1 | Malicious ZIP/PDF | Size, entry, total and ratio limits; zip-slip guard; `%PDF-` magic bytes; temp directory cleanup | ✅ | `central-egp.adapters.ts:62-66,891,899-911` |
-| T17 | P1 | AI cost exhaustion | Daily rolling quota, 429 or cached result | ✅ | `qualification-match.controller.ts:125-135` |
+| T17 | P1 | AI cost exhaustion | Every AI call logged; daily rolling quota system-wide and per user; 429 or cached result | ✅ | `qualification-match.controller.ts:127-151`, `qualification-precompute.service.ts:131-170`; test "repeated runs on the same TOR count against the per-user limit" |
 | T6 | P1 | Session hijack / fixation | httpOnly, SameSite, server-side store, regenerate at login, destroy at logout, 30-min idle and 7-day absolute timeout, sessions deleted on suspension, `__Host-` + `Secure` in the production compose | ✅ | §6.3, §5.10 |
 | T5 | P1 | NoSQL / regex injection | Simple query parser, Zod allow-list validation with length limits, ObjectId checks (bookmarks included), `escapeRegex`; ZAP 0 injection alerts | ✅ | §5.5. `sanitizeFilter` deliberately not enabled. |
 | T2 | P1 | Brute force / API abuse | Login delegated to Google. Login-attempt limiter per IP, API limiter per user/IP, daily AI quota. | ✅ | `middleware/rate-limit.middleware.ts` |
@@ -935,7 +932,7 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 | **A01 Broken Access Control** | `requireAdmin` + per-route `requireScope`; router-level `requireAuth` on `/user`; per-user data scoping; last-admin and self guards; single-origin CORS; Origin check against CSRF | ✅ | V8.2.1, V8.2.2, V8.3.1, V3.4.2, V3.5.1 | Protect `/ingestion/report` |
 | **A02 Cryptographic Failures** | Sessions signed with a ≥ 32-char secret; CSPRNG session ids; no passwords stored; Caddy TLS 1.2/1.3 with Let's Encrypt; HSTS; `__Host-` Secure cookie; MongoDB and SMTP over TLS; TLS to Google, e-GP and Gemini | ✅ | V11.1.1, V11.5.1, V12.1.1, V12.1.2, V12.2.1, V12.2.2, V12.3.1, V12.3.2, V3.3.1 | — |
 | **A03 Injection** | Mongoose object queries; Express 5 simple parser; Zod allow-list validation; `escapeRegex`; ObjectId checks; React escaping and nonce CSP; email output encoding; no `eval`; ZAP found 0 injection issues | ✅ | V1.2.4, V1.2.9, V1.3.2, V1.3.3, V1.3.11, V2.2.1 | `sanitizeFilter` deliberately not enabled (§5.5) |
-| **A04 Insecure Design** | Threat model (§3); SSO-only design; documented business limits and data classification (§11); transactional admin changes; AI quota; rate limits | ✅ | V2.1.3, V2.3.2, V2.3.3, V14.1.1, V15.1.3 | — |
+| **A04 Insecure Design** | Threat model (§3); SSO-only design; documented business limits and data classification (§11); transactional admin changes; AI quota per call, system-wide and per user; rate limits | ✅ | V2.1.3, V2.3.2, V2.3.3, V14.1.1, V15.1.3 | — |
 | **A05 Security Misconfiguration** | Security headers on API and frontend (nonce CSP); MongoDB auth + TLS; secrets as files per service; no `X-Powered-By`; production compose with `NODE_ENV=production` and only 80/443 published; non-root containers; production dev-token guard; env validation | ✅ | V13.2.2, V13.3.1, V13.4.1–V13.4.6, V3.4.1–V3.4.6 | — |
 | **A06 Vulnerable and Outdated Components** | Lockfiles; `npm audit` 0 in both apps; remediation policy; Dependabot; CI audit gate; Semgrep | ✅ | V15.1.1, V15.2.1, V15.2.4 | — |
 | **A07 Identification and Authentication Failures** | Google OIDC with state, PKCE and nonce; emailed second factor; re-authentication for sensitive changes; new-device alerts; session regenerated at login and after MFA; 30-min idle / 7-day absolute timeout; sessions bound to the device; login rate limit | ✅ | V6.3.1, V6.3.3, V6.3.5, V6.8.4, V7.2.4, V7.3.1, V7.3.2, V7.4.1, V7.4.2, V7.5.1, V10.1.2 | — |
@@ -1062,7 +1059,8 @@ Format rules per field are in §5.5. Rules about **combinations** of values, all
 | API requests | per user (per IP for guests) | 300 / 15 min | `rate-limit.middleware.ts` |
 | Sign-in attempts | per IP | 10 / 15 min | `rate-limit.middleware.ts` |
 | MFA code | per sign-in | 5 attempts, 5 sends, 1 send per minute | `mfa.ts` |
-| AI qualification calls | global | 200 / rolling 24 h (`QUALIFICATION_DAILY_CALL_LIMIT`) | `qualification-match.controller.ts`, worker |
+| AI qualification calls | global | 200 / rolling 24 h (`QUALIFICATION_DAILY_CALL_LIMIT`), one `qualification_ai_calls` row per call | `qualification-match.controller.ts`, worker |
+| AI qualification calls (on demand) | user | 20 / rolling 24 h (`QUALIFICATION_USER_DAILY_CALL_LIMIT`) | `qualification-match.controller.ts` |
 | Interests | per user | 50 | `user.validation.ts` |
 | Team, education, certifications, projects | per profile | 10 education, 30 certifications, 100 members per project | `bidder-profile.validation.ts` |
 | List page size | per request | 100 | `admin.validation.ts`, `tor.controller.ts` |
@@ -1142,7 +1140,7 @@ Rules:
   - Google is the identity provider.
 - **Minimum data returned:** every response is built field by field (V14.2.6). Admin user lists show only name, email, role, status and company fields. `knownDevices` is excluded from queries by default (`select: false`).
 - **Browser storage:** no personal data in localStorage, sessionStorage or IndexedDB. Form drafts are kept in memory only, and drafts saved by older versions are deleted. sessionStorage holds one UI flag ("banner hidden"). The only cookie is the session cookie (V14.3.3).
-- **Retention:** enforced automatically by MongoDB TTL indexes (`config/retention.ts`): audit log 1 year, AI match results 180 days, finished AI jobs 30 days, finished notification rows 1 year. Loki deletes logs after 90 days (V14.2.7).
+- **Retention:** enforced automatically by MongoDB TTL indexes (`config/retention.ts`): audit log 1 year, AI match results 180 days, the AI call log 2 days, finished AI jobs 30 days, finished notification rows 1 year. Loki deletes logs after 90 days (V14.2.7).
 
 ### 11.9 Resource-demanding functionality (V15.1.3, V15.2.2)
 

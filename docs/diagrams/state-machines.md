@@ -192,7 +192,7 @@ stateDiagram-v2
 
 - **Debounce:** every profile edit pushes `runAfter` 5 minutes later (`QUALIFICATION_PROFILE_DELAY_MS`), so a user editing field by field triggers one AI call per TOR once they stop.
 - **Sweep** (`sweepMatches()`): queues every ready bidder × candidate TOR pair whose match is missing or stale and that has no `queued` or `processing` job.
-- **Daily limit:** when `QUALIFICATION_DAILY_CALL_LIMIT` (default 200) matches were computed in the last 24 hours, `postponeJob()` puts the job back an hour later and gives back the attempt.
+- **Daily limit:** when `QUALIFICATION_DAILY_CALL_LIMIT` (default 200) AI calls were made in the last 24 hours (counted in `qualification_ai_calls`, one row per call, worker and on-demand together), `postponeJob()` puts the job back an hour later and gives back the attempt.
 - **After `done`:** if the score is 100%, the worker calls `enqueueForUser()`, which creates a `tor_notifications` row (section 4).
 
 ## 4. Notification worker (`tor_notifications`)

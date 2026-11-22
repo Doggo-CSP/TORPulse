@@ -29,6 +29,7 @@ import {
   countRecentAiCalls,
   findCandidateTors,
   isBidderReady,
+  recordAiCall,
   sweepMatches,
 } from '../../modules/qualification/qualification-precompute.service.js'
 import { BidderProfileModel } from '../../modules/user/bidder-profile.model.js'
@@ -69,6 +70,9 @@ export async function processNextJob(workerId: string, scope?: JobScope): Promis
     await postponeJob(job, workerId, BUDGET_RETRY_MS, 'Daily AI call limit reached')
     return true
   }
+
+  // Counted before the call, so a call that fails upstream still uses the daily budget
+  await recordAiCall(user._id, tor._id, 'worker')
 
   try {
     const result = await evaluateQualification(user, profile, tor)

@@ -39,8 +39,13 @@ const qualificationSweepIntervalMs = Number(
 )
 // Wait after a profile edit, so filling in a form field by field costs one AI call per TOR
 const qualificationProfileDelayMs = Number(process.env.QUALIFICATION_PROFILE_DELAY_MS ?? 5 * 60_000)
-// AI calls the precompute worker may make in any 24 hours
+// AI calls the whole system may make in any 24 hours (worker and on-demand together)
 const qualificationDailyCallLimit = Number(process.env.QUALIFICATION_DAILY_CALL_LIMIT ?? 200)
+// On-demand AI calls one user may trigger in any 24 hours, so one user cannot use up the
+// shared quota for everyone
+const qualificationUserDailyCallLimit = Number(
+  process.env.QUALIFICATION_USER_DAILY_CALL_LIMIT ?? 20,
+)
 // Testing only: treat the N latest TORs as open for bids, so closed TORs can be precomputed
 const qualificationTestLatestTors = process.env.QUALIFICATION_TEST_LATEST_TORS?.trim()
   ? Number(process.env.QUALIFICATION_TEST_LATEST_TORS)
@@ -89,8 +94,13 @@ if (!Number.isFinite(qualificationProfileDelayMs) || qualificationProfileDelayMs
   throw new Error('QUALIFICATION_PROFILE_DELAY_MS must be zero or a positive number')
 }
 
-if (!Number.isInteger(qualificationDailyCallLimit) || qualificationDailyCallLimit < 0) {
-  throw new Error('QUALIFICATION_DAILY_CALL_LIMIT must be zero or a positive integer')
+for (const [name, value] of [
+  ['QUALIFICATION_DAILY_CALL_LIMIT', qualificationDailyCallLimit],
+  ['QUALIFICATION_USER_DAILY_CALL_LIMIT', qualificationUserDailyCallLimit],
+] as const) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be zero or a positive integer`)
+  }
 }
 
 if (!Number.isFinite(rateLimitWindowMs) || rateLimitWindowMs <= 0) {
@@ -146,6 +156,7 @@ export const env = {
   QUALIFICATION_SWEEP_INTERVAL_MS: qualificationSweepIntervalMs,
   QUALIFICATION_PROFILE_DELAY_MS: qualificationProfileDelayMs,
   QUALIFICATION_DAILY_CALL_LIMIT: qualificationDailyCallLimit,
+  QUALIFICATION_USER_DAILY_CALL_LIMIT: qualificationUserDailyCallLimit,
   QUALIFICATION_TEST_LATEST_TORS: qualificationTestLatestTors,
   RATE_LIMIT_WINDOW_MS: rateLimitWindowMs,
   RATE_LIMIT_LOGIN_MAX: rateLimitLoginMax,
