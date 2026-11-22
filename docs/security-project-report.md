@@ -281,19 +281,185 @@ flowchart LR
 
 ## 4. Security design principles · Criterion 3
 
-| Principle | How TORPulse applies it | Evidence |
-|---|---|---|
-| **Least privilege** | Only two roles. New accounts always start as `user`. Containers run as non-root `node`. CI has `contents: read` only. | `app/backend/src/modules/auth/passport.ts:50-54`, `app/backend/Dockerfile:30`, `app/frontend/Dockerfile:34`, `.github/workflows/ci.yml` |
-| **Fail-safe defaults** | `requireRole` denies unless the role matches and the account is active. Suspended or deleted users deserialise to "logged out". Login fails if Google returns no email. | `app/backend/src/middleware/admin.middleware.ts:10-19`, `modules/auth/passport.ts:37-40`, `:77-83` |
-| **Complete mediation** | The session stores only the user id. Role and status are re-read from MongoDB on every request, so a role change or suspension takes effect immediately. | `modules/auth/passport.ts:73-83` |
-| **Separation of privilege** | An admin cannot change their own role or status. The last active admin cannot be demoted or suspended. Changes run in a transaction, so two admins demoting each other at once cannot remove every admin. | `modules/admin/admin.controller.ts:340-362` |
-| **Defense in depth** | Access to user data is checked in layers: authentication check → handler scopes by `req.user._id` → Zod validation → Mongoose schema casting. Upstream files are checked for size, then ratio, then path, then magic bytes. | §5.4, §5.5 |
-| **Economy of mechanism** | Authentication is delegated to Google OAuth through Passport, so we do not store passwords. Sessions use proven libraries (express-session, connect-mongo). | `modules/auth/passport.ts` |
-| **Minimise attack surface** | No user file uploads. Only `/auth/me` exposes public user fields. `x-powered-by` is disabled. Outbound hosts are fixed. | `apps/api/app.ts:34`, `modules/auth/auth.routes.ts:28-37` |
-| **Secure defaults / fail securely** | The server refuses to start without the required secrets or with a short `SESSION_SECRET`. The dev session-token tool refuses to run in production. | `modules/auth/auth.config.ts:28-43`, `scripts/dev-session-token.ts` |
-| **Open design** | Security does not depend on hidden code. It rests on secrets (session secret, OAuth client secret) and standard protocols. | — |
-| **Psychological acceptability** | One-click Google sign-in. Users have no password to manage. | `app/frontend/src/app/auth/page.tsx` |
-| **Accountability** | Every admin change writes an audit-log entry (actor, action, target, before/after) in the same transaction as the change. | `modules/admin/audit-log.model.ts`, `admin.controller.ts` (15 call sites) |
+We follow the eight design principles of Saltzer and Schroeder, plus four widely used additions: defense in depth, minimise attack surface, secure defaults and accountability. For each principle, this section shows:
+
+- how the code follows it, with file and line evidence checked at commit `5adaf3c` (OIDC with PKCE, email OTP, security headers, structured logging, outbound allowlist and the production deployment included)
+- which **OWASP Top 10 (2021)** categories it addresses, using the same version as [§9](#9-mapping-to-owasp-top-10-2021-and-asvs--criterion-17)
+- which threats from [§3.3](#33-threat-register-stride-prioritised) it mitigates
+- which ASVS requirements from the team CSV it supports
+- where we do not fully follow it yet
+
+Backend paths are relative to `app/backend/src/`. ✅ means followed. ⚠️ means followed with known gaps.
+
+### 4.1 Principles at a glance
+
+| # | Principle | Status | OWASP Top 10 2021 | Threats | ASVS |
+|---|---|:-:|---|---|---|
+| P1 | Least privilege | ⚠️ | A01, A05, A08 | T4, T7, T9 | V8.2.1, V13.2.2, V13.3.2 |
+| P2 | Fail-safe defaults | ✅ | A01, A02, A07 | T1, T4, T6, T17 | V8.3.1, V7.3.1, V10.1.2, V16.5.3 |
+| P3 | Complete mediation | ✅ | A01, A07 | T3, T4, T6 | V8.2.1, V8.2.2, V8.3.1, V7.4.2 |
+| P4 | Separation of privilege | ✅ | A01, A04, A07 | T4 | V2.3.3, V8.2.1, V6.3.3 |
+| P5 | Least common mechanism | ⚠️ | A04 | T2, T17 | V2.4.1, V13.3.2 |
+| P6 | Defense in depth | ✅ | A01, A03, A04, A07, A08 | T2, T3, T5, T8, T10 | V1.2.4, V1.2.9, V2.4.1, V3.4.3, V5.2.3 |
+| P7 | Economy of mechanism | ✅ | A02, A06, A07 | T2, T15 | V6.3.1, V15.2.4 |
+| P8 | Open design | ✅ | A02 | T7 | V11.3.2, V13.3.1 |
+| P9 | Minimise attack surface | ✅ | A01, A05, A10 | T9, T12, T13 | V1.3.6, V13.4.5, V13.4.6, V15.2.3 |
+| P10 | Secure defaults and failing securely | ⚠️ | A04, A05 | T6, T7, T11 | V13.2.3, V16.5.1, V16.5.3 |
+| P11 | Psychological acceptability | ✅ | A07 | T2, T6 | V7.3.1, V7.3.2, V14.3.1 |
+| P12 | Accountability | ✅ | A09 | T14 | V16.2.1, V16.3.1, V16.3.2, V16.4.2 |
+
+**Summary:** 9 principles are fully followed and 3 are followed with gaps (P1, P5, P10). All three gaps are small, and two of them come from the same shared resource: one MongoDB account and one AI quota for every user and service.
+
+### 4.2 How each principle is applied
+
+#### P1 Least privilege ⚠️
+
+*Every user, process and token gets only the access it needs.*
+
+- **Users:** there are only two roles, and every new account starts as `user`. The role is set with `$setOnInsert`, so a later login cannot change it (`modules/auth/passport.ts:140-144`).
+- **Scopes:** each role grants a fixed list of scopes, and each route asks only for the one it needs (`modules/auth/scopes.ts:7-41`). Reading the user list needs `users:read`; changing a role needs `users:manage` (`modules/admin/admin.routes.ts:40`, `:43`). A suspended account holds no scopes at all (`scopes.ts:49-55`).
+- **Admin functions:** one guard covers every admin route: `router.use(requireAdmin)` (`admin.routes.ts:34`).
+- **Secrets:** in production every secret is a Docker secret file, and each container gets only the ones it uses (`config/secrets.ts:7-21`, `docker-compose.prod.yml:120-158`). The queue producer, for example, gets only the database URI and the internal CA, and no worker gets the session secret or the Google client secret.
+- **Processes:** both container images run as the non-root `node` user (`app/backend/Dockerfile:30`, `app/frontend/Dockerfile:35`).
+- **CI:** the GitHub Actions token is read-only, `permissions: contents: read` (`.github/workflows/ci.yml:13-14`).
+- **Gap:** production MongoDB has a least-privilege application account, but the API and all four workers share it. The ingestion worker could therefore read the `sessions` collection, which it never needs. One account per service would close this (V13.2.2).
+
+#### P2 Fail-safe defaults ✅
+
+*Access is denied unless it is explicitly granted. An error or missing value ends in "no".*
+
+- `requireRole` returns 401 without a session and 403 unless the role matches **and** the account is active (`middleware/admin.middleware.ts:9-24`). `requireScope` returns 403 with the list of missing scopes unless the account holds every scope the route asks for (`:44-63`).
+- Google sign-in is refused unless the `state`, PKCE verifier and ID-token `nonce` all match, and unless Google says the email is verified (`modules/auth/passport.ts:60-61`, `:92-93`). Login also fails with no email address (`:126-129`) or a suspended account (`:149-151`).
+- A session that is idle for 30 minutes, or older than 7 days, is destroyed. The request then carries on as a guest, so it gets the route's normal 401 (`middleware/session-timeout.middleware.ts:44-64`).
+- The production image sets `NODE_ENV=production` (`app/backend/Dockerfile:22`), so the session cookie is `Secure` and uses the `__Host-` prefix unless someone deliberately runs a development build (`modules/auth/auth.config.ts`, `sessionCookieName`).
+- When the daily AI quota is used up, the API returns the cached result or HTTP 429. It never calls the AI past the limit (`modules/qualification/qualification-match.controller.ts:123-133`).
+- When the AI answers an item with a value we cannot read, that requirement counts as `unknown` and scores 0 points (`modules/qualification/qualification-match.service.ts:231`, `:271`). A bad answer can only lower a score, never raise it.
+
+#### P3 Complete mediation ✅
+
+*Every request is checked against the current permissions. Earlier decisions are not cached.*
+
+- The session stores only the user id. Role and status are read again from MongoDB on every request, and a suspended account is dropped at that point (`modules/auth/passport.ts:174-180`). A role change or suspension therefore applies to the user's very next request.
+- Suspending an account also deletes all of its stored sessions at once (`modules/auth/session-revocation.ts`, called from `modules/admin/admin.controller.ts:528`).
+- Scopes are worked out from that fresh role and status on every request (`modules/auth/scopes.ts:49-55`). They are never stored in the session or trusted from the client. `/auth/me` sends them to the frontend only so it can hide buttons.
+- Session age is checked on every request against `lastSeenAt` and `authAt` kept on the server (`middleware/session-timeout.middleware.ts:40-69`), so an old cookie cannot be replayed.
+- No user-data endpoint takes a user id from the client. Every query is keyed on `req.user._id` (§5.4). Team members and past projects are looked up inside the caller's own profile, so another user's sub-document id returns 404 (`modules/user/bidder-profile.controller.ts:287-292`).
+- Every `/api/v1/user/*` route passes a router-level `requireAuth` (`modules/user/user.routes.ts:29`), so a new handler cannot forget the login check.
+
+#### P4 Separation of privilege ✅
+
+*No single action, even by an admin, can remove the system's own safeguards.*
+
+- An admin cannot change their own role or status (`modules/admin/admin.controller.ts:402`, `:509`).
+- The last active admin cannot be demoted or suspended (`:407`, `:515`).
+- Both checks run inside a MongoDB transaction (`:348`, `:453`), so two admins demoting each other at the same moment cannot remove every admin.
+- Sensitive admin actions need a **fresh sign-in** as well as the admin role: changing a role or status, changing settings and deleting a TOR all pass `requireRecentAuth` (`admin.routes.ts:43`, `:47`, `:52`, `:58`).
+- Every sign-in also needs a one-time code sent to the account's email (§6). Until the code is entered, the session is treated as logged out (`modules/auth/mfa.ts`). The code goes to the same Google address, so this mainly protects against a stolen session cookie or a sign-in from someone else's browser, not against a fully compromised Google account.
+
+#### P5 Least common mechanism ⚠️
+
+*Users and components should share as little as possible, so one cannot affect another.*
+
+- The API and the four workers run as separate containers and share only MongoDB. There are no shared in-process queues (`docs/system-architecture.md` §1).
+- Each service now gets its own set of secret files instead of one shared `.env` (see P1).
+- Each user's data lives in their own documents (`bidder_profiles` is unique on `userId`), and each login has its own server-side session.
+- The API rate limit gives each logged-in user their own bucket, keyed on the user id rather than the IP (`middleware/rate-limit.middleware.ts:42`). One heavy user does not slow down others, even behind the same NAT.
+- **Gaps:**
+  - **The daily AI quota is one counter for everyone, and it counts documents, not AI calls.** `countRecentAiCalls` counts `qualification_matches` documents evaluated in the last 24 hours, with no user filter (`modules/qualification/qualification-precompute.service.ts:125-129`). Each user–TOR pair has only one document, which every new evaluation overwrites (`qualification-match.repository.ts:28-31`). So:
+    1. One user can use up the whole quota for every other user (T17).
+    2. Repeating `POST /api/v1/tors/:id/qualification?force=true` on the **same** TOR calls the AI each time without raising the count. Only the API rate limit (300 requests per 15 minutes) stops it.
+    The fix is a separate log of AI calls with a per-user and a global limit. This is not yet in §10.
+  - All services share one MongoDB account (see P1).
+
+#### P6 Defense in depth ✅
+
+*Several independent layers protect each asset, so one failure is not enough for an attack.*
+
+- **Admin actions:** `requireAdmin` on the router → `requireScope` on the route → fresh sign-in for sensitive actions → the handler's own self-change and last-admin checks (`modules/admin/admin.routes.ts:34-58`, §5.3).
+- **User data:** router-level `requireAuth` → `requireScope` → handler scoped to `req.user._id` → Zod allow-list validation → Mongoose schema casting (`modules/user/user.routes.ts:29-34`, §5.4, §5.5).
+- **Cross-site attacks:** `SameSite=Lax` cookie → `Origin` check on state-changing requests (`apps/api/app.ts:89`) → single-origin CORS → a strict `default-src 'none'` CSP on the API and a nonce-based CSP on the frontend, with `frame-ancestors 'none'` and HSTS on both (`middleware/security.middleware.ts`, `app/frontend/src/proxy.ts`, `app/frontend/next.config.ts`).
+- **Injection:** Express 5's simple query parser stops `?x[$ne]=` objects, Zod enforces types and lengths, and user search text goes through `escapeRegex` before it becomes a regex (`modules/tor/tor.controller.ts:276`, `:335`). We chose not to turn on Mongoose `sanitizeFilter`, because it would also rewrite the `$in` and `$gte` filters our own code builds (§5.5).
+- **Abuse and cost:** per-IP login limit (10 per 15 minutes) → per-user API limit (300 per 15 minutes) → daily AI quota (`apps/api/app.ts:117-141`).
+- **Untrusted ZIP and PDF files from e-GP**, checked in order:
+  1. the host must be on the outbound allowlist (`lib/outbound.ts`)
+  2. download size (`modules/ingestion/adapters/central-egp.adapters.ts:352-356`)
+  3. entry and total uncompressed size, and compression ratio (`:874-885`)
+  4. entry path, against zip slip (`:910-912`)
+  5. `%PDF-` magic bytes (`:893`)
+  6. the temporary directory is always deleted afterwards (`modules/ingestion/extraction/opendataloader-text-extractor.ts:72`)
+- **Note:** the rate-limit counters live in memory, so they reset when the API restarts. That is fine for the single API container in production, but several replicas would need a shared store.
+
+#### P7 Economy of mechanism ✅
+
+*Keep security mechanisms small, simple and few, so they can be checked.*
+
+- We store no passwords. Login is delegated to Google OIDC through Passport, so password storage, reset and breach handling are not ours to build (§5.1).
+- Proven libraries do the hard parts: express-session with connect-mongo for sessions, `helmet` for headers, `express-rate-limit` for limits, `pino` for logs.
+- One validation library, Zod, is used for every write endpoint. Scopes are one fixed table in one file (`modules/auth/scopes.ts`).
+- **Note:** `escapeRegex` is still copied in three files (`modules/admin/admin.controller.ts:63`, `modules/category/category.repository.ts:8`, `modules/tor/tor.controller.ts:276`). The copies are identical today. One shared helper would make sure they stay that way.
+
+#### P8 Open design ✅
+
+*Security must not depend on keeping the design secret. It rests on keys and standard protocols.*
+
+- Our security relies on secrets kept outside the code (session secret, OAuth client secret, API keys) and on standard mechanisms: OpenID Connect with PKCE, HMAC-signed session cookies and TLS.
+- The full design is documented in the repository (`docs/system-architecture.md`, §11 of this report). Publishing it gives an attacker nothing, because no security control depends on it being hidden.
+- **Example of the opposite:** e-GP's public client encrypts requests with a hard-coded passphrase, `RDCrypto` (`modules/ingestion/adapters/central-egp.adapters.ts:721-757`). We have to match that protocol, but we do not rely on it to protect our own data. This is recorded as an exception (V11.3.2).
+
+#### P9 Minimise attack surface ✅
+
+*Expose as few entry points, features and details as possible.*
+
+- Users cannot upload files. The only files we process come from fixed e-GP and BMA hosts.
+- Outbound HTTP goes through one allowlist: three e-GP and BMA hosts plus Google's signing keys, HTTPS only, with redirects followed only to listed hosts. Anything else is refused and logged (`lib/outbound.ts`). Gemini, Google sign-in and SMTP use their own fixed hosts. No URL supplied by a user is ever fetched (T13).
+- In production only Caddy is published to the network, on ports 80 and 443. Grafana is bound to `127.0.0.1` on the host only. MongoDB, the API and the frontend have no host ports (`docker-compose.prod.yml:50-53`, `:83`, `:114`, `:164`, `:210`).
+- `/api/v1/ingestion/report` now needs `requireAdmin` and the `ingestion:read` scope (`modules/ingestion/ingestion-report.routes.ts:14`).
+- `/auth/me` returns only seven fields: id, name, email, image, role, status and scopes (`modules/auth/auth.routes.ts:262-283`).
+- Neither the API nor Next.js sends `X-Powered-By` (`apps/api/app.ts:71`, `app/frontend/next.config.ts:19`).
+- The JSON body limit is 1 MB (`apps/api/app.ts:91-92`), and the production build leaves out tests and development scripts (`app/backend/tsconfig.build.json:5-13`).
+
+#### P10 Secure defaults and failing securely ⚠️
+
+*The system starts in a safe state, refuses unsafe configurations, and errors do not open a way in.*
+
+- The API refuses to start without the OAuth settings or with a `SESSION_SECRET` shorter than 32 characters (`modules/auth/auth.config.ts:52-56`). The session timeouts must be positive numbers (`:65-66`). `config/env.ts` checks 15 more settings at startup (`config/env.ts:55-122`).
+- The development session-token tool refuses to run when `NODE_ENV=production` (`scripts/dev-session-token.ts:22-23`).
+- The production Docker image sets `NODE_ENV=production` (`app/backend/Dockerfile:22`).
+- Errors fail closed. A 500 returns a generic message and a request id, and the full error goes only to the log. Malformed JSON and oversized bodies get a 400 (`middleware/error.middleware.ts:16-40`). An uncaught exception is logged and the process restarts (`:45-53`).
+- **Gap:** the placeholder `SESSION_SECRET` in `app/backend/.env.example:19` is 42 characters long, so it passes the 32-character check. A copied example file would start without an error, signing every session with a publicly known secret. The startup check should also reject this placeholder (V13.2.3).
+
+#### P11 Psychological acceptability ✅
+
+*Security should be easy to use correctly, or people will work around it.*
+
+- Users sign in with Google. There is no password to remember or reuse.
+- The idle timeout is *rolling* (`rolling: true`, `apps/api/app.ts:107`). Every request moves the 30-minute expiry forward, so someone who is working is never logged out mid-task. Only an abandoned session expires.
+- When the login limit is hit, the user goes back to the sign-in page with a Thai "too many attempts" message instead of a raw error (`middleware/rate-limit.middleware.ts:29-31`, `app/frontend/src/app/auth/page.tsx`).
+- Logging out does what users expect: the browser's saved drafts and session data are cleared as well as the server session (`app/frontend/src/hooks/use-auth.ts:61-69`). Profile drafts are now kept in memory only and never written to browser storage (`app/frontend/src/hooks/use-local-draft.ts`).
+
+#### P12 Accountability ✅
+
+*Every important action can be traced to who did it and when.*
+
+- Every admin change writes an audit-log entry with actor, action, target, and before and after values. The entry is written **in the same transaction** as the change, so a change cannot happen without its record: 11 call sites in `modules/admin/admin.controller.ts`, plus system ingestion runs in `apps/queue-producer/queue-producer.ts:247`. There is no API to edit or delete audit entries.
+- Security events go to structured JSON logs with a request id (`lib/logger.ts`, `middleware/request-log.middleware.ts`), stored in a separate Loki instance: sign-in success and failure, MFA, logout, new devices, 401/403 denials, CSRF blocks, rate-limit blocks, session expiry and revocation, and blocked outbound requests.
+
+### 4.3 OWASP Top 10 coverage by principle
+
+This table reads §4.1 from the other direction. [§9](#9-mapping-to-owasp-top-10-2021-and-asvs--criterion-17) lists the concrete controls for each category. This table shows which principles those controls come from.
+
+| OWASP Top 10 2021 | Principles applied | Status | Weakest point today |
+|---|---|:-:|---|
+| A01 Broken Access Control | P1, P2, P3, P4, P6, P9 | ✅ | All services share one MongoDB account (P1) |
+| A02 Cryptographic Failures | P2, P7, P8 | ✅ | e-GP's hard-coded `RDCrypto` key, which we must use but do not rely on (P8) |
+| A03 Injection | P6 | ✅ | `sanitizeFilter` is off by design, so input checks happen before the query layer (P6) |
+| A04 Insecure Design | P4, P5, P6, P10 | ⚠️ | AI quota is global and counts documents, not calls (P5) |
+| A05 Security Misconfiguration | P1, P9, P10 | ✅ | `.env.example` secret passes the startup check (P10) |
+| A06 Vulnerable and Outdated Components | P7 | ✅ | CodeQL not set up yet (R3) |
+| A07 Identification and Authentication Failures | P2, P3, P4, P6, P7, P11 | ✅ | Rate-limit counters reset on restart (P6) |
+| A08 Software and Data Integrity Failures | P1, P6 | ✅ | CI test secret not yet in GitHub Secrets (R13) |
+| A09 Security Logging and Monitoring Failures | P12 | ✅ | — |
+| A10 Server-Side Request Forgery | P6, P9 | ✅ | — |
 
 ---
 
