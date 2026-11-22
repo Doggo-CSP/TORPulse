@@ -3,6 +3,7 @@ import passport from 'passport'
 import type { Profile, VerifyCallback } from 'passport-google-oauth20'
 import type { Types } from 'mongoose'
 
+import { securityEvent } from '../../lib/logger.js'
 import type { ApiAuthConfig } from './auth.config.js'
 import {
   createGoogleIdTokenVerifier,
@@ -22,6 +23,7 @@ declare global {
       image: string | null
       role?: 'admin' | 'user'
       status?: 'active' | 'suspended'
+      sessionReview?: { reason: 'email_changed'; at: Date } | null
     }
   }
 }
@@ -129,6 +131,12 @@ export const createPassport = (
               return
             }
 
+            // The sign-in code goes to this email, so a new address is a changed authentication
+            // factor: record it so the user is offered to end their other sessions (ASVS V7.4.3)
+            const emailChanged = Boolean(
+              await User.exists({ googleId: profile.id, email: { $ne: email } }),
+            )
+
             const user = await User.findOneAndUpdate(
               { googleId: profile.id },
               {
@@ -136,6 +144,9 @@ export const createPassport = (
                   name: profile.displayName || email,
                   email,
                   image: profile.photos?.[0]?.value ?? null,
+                  ...(emailChanged
+                    ? { sessionReview: { reason: 'email_changed', at: new Date() } }
+                    : {}),
                 },
                 $setOnInsert: {
                   googleId: profile.id,
@@ -149,6 +160,15 @@ export const createPassport = (
             if (!user || user.status === 'suspended') {
               done(null, false, { mode, reason: 'suspended' } satisfies GoogleAuthInfo)
               return
+            }
+
+            if (emailChanged) {
+              // Addresses are not logged (V16.2.5); the event says only that the factor changed
+              securityEvent(
+                'auth.factor.changed',
+                { requestId: req.requestId, userId: user._id.toString(), factor: 'email' },
+                'info',
+              )
             }
 
             done(null, user, { mode } satisfies GoogleAuthInfo)

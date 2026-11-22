@@ -16,6 +16,7 @@ import {
 import { generateNonce } from './oidc.js'
 import type { GoogleAuthInfo } from './passport.js'
 import { scopesFor } from './scopes.js'
+import { revokeUserSessions } from './session-revocation.js'
 import { User } from './user.model.js'
 
 interface AuthRouterOptions {
@@ -278,8 +279,55 @@ export const createAuthRouter = (
         ...(typeof reauthAt === 'number'
           ? { reauthValidUntil: new Date(reauthAt + RECENT_AUTH_MS).toISOString() }
           : {}),
+        ...(req.user.sessionReview
+          ? {
+              sessionReview: {
+                reason: req.user.sessionReview.reason,
+                at: new Date(req.user.sessionReview.at).toISOString(),
+              },
+            }
+          : {}),
       },
     })
+  })
+
+  // ---- Sign out other devices (ASVS V7.4.3) ----
+  // Always available from the profile page, and offered after an authentication factor changes
+  // (sessionReview above). Keeps the caller's own session. Either choice clears the offer.
+  router.post('/sessions/revoke-others', (req, res, next) => {
+    if (!req.user) {
+      res.status(401).json({ success: false, code: 'UNAUTHENTICATED' })
+      return
+    }
+    const userId = req.user._id
+    void (async () => {
+      const revoked = await revokeUserSessions(userId, { exceptSessionId: req.sessionID })
+      await User.updateOne({ _id: userId }, { $set: { sessionReview: null } })
+      securityEvent(
+        'session.revoked_others',
+        { ...context(req), userId: userId.toString(), revoked },
+        'info',
+      )
+      res.json({ success: true, revoked })
+    })().catch(next)
+  })
+
+  router.post('/sessions/review/dismiss', (req, res, next) => {
+    if (!req.user) {
+      res.status(401).json({ success: false, code: 'UNAUTHENTICATED' })
+      return
+    }
+    const userId = req.user._id
+    User.updateOne({ _id: userId }, { $set: { sessionReview: null } })
+      .then(() => {
+        securityEvent(
+          'session.review_dismissed',
+          { ...context(req), userId: userId.toString() },
+          'info',
+        )
+        res.json({ success: true })
+      })
+      .catch(next)
   })
 
   router.post('/logout', (req, res, next) => {

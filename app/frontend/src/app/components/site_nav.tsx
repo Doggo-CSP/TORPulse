@@ -19,17 +19,31 @@ import {
 } from "@/components/navbar";
 import { ShieldCheckIcon,
   ArrowRightStartOnRectangleIcon,
+  ComputerDesktopIcon,
   ChevronDownIcon,
   Cog8ToothIcon,
   UserIcon,
 } from "@heroicons/react/16/solid";
 import { useAuth } from "@/hooks/use-auth";
+import { SessionReviewBanner } from "@/components/session-review-banner";
 
 export function SiteNav() {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, signOut, revokeOtherSessions, dismissSessionReview } = useAuth();
   const isAdmin = !loading && user?.role === "admin";
 
+  // Always available from the account menu (ASVS V7.4.3)
+  const signOutOtherDevices = async () => {
+    if (!window.confirm("ออกจากระบบในอุปกรณ์อื่นทั้งหมด? อุปกรณ์นี้จะยังเข้าสู่ระบบอยู่")) return;
+    try {
+      const revoked = await revokeOtherSessions();
+      window.alert(`ออกจากระบบในอุปกรณ์อื่นแล้ว ${revoked} รายการ`);
+    } catch {
+      window.alert("ทำรายการไม่สำเร็จ กรุณาลองใหม่");
+    }
+  };
+
   return (
+    <>
     <Navbar>
       {/* Brand logo */}
       <NavbarItem href="/" aria-label="หน้าแรก">
@@ -79,6 +93,10 @@ export function SiteNav() {
                 <ShieldCheckIcon className="size-4" />
                 <DropdownLabel>จัดการสิทธิ์การเข้าถึงบัญชี Google</DropdownLabel>
               </DropdownItem>
+              <DropdownItem onClick={() => void signOutOtherDevices()}>
+                <ComputerDesktopIcon className="size-4" />
+                <DropdownLabel>ออกจากระบบในอุปกรณ์อื่น</DropdownLabel>
+              </DropdownItem>
               <DropdownDivider />
               <DropdownItem onClick={() => void signOut()}>
                 <ArrowRightStartOnRectangleIcon className="size-4" />
@@ -97,5 +115,9 @@ export function SiteNav() {
         )}
       </NavbarSection>
     </Navbar>
+    {user?.sessionReview && (
+      <SessionReviewBanner onRevoke={revokeOtherSessions} onDismiss={dismissSessionReview} />
+    )}
+    </>
   );
 }

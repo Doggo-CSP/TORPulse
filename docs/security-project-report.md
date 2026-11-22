@@ -11,10 +11,9 @@
 
 | Name | GitHub | Student ID |
 |---|---|---|
-| Chitiwat Phajan | Chitiwat Phajan | _TODO_ |
-| Kantapon Hemmadhun | Kantapon Hemmadhun | _TODO_ |
-| Earth | Xeei | _TODO_ |
-| _TODO_ | negativeix | _TODO_ |
+| Chitiwat Phajan | Chitiwat Phajan | 6710545539 |
+| Kantapon Hemmadhun | Kantapon Hemmadhun | 6510545276 |
+| Earth | Xeei | 6710545849 |
 
 ### How this report maps to the grading criteria
 
@@ -150,10 +149,10 @@ We use **OWASP ASVS v5.0**. We went through all 345 requirements and marked each
 | Total ASVS v5 requirements | 345 |
 | Not related to TORPulse | 180 |
 | **Planned** | **165** (L1: 47 · L2: 100 · L3: 18) |
-| ✅ Implemented | 164 |
+| ✅ Implemented | 165 |
 | ⚠️ Partial | 0 |
 | ❌ Not implemented | 0 |
-| ➖ N/A after review | 1 |
+| ➖ N/A after review | 0 |
 
 ### 2.1 Planned requirements by chapter
 
@@ -161,24 +160,24 @@ The table below is generated from the CSV, using the report's status legend afte
 
 | Chapter | Planned | ✅ | ⚠️ | ❌ | ➖ |
 |---|---:|---:|---:|---:|---:|
-| V1 Encoding and Sanitization | 13 | 10 | 3 | 0 | 0 |
-| V2 Validation and Business Logic | 10 | 6 | 3 | 1 | 0 |
-| V3 Web Frontend Security | 19 | 16 | 2 | 1 | 0 |
-| V4 API and Web Service | 5 | 1 | 4 | 0 | 0 |
-| V5 File Handling | 8 | 7 | 0 | 1 | 0 |
-| V6 Authentication | 6 | 2 | 3 | 1 | 0 |
-| V7 Session Management | 15 | 11 | 1 | 2 | 1 |
-| V8 Authorization | 6 | 4 | 0 | 2 | 0 |
+| V1 Encoding and Sanitization | 13 | 13 | 0 | 0 | 0 |
+| V2 Validation and Business Logic | 10 | 10 | 0 | 0 | 0 |
+| V3 Web Frontend Security | 19 | 19 | 0 | 0 | 0 |
+| V4 API and Web Service | 5 | 5 | 0 | 0 | 0 |
+| V5 File Handling | 8 | 8 | 0 | 0 | 0 |
+| V6 Authentication | 6 | 6 | 0 | 0 | 0 |
+| V7 Session Management | 15 | 15 | 0 | 0 | 0 |
+| V8 Authorization | 6 | 6 | 0 | 0 | 0 |
 | V9 Self-contained Tokens | 1 | 1 | 0 | 0 | 0 |
-| V10 OAuth and OIDC | 5 | 2 | 0 | 3 | 0 |
-| V11 Cryptography | 9 | 8 | 0 | 1 | 0 |
-| V12 Secure Communication | 6 | 4 | 1 | 1 | 0 |
-| V13 Configuration | 16 | 5 | 7 | 4 | 0 |
-| V14 Data Protection | 11 | 2 | 3 | 6 | 0 |
-| V15 Secure Coding and Architecture | 18 | 7 | 8 | 3 | 0 |
-| V16 Security Logging and Error Handling | 17 | 2 | 7 | 8 | 0 |
+| V10 OAuth and OIDC | 5 | 5 | 0 | 0 | 0 |
+| V11 Cryptography | 9 | 9 | 0 | 0 | 0 |
+| V12 Secure Communication | 6 | 6 | 0 | 0 | 0 |
+| V13 Configuration | 16 | 16 | 0 | 0 | 0 |
+| V14 Data Protection | 11 | 11 | 0 | 0 | 0 |
+| V15 Secure Coding and Architecture | 18 | 18 | 0 | 0 | 0 |
+| V16 Security Logging and Error Handling | 17 | 17 | 0 | 0 | 0 |
 | V17 WebRTC | 0 | 0 | 0 | 0 | 0 |
-| **Total** | **165** | **88** | **42** | **34** | **1** |
+| **Total** | **165** | **165** | **0** | **0** | **0** |
 
 [Appendix A](#appendix-a-full-asvs-requirement-list) lists all 345 requirements with code evidence. Statuses use the report legend (✅ / ⚠️ / ❌ / ➖). Where the code review differs from the team's CSV self-assessment (34 rows), the Note column gives the CSV value and the reason.
 
@@ -978,11 +977,12 @@ The session then records `reauthAt`, valid for 5 minutes. `returnTo` must be a s
 
 **Consent** (V10.7.3): the account menu links to Google's "Third-party apps & services" page (`myaccount.google.com/connections`). There the user can see the access granted to TORPulse and revoke it.
 
-### 11.2 Sessions (V3.3.3, V7.4.2, V7.4.4)
+### 11.2 Sessions (V3.3.3, V7.4.2, V7.4.3, V7.4.4)
 
 - Cookie `__Host-torpulse.sid` in production: `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no `Domain`. It isn't shared with other hosts, so the `__Host-` prefix always applies there. Plain-HTTP local development uses `torpulse.sid`.
 - Session lifetime: 30-minute idle timeout and 7-day absolute lifetime (§6.3).
 - Suspending an account deletes all of its stored sessions (`modules/auth/session-revocation.ts`). Suspended accounts are also refused on every request.
+- **Sign out other devices (V7.4.3).** The only authentication factor a user can change is the email the sign-in code is sent to, which comes from their Google account. When a sign-in returns a new email for the same Google `sub`, the account gets a `sessionReview` flag and an `auth.factor.changed` event is logged (the addresses are not). After MFA, a banner offers to sign out every other device; `POST /auth/sessions/revoke-others` deletes all of the user's other stored sessions and keeps the current one. Choosing "keep" (`POST /auth/sessions/review/dismiss`) also clears the flag. The same action is in the account menu at any time.
 - Every signed-in page shows a logout control: the account menu on all pages, and a button on onboarding.
 
 ### 11.3 Contextual (adaptive) authorization decisions (V8.1.4, V8.2.4, V6.3.5)
@@ -1209,7 +1209,7 @@ Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASV
 | V4 API and Web Service | 5 | 5 | 0 | 0 | 0 | 11 |
 | V5 File Handling | 8 | 8 | 0 | 0 | 0 | 5 |
 | V6 Authentication | 6 | 6 | 0 | 0 | 0 | 41 |
-| V7 Session Management | 15 | 14 | 0 | 0 | 1 | 4 |
+| V7 Session Management | 15 | 15 | 0 | 0 | 0 | 4 |
 | V8 Authorization | 6 | 6 | 0 | 0 | 0 | 7 |
 | V9 Self-contained Tokens | 1 | 1 | 0 | 0 | 0 | 6 |
 | V10 OAuth and OIDC | 5 | 5 | 0 | 0 | 0 | 31 |
@@ -1220,7 +1220,7 @@ Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASV
 | V15 Secure Coding and Architecture | 18 | 18 | 0 | 0 | 0 | 3 |
 | V16 Security Logging and Error Handling | 17 | 17 | 0 | 0 | 0 | 0 |
 | V17 WebRTC | 0 | 0 | 0 | 0 | 0 | 12 |
-| **Total** | **165** | **164** | **0** | **0** | **1** | **180** |
+| **Total** | **165** | **165** | **0** | **0** | **0** | **180** |
 
 #### V1 Encoding and Sanitization
 
@@ -1464,7 +1464,7 @@ Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASV
 | V7.3.2 | There is an absolute maximum session lifetime such that re-authentication is enforced according to risk analysis and… | 2 | ✅ | 7-day absolute lifetime from `authAt` (`app/backend/src/middleware/session-timeout.middleware.ts`) | — |
 | V7.4.1 | When session termination is triggered (such as logout or expiration), the application disallows any further use of the… | 1 | ✅ | Logout and timeout destroy the server-side session; a reused cookie gets 401 (§6.3 check) | — |
 | V7.4.2 | The application terminates all active sessions when a user account is disabled or deleted (such as an employee leaving the… | 1 | ✅ | Suspending a user deletes all their stored sessions (`app/backend/src/modules/auth/session-revocation.ts`); suspended users are also refused in `deserializeUser` | CSV: To do. Implemented 21 Nov 2026 |
-| V7.4.3 | The application gives the option to terminate all other active sessions after a successful change or removal of any… | 2 | ➖ N/A | — | CSV: Done. The app manages no authentication factors (Google SSO), so there is nothing to change |
+| V7.4.3 | The application gives the option to terminate all other active sessions after a successful change or removal of any… | 2 | ✅ | The sign-in code goes to the Google account email, so a new email for the same Google account is a changed factor: `passport.ts` sets `sessionReview` and logs `auth.factor.changed`; after MFA a banner offers "sign out other devices" (`components/session-review-banner.tsx`). `POST /auth/sessions/revoke-others` keeps only the current session (`session-revocation.ts`, `auth.routes.ts`); also in the account menu at any time. Tested in `auth.flow.test.ts` | CSV: Done. Earlier marked ➖ (no factors to change); implemented 22 Nov 2026 |
 | V7.4.4 | All pages that require authentication have easy and visible access to logout functionality. | 2 | ✅ | Logout in the account menu on every page and a button on onboarding | CSV: In progress. |
 | V7.5.1 | The application requires full re-authentication before allowing modifications to sensitive account attributes which may… | 2 | ✅ | Role/status changes, settings, deletions and contact-email changes need a Google re-auth within 5 minutes (`requireRecentAuth`) | CSV: To do. |
 | V7.6.1 | Session lifetime and termination between Relying Parties (RPs) and Identity Providers (IdPs) behave as documented, requiring… | 2 | ✅ | — | — |

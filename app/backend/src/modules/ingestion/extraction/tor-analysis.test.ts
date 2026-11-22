@@ -88,3 +88,24 @@ test('lists every category from the database in the system prompt', () => {
   assert.match(prompt, /"gov_cloud": Gov Cloud \(คลาวด์ภาครัฐ\)\./)
   assert.match(prompt, /"primaryCategory"/)
 })
+
+test('asks for a rubric-based confidence score instead of a placeholder value', () => {
+  const prompt = buildSystemPrompt(CATEGORY_SEED)
+
+  assert.doesNotMatch(prompt, /"confidence": 0\.0/)
+  assert.match(prompt, /confidence rubric/)
+  assert.match(
+    prompt,
+    /confidence = 0\.4 × classification \+ 0\.4 × coverage \+ 0\.2 × readability/,
+  )
+  for (const field of [
+    'projectTitle',
+    'agencyName',
+    'budgetBaht',
+    'submissionDeadline',
+    'at least one requirement',
+    'at least one bidder qualification',
+  ]) {
+    assert.ok(prompt.includes(field), `coverage list is missing ${field}`)
+  }
+})

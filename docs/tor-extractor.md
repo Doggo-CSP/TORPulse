@@ -83,6 +83,13 @@ Some databases still hold an older `tor_categories` collection (keys `web`, `dat
 - If the primary is invalid, the first valid key is used.
 - The primary is always stored first in `categories`.
 
+**Confidence score.** From analysis version `v5`, the prompt tells Gemini how to score `confidence` (0–1). Earlier versions showed only a `0.0` placeholder. The score is `0.4 × classification + 0.4 × coverage + 0.2 × readability`, rounded to 2 decimals:
+- `classification`: how clearly the document supports the software / not-software decision (1.0 explicit, 0.7 mixed scope, 0.4 vague, 0.1 almost no scope).
+- `coverage`: share of 6 core fields stated explicitly in the document: title, agency, budget, submission deadline, at least one requirement, at least one bidder qualification.
+- `readability`: quality of the source text (1.0 clean, 0.7 minor OCR or table damage, 0.4 heavy damage or partial TOR, 0.1 mostly unreadable).
+
+The admin TOR list filters on this score (`confidence_min`, `confidence_max`) to find extractions that need review. TORs analysed before `v5` keep their old score until they are reprocessed.
+
 **Display.** The TOR list, homepage analytics and reports use `resolveTorCategory`, which returns the stored `category`. TORs analysed before categories existed (analysis version below `v3`) fall back to the keyword guess in `deriveCategory` until they are reprocessed.
 
 ## Workflow diagram

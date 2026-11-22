@@ -30,8 +30,17 @@ export interface UserRecord {
   // Devices that completed sign-in before; a sign-in from any other device triggers an email
   // alert (ASVS V6.3.5). Only a keyed hash of the device is stored, never the raw user agent/IP.
   knownDevices?: KnownDevice[]
+  // Set when an authentication factor changes: the Google account email, which is where the
+  // sign-in code is sent. The user is then offered to sign out every other session (ASVS
+  // V7.4.3). Cleared when they choose.
+  sessionReview?: SessionReview | null
   createdAt: Date
   updatedAt: Date
+}
+
+export interface SessionReview {
+  reason: 'email_changed'
+  at: Date
 }
 
 export interface KnownDevice {
@@ -100,6 +109,16 @@ const userSchema = new Schema<UserRecord>(
       default: [],
       // Never sent to clients by accident through a .lean() spread
       select: false,
+    },
+    sessionReview: {
+      type: new Schema(
+        {
+          reason: { type: String, enum: ['email_changed'], required: true },
+          at: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
     },
   },
   { timestamps: true },

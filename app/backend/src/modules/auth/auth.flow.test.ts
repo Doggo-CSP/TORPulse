@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import session from 'express-session'
+import mongoose from 'mongoose'
 import request from 'supertest'
 
 import { createApiApp } from '../../apps/api/app.js'
@@ -10,6 +11,7 @@ import type { MailMessage } from '../notification/mailer.js'
 import type { ApiAuthConfig } from './auth.config.js'
 import type { GoogleIdTokenClaims } from './oidc.js'
 import { createPassport } from './passport.js'
+import { SESSIONS_COLLECTION } from './session-revocation.js'
 import { User } from './user.model.js'
 
 // End-to-end sign-in: Google (token endpoint, profile, ID token signature) is simulated, every
@@ -36,6 +38,7 @@ interface FakeGoogle {
   nonce?: string
   authTime?: number
   sub?: string
+  email?: string
 }
 
 const buildApp = () => {
@@ -45,7 +48,7 @@ const buildApp = () => {
     verifyIdToken: async () =>
       ({
         sub: google.sub ?? GOOGLE_ID,
-        email: EMAIL,
+        email: google.email ?? EMAIL,
         email_verified: true,
         nonce: google.nonce,
         auth_time: google.authTime,
@@ -67,7 +70,7 @@ const buildApp = () => {
     done(null, {
       id: google.sub ?? GOOGLE_ID,
       displayName: 'Flow Test',
-      emails: [{ value: EMAIL }],
+      emails: [{ value: google.email ?? EMAIL }],
     })
 
   const app = createApiApp(config, {
@@ -257,4 +260,109 @@ test('five wrong codes lock the sign-in and alert the owner', async (t) => {
     .send({ code: codeFrom(mail[0]) })
   assert.equal(afterLock.status, 400)
   assert.equal(afterLock.body.code, 'MFA_NO_CHALLENGE')
+})
+
+// Signs in through Google and the emailed code, and returns the agent
+const signIn = async (
+  app: ReturnType<typeof buildApp>['app'],
+  google: FakeGoogle,
+  mail: MailMessage[],
+) => {
+  const agent = request.agent(app)
+  const url = await startGoogle(agent)
+  google.nonce = url.searchParams.get('nonce') ?? undefined
+  await agent
+    .get(`/auth/google/callback?code=abc&state=${url.searchParams.get('state')}`)
+    .set('User-Agent', CHROME_MAC)
+  const verify = await agent
+    .post('/auth/mfa/verify')
+    .set('User-Agent', CHROME_MAC)
+    .send({ code: codeFrom(mail.at(-1)) })
+  assert.equal(verify.status, 200)
+  return agent
+}
+
+test('a changed sign-in email offers to sign out other devices (ASVS V7.4.3)', async (t) => {
+  const NEW_EMAIL = 'flow-test-new@example.com'
+  const otherUserId = new mongoose.Types.ObjectId().toString()
+  await database.connect()
+  await User.deleteMany({ googleId: GOOGLE_ID })
+  const sessions = () => mongoose.connection.db!.collection<{ _id: string }>(SESSIONS_COLLECTION)
+  t.after(async () => {
+    await User.deleteMany({ googleId: GOOGLE_ID })
+    await sessions().deleteMany({ _id: { $regex: '^v743-' } })
+    await database.disconnect()
+  })
+
+  const { app, google, mail } = buildApp()
+
+  await t.test('a first sign-in is not a factor change', async () => {
+    const agent = await signIn(app, google, mail)
+    const me = await agent.get('/auth/me').set('User-Agent', CHROME_MAC)
+    assert.equal(me.status, 200)
+    assert.equal(me.body.user.sessionReview, undefined)
+  })
+
+  await t.test('signing in again with a new Google email sets the offer', async () => {
+    google.email = NEW_EMAIL
+    const agent = await signIn(app, google, mail)
+    // The code for this sign-in went to the new address
+    assert.equal(mail.at(-1)?.to, NEW_EMAIL)
+
+    const me = await agent.get('/auth/me').set('User-Agent', CHROME_MAC)
+    assert.equal(me.body.user.email, NEW_EMAIL)
+    assert.equal(me.body.user.sessionReview.reason, 'email_changed')
+    assert.ok(Date.parse(me.body.user.sessionReview.at))
+  })
+
+  await t.test('sign out other devices keeps only the current session', async () => {
+    const agent = await signIn(app, google, mail)
+    const user = await User.findOne({ googleId: GOOGLE_ID })
+    const stored = (userId: string, id: string) => ({
+      _id: id,
+      expires: new Date(Date.now() + 60_000),
+      session: JSON.stringify({ cookie: {}, passport: { user: userId } }),
+    })
+    // Two other sessions of this user (stored in MongoDB) and one of someone else
+    await sessions().insertMany([
+      stored(user!._id.toString(), 'v743-mine-1'),
+      stored(user!._id.toString(), 'v743-mine-2'),
+      stored(otherUserId, 'v743-other'),
+    ])
+
+    const guest = await request(app).post('/auth/sessions/revoke-others')
+    assert.equal(guest.status, 401)
+
+    const response = await agent.post('/auth/sessions/revoke-others').set('User-Agent', CHROME_MAC)
+    assert.equal(response.status, 200)
+    assert.equal(response.body.revoked, 2)
+
+    const left = await sessions()
+      .find({ _id: { $regex: '^v743-' } })
+      .toArray()
+    assert.deepEqual(
+      left.map((doc) => doc._id),
+      ['v743-other'],
+    )
+
+    // The caller stays signed in, and the offer is gone
+    const me = await agent.get('/auth/me').set('User-Agent', CHROME_MAC)
+    assert.equal(me.status, 200)
+    assert.equal(me.body.user.sessionReview, undefined)
+  })
+
+  await t.test('keeping the other sessions also clears the offer', async () => {
+    google.email = EMAIL
+    const agent = await signIn(app, google, mail)
+    const before = await agent.get('/auth/me').set('User-Agent', CHROME_MAC)
+    assert.equal(before.body.user.sessionReview.reason, 'email_changed')
+
+    const guest = await request(app).post('/auth/sessions/review/dismiss')
+    assert.equal(guest.status, 401)
+
+    const dismiss = await agent.post('/auth/sessions/review/dismiss').set('User-Agent', CHROME_MAC)
+    assert.equal(dismiss.status, 200)
+    const after = await agent.get('/auth/me').set('User-Agent', CHROME_MAC)
+    assert.equal(after.body.user.sessionReview, undefined)
+  })
 })

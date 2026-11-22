@@ -191,6 +191,7 @@ test('Google login creates new accounts as active users', async (t) => {
   const stored = { _id: new Types.ObjectId(), status: 'active' }
   let capturedUpdate: Record<string, Record<string, unknown>> | undefined
 
+  t.mock.method(User, 'exists', async () => null)
   t.mock.method(User, 'findOneAndUpdate', async (_filter: unknown, update: unknown) => {
     capturedUpdate = update as Record<string, Record<string, unknown>>
     return stored
@@ -214,6 +215,7 @@ test('Google login creates new accounts as active users', async (t) => {
 test('Google login rejects a suspended account', async (t) => {
   const authPassport = createPassport(config, { verifyIdToken: fakeVerifier({ sub: 'google-2' }) })
 
+  t.mock.method(User, 'exists', async () => null)
   t.mock.method(User, 'findOneAndUpdate', async () => ({
     _id: new Types.ObjectId(),
     status: 'suspended',

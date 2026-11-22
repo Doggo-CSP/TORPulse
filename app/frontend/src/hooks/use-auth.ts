@@ -13,6 +13,9 @@ export interface AuthUser {
   status?: "active" | "suspended";
   // What this account may do, granted by its role (see backend modules/auth/scopes.ts)
   scopes?: string[];
+  // Set when the sign-in email (where the sign-in code is sent) changed: the user is offered to
+  // sign out every other device (ASVS V7.4.3)
+  sessionReview?: { reason: "email_changed"; at: string };
 }
 
 interface MeResponse {
@@ -80,5 +83,32 @@ export function useAuth() {
     setUser(null);
   }, []);
 
-  return { user, loading, signOut };
+  // Signs out every other browser or device; this one stays signed in (ASVS V7.4.3).
+  // Returns how many sessions were ended.
+  const revokeOtherSessions = useCallback(async (): Promise<number> => {
+    const response = await fetch(`${apiUrl}/auth/sessions/revoke-others`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new Error("Unable to sign out other devices");
+    }
+    const result = (await response.json()) as { revoked: number };
+    setUser((current) => (current ? { ...current, sessionReview: undefined } : current));
+    return result.revoked;
+  }, []);
+
+  // Keeps the other sessions and hides the offer
+  const dismissSessionReview = useCallback(async () => {
+    const response = await fetch(`${apiUrl}/auth/sessions/review/dismiss`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new Error("Unable to dismiss the session review");
+    }
+    setUser((current) => (current ? { ...current, sessionReview: undefined } : current));
+  }, []);
+
+  return { user, loading, signOut, revokeOtherSessions, dismissSessionReview };
 }
