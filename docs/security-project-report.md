@@ -11,7 +11,7 @@
 
 | Name | GitHub | Student ID |
 |---|---|---|
-| Chitiwat Phajan | Chitiwat Phajan | 6710545539 |
+| Chitiwat Phajan | negativeix | 6710545539 |
 | Kantapon Hemmadhun | Kantapon Hemmadhun | 6510545276 |
 | Earth | Xeei | 6710545849 |
 
@@ -152,32 +152,31 @@ We use **OWASP ASVS v5.0**. We went through all 345 requirements and marked each
 | ✅ Implemented | 165 |
 | ⚠️ Partial | 0 |
 | ❌ Not implemented | 0 |
-| ➖ N/A after review | 0 |
 
 ### 2.1 Planned requirements by chapter
 
 The table below is generated from the CSV, using the report's status legend after code review (see Appendix A).
 
-| Chapter | Planned | ✅ | ⚠️ | ❌ | ➖ |
-|---|---:|---:|---:|---:|---:|
-| V1 Encoding and Sanitization | 13 | 13 | 0 | 0 | 0 |
-| V2 Validation and Business Logic | 10 | 10 | 0 | 0 | 0 |
-| V3 Web Frontend Security | 19 | 19 | 0 | 0 | 0 |
-| V4 API and Web Service | 5 | 5 | 0 | 0 | 0 |
-| V5 File Handling | 8 | 8 | 0 | 0 | 0 |
-| V6 Authentication | 6 | 6 | 0 | 0 | 0 |
-| V7 Session Management | 15 | 15 | 0 | 0 | 0 |
-| V8 Authorization | 6 | 6 | 0 | 0 | 0 |
-| V9 Self-contained Tokens | 1 | 1 | 0 | 0 | 0 |
-| V10 OAuth and OIDC | 5 | 5 | 0 | 0 | 0 |
-| V11 Cryptography | 9 | 9 | 0 | 0 | 0 |
-| V12 Secure Communication | 6 | 6 | 0 | 0 | 0 |
-| V13 Configuration | 16 | 16 | 0 | 0 | 0 |
-| V14 Data Protection | 11 | 11 | 0 | 0 | 0 |
-| V15 Secure Coding and Architecture | 18 | 18 | 0 | 0 | 0 |
-| V16 Security Logging and Error Handling | 17 | 17 | 0 | 0 | 0 |
-| V17 WebRTC | 0 | 0 | 0 | 0 | 0 |
-| **Total** | **165** | **165** | **0** | **0** | **0** |
+| Chapter | Planned | ✅ | ⚠️ | ❌ |
+|---|---:|---:|---:|---:|
+| V1 Encoding and Sanitization | 13 | 13 | 0 | 0 |
+| V2 Validation and Business Logic | 10 | 10 | 0 | 0 |
+| V3 Web Frontend Security | 19 | 19 | 0 | 0 |
+| V4 API and Web Service | 5 | 5 | 0 | 0 |
+| V5 File Handling | 8 | 8 | 0 | 0 |
+| V6 Authentication | 6 | 6 | 0 | 0 |
+| V7 Session Management | 15 | 15 | 0 | 0 |
+| V8 Authorization | 6 | 6 | 0 | 0 |
+| V9 Self-contained Tokens | 1 | 1 | 0 | 0 |
+| V10 OAuth and OIDC | 5 | 5 | 0 | 0 |
+| V11 Cryptography | 9 | 9 | 0 | 0 |
+| V12 Secure Communication | 6 | 6 | 0 | 0 |
+| V13 Configuration | 16 | 16 | 0 | 0 |
+| V14 Data Protection | 11 | 11 | 0 | 0 |
+| V15 Secure Coding and Architecture | 18 | 18 | 0 | 0 |
+| V16 Security Logging and Error Handling | 17 | 17 | 0 | 0 |
+| V17 WebRTC | 0 | 0 | 0 | 0 |
+| **Total** | **165** | **165** | **0** | **0** |
 
 [Appendix A](#appendix-a-full-asvs-requirement-list) lists all 345 requirements with code evidence. Statuses use the report legend (✅ / ⚠️ / ❌ / ➖). Where the code review differs from the team's CSV self-assessment (34 rows), the Note column gives the CSV value and the reason.
 
