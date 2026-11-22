@@ -39,16 +39,16 @@ Status legend used throughout: ✅ implemented · ⚠️ partial · ❌ not impl
 | 4 | Password authentication | ❌ | Design written: argon2id, 12–128 chars, HIBP check, lockout | No password login. TORPulse uses Google sign-in only. | [§5.1](#51-password-authentication--criterion-4---not-implemented-by-design) |
 | 5 | Social SSO (OAuth / OpenID) | ✅ | Google OpenID Connect: `state`, PKCE, nonce, ID-token signature, `email_verified` and `auth_time` checks; explicit account choice; emailed second factor. | — | [§5.2](#52-social-sso-with-oauth--openid--criterion-5---implemented), §11.1 |
 | 6 | Authorization (roles) | ✅ | `admin` / `user` roles, each granting a fixed set of scopes. `requireRole` guards the admin router; `requireScope` checks each route's scope. Suspended accounts hold no scopes. Self role change and last-admin demotion blocked. Tested. | — | [§5.3](#53-authorisation-roles--criterion-6---implemented), M1–M3 |
-| 7 | Access control (no access to other users' data) | ✅ | Every user query scoped to `req.user._id`. Sub-ids looked up inside the caller's own profile. Router-level `requireAuth` on `/user/*`. IDOR test returns 404. | `/ingestion/report` is public (T12). | [§5.4](#54-access-control-no-access-to-another-users-data--criterion-7---implemented), M4, M14 |
+| 7 | Access control (no access to other users' data) | ✅ | Every user query scoped to `req.user._id`. Sub-ids looked up inside the caller's own profile. Router-level `requireAuth` on `/user/*`. IDOR test returns 404. `/ingestion/report` needs admin and `ingestion:read`. | — | [§5.4](#54-access-control-no-access-to-another-users-data--criterion-7---implemented), M4, M14 |
 | 8 | Input validation and SQL/NoSQL/ORM injection | ✅ | Zod allow-list validation on every write endpoint, with length limits and email/phone/URL formats. Express 5 simple query parser. ObjectId checks, including bookmarks. `escapeRegex`. `.strict()` blocks mass assignment. Rules documented in §5.5. ZAP raised 0 injection alerts. | Mongoose `sanitizeFilter` not enabled (it would also rewrite the code's own `$in`/`$gte` filters). | [§5.5](#55-input-validation-and-injection-protection-sql--nosql--orm--criterion-8---implemented), M6, M7 |
-| 9 | Environment variables and credentials | ✅ | All secrets in env vars. `.env` gitignored and dockerignored. Startup validation (`SESSION_SECRET` ≥ 32 chars). | MongoDB has no authentication (T9); the production compose no longer publishes it. Test secret written literally in CI. | [§5.6](#56-environment-variables-and-credentials--criterion-9---implemented-deployment-gaps) |
+| 9 | Environment variables and credentials | ✅ | All secrets in env vars; in production, Docker secret files given only to the containers that use them. `.env` gitignored and dockerignored. Startup validation (`SESSION_SECRET` ≥ 32 chars). Production MongoDB requires authentication and TLS and is not published. | Test secret written literally in CI (R13). Local dev MongoDB has no authentication (dev data only). | [§5.6](#56-environment-variables-and-credentials--criterion-9---implemented-deployment-gaps) |
 | 10 | CORS (no `*`) | ✅ | One allowed origin from `FRONTEND_URL`, `credentials: true`. Tested. Manual test with an `evil.example` origin got no CORS header. | — | [§5.7](#57-cors--criterion-10---implemented), M5 |
 | 11 | Error handling | ✅ | Every 500 returns a generic message and a request id; details only in the log. Last-resort process handlers. AI failures fall back to cached results. | — | [§5.8](#58-error-handling--criterion-11---implemented), §11.12 |
 | 12 | Logging (errors, auth events) | ✅ | Structured JSON logs (pino) with request ids; every sign-in, MFA, re-auth, logout, 401/403, CSRF, rate-limit and validation rejection logged; shipped to a separate Loki store; transactional audit log. | — | [§5.9](#59-logging--criterion-12---implemented), §11.11 |
 | 13 | HTTP security headers | ✅ | Set in code: `helmet()` on the API, nonce CSP in `proxy.ts` and `headers()` in `next.config.ts`. CSP, HSTS, nosniff, X-Frame-Options, Referrer-Policy, no-store, no `X-Powered-By`. `__Host-` Secure cookie in production. Shown live in §5.10. | — | [§5.10](#510-http-security-headers--criterion-13---implemented), M12 |
 | 14 | SAST | ✅ | Semgrep (261 rules: 24 findings, all triaged). npm audit: 19 advisories found, all fixed by upgrades (0 left on 21 Nov 2026). CI audit gate and Dependabot. | CodeQL not set up yet. | [§7.2](#72-sast-semgrep--npm-audit--criterion-14) |
 | 15 | DAST | ✅ | OWASP ZAP API scan on an isolated stack: 5,762 attacks, 0 High / 2 Medium / 1 Low. ZAP frontend baseline scan: 0 High. 14 manual tests. | Report screenshot still TODO. | [§7.3](#73-dast-owasp-zap--criterion-15), [§7.4](#74-manual-security-tests) |
-| 16 | Threat model verification checklist | ✅ | All 17 threats checked: 6 ✅, 6 ⚠️, 5 ❌ | — | [§8](#8-threat-model-verification-checklist--criterion-16) |
+| 16 | Threat model verification checklist | ✅ | All 17 threats checked: 17 ✅ | — | [§8](#8-threat-model-verification-checklist--criterion-16) |
 | 17 | Mapping to OWASP ASVS and Top 10 | ✅ | A01–A10 mapped to controls and ASVS v5 requirements | — | [§9](#9-mapping-to-owasp-top-10-2021-and-asvs--criterion-17), [Appendix A](#appendix-a-full-asvs-requirement-list) |
 | 18 | 4 advanced features | ✅ | **5 delivered:** authorization with scope, login-attempt rate limit, API rate limit, login timeout (30-min idle + 7-day absolute), MFA (emailed code). | Compromised-password check (N/A, no passwords), JWT expiry (N/A, uses sessions). | [§6](#6-advanced-security-features--criterion-18) |
 
@@ -419,7 +419,7 @@ Backend paths are relative to `app/backend/src/`. ✅ means followed. ⚠️ mea
 
 *The system starts in a safe state, refuses unsafe configurations, and errors do not open a way in.*
 
-- The API refuses to start without the OAuth settings or with a `SESSION_SECRET` shorter than 32 characters (`modules/auth/auth.config.ts:52-56`). The session timeouts must be positive numbers (`:65-66`). `config/env.ts` checks 15 more settings at startup (`config/env.ts:55-122`).
+- The API refuses to start without the OAuth settings or with a `SESSION_SECRET` shorter than 32 characters (`modules/auth/auth.config.ts:52-56`). The session timeouts must be positive numbers (`:65-66`). `config/env.ts` checks 16 more settings at startup (`config/env.ts:60-132`).
 - The development session-token tool refuses to run when `NODE_ENV=production` (`scripts/dev-session-token.ts:22-23`).
 - The production Docker image sets `NODE_ENV=production` (`app/backend/Dockerfile:22`).
 - Errors fail closed. A 500 returns a generic message and a request id, and the full error goes only to the log. Malformed JSON and oversized bodies get a 400 (`middleware/error.middleware.ts:16-40`). An uncaught exception is logged and the process restarts (`:45-53`).
@@ -466,7 +466,7 @@ All backend paths below are relative to `app/backend/src/`.
 
 ### 5.1 Password authentication · Criterion 4 · ❌ Not implemented (by design)
 
-TORPulse has **no password login**. The `User` schema has no password field (`modules/auth/user.model.ts:50-82`), and `/auth/signup` redirects to the Google sign-in page. We made this choice to avoid storing credentials: password storage, password reset and breach handling become Google's responsibility (economy of mechanism).
+TORPulse has **no password login**. The `User` schema has no password field (`modules/auth/user.model.ts:59-106`), and `/auth/signup` redirects to the Google sign-in page. We made this choice to avoid storing credentials: password storage, password reset and breach handling become Google's responsibility (economy of mechanism).
 
 **If password login is added**, the design is:
 - argon2id hashing (memory 19 MiB, t=2, p=1), with a unique salt per hash
@@ -493,8 +493,8 @@ TORPulse has **no password login**. The `User` schema has no password field (`mo
 
 ### 5.3 Authorisation (roles) · Criterion 6 · ✅ Implemented
 
-- Roles are stored as an enum on `User`: `role: 'admin' | 'user'`, plus `status: 'active' | 'suspended'` (`modules/auth/user.model.ts:56-57`).
-- `requireRole(...roles)` middleware returns **401** with no session and **403** for a wrong role or a suspended account (`middleware/admin.middleware.ts:7-24`).
+- Roles are stored as an enum on `User`: `role: 'admin' | 'user'`, plus `status: 'active' | 'suspended'` (`modules/auth/user.model.ts:65-66`).
+- `requireRole(...roles)` middleware returns **401** with no session and **403** for a wrong role or a suspended account (`middleware/admin.middleware.ts:7-26`).
 - The admin router applies the guard once to every route: `router.use(requireAdmin)` (`modules/admin/admin.routes.ts`).
 - **Scopes on top of roles:** each role grants a fixed list of scopes (`modules/auth/scopes.ts`). Every admin route, every `/user/*` route and the qualification routes also call `requireScope(...)`, e.g. `DELETE /admin/tors/:torId` needs `tors:delete`, and `PATCH /admin/users/:userId/role` needs `users:manage`. Details in §6.
 - The frontend admin page also hides itself from non-admins, but that is only for usability. The server enforces the rule.
@@ -516,9 +516,9 @@ TORPulse has **no password login**. The `User` schema has no password field (`mo
 |---|---|
 | Zod schemas with `safeParse` for every write endpoint: user profile, interests, onboarding, bidder profile (max lengths, enums, ObjectId regex), admin (`.strict()`), reports | `modules/user/user.validation.ts`, `modules/user/bidder-profile.validation.ts`, `modules/admin/admin.validation.ts`, `modules/report/report.validation.ts` |
 | **NoSQL operator injection:** Express 5 uses the `simple` query parser, so `?role[$ne]=x` does not become an object. Handlers coerce query values to strings or numbers. Zod rejects non-string types in bodies. | `modules/tor/tor.controller.ts:279-287` |
-| ObjectId validation before queries (`isObjectIdOrHexString`) | `tor.controller.ts:398`, `admin.controller.ts`, `qualification-match.controller.ts` |
-| **Regex injection / ReDoS:** user search text goes through `escapeRegex` before `new RegExp` | `tor.controller.ts:277`, `admin.controller.ts:60,183`, `category/category.repository.ts:8,48` (test: "GET /admin/users treats regex characters in q as plain text") |
-| **Mass assignment:** Zod drops unknown keys. Admin schemas are `.strict()` and reject `email`/`role`/`status`. Role and status have their own endpoints. | `admin.validation.ts:60-66` (test: "PATCH /admin/users/:userId refuses email, role, and status") |
+| ObjectId validation before queries (`isObjectIdOrHexString`) | `tor.controller.ts:397`, `admin.controller.ts`, `qualification-match.controller.ts` |
+| **Regex injection / ReDoS:** user search text goes through `escapeRegex` before `new RegExp` | `tor.controller.ts:276`, `admin.controller.ts:63,184`, `category/category.repository.ts:8,48` (test: "GET /admin/users treats regex characters in q as plain text") |
+| **Mass assignment:** Zod drops unknown keys. Admin schemas are `.strict()` and reject `email`/`role`/`status`. Role and status have their own endpoints. | `admin.validation.ts:64-72` (test: "PATCH /admin/users/:userId refuses email, role, and status") |
 | No SQL database. Mongoose queries are built from objects, not strings, so classic SQL injection does not apply. | — |
 
 #### Input validation rules (ASVS V2.1.1)
@@ -546,14 +546,14 @@ Every rule is enforced on the server. The frontend repeats some of them only for
 ### 5.6 Environment variables and credentials · Criterion 9 · ✅ Implemented (deployment gaps)
 
 - All secrets come from environment variables loaded by `dotenv` (`config/env.ts:1`). Nothing is hard-coded in source. Semgrep's secrets ruleset found only the CI test value (see §7.2).
-- **Startup validation:** `MONGODB_URI`/`MONGODB_DATABASE` and the numeric limits are required (`config/env.ts:48-102`). The OAuth settings and `SESSION_SECRET` are required, and the secret must be **≥ 32 characters** (`modules/auth/auth.config.ts:28-43`). The test `auth.config.test.ts` checks this.
+- **Startup validation:** `MONGODB_URI`/`MONGODB_DATABASE` and the numeric limits are required (`config/env.ts:60-132`). The OAuth settings and `SESSION_SECRET` are required, and the secret must be **≥ 32 characters** (`modules/auth/auth.config.ts:52-56`). The test `auth.config.test.ts` checks this.
 - `.env`, `.env.*` are gitignored (`/.gitignore:14-16`, `app/backend/.gitignore`, `app/frontend/.gitignore`) and excluded from Docker images (`app/backend/.dockerignore`). Git history contains only `.env.example`, with blank values.
 - **Production:** secrets are Docker secrets (files) loaded through `NAME_FILE`, and each container gets only its own. MongoDB requires authentication and TLS; the app has its own least-privilege account (§11.7).
 - **Gap:** the local development `docker-compose.yml` still runs MongoDB without authentication on port 27017, and CI contains a literal test-only `SESSION_SECRET`.
 
 ### 5.7 CORS · Criterion 10 · ✅ Implemented
 
-`app/backend/src/apps/api/app.ts:40-47`:
+`app/backend/src/apps/api/app.ts:81-88`:
 
 ```ts
 cors({
@@ -772,8 +772,8 @@ uvx semgrep scan --metrics=off \
 | Severity | Rule | Location | Count | Triage |
 |---|---|---|:-:|---|
 | ERROR | `detected-generic-secret` | `.github/workflows/ci.yml:40` | 1 | **False positive.** A random `SESSION_SECRET` that only the CI test run uses. It signs nothing in production. We will move it to a GitHub Actions secret to keep the scanner clean. |
-| WARNING | `github-actions-mutable-action-tag` | `ci.yml:43,44,63,64` | 4 | **Valid (low).** `actions/checkout@v4` and `setup-node@v4` are pinned by tag. Pin to commit SHAs. |
-| WARNING | `detect-non-literal-regexp` | `admin.controller.ts:183`, `category.repository.ts:48` | 2 | **False positive.** The input goes through `escapeRegex` first, and a test covers this. |
+| WARNING | `github-actions-mutable-action-tag` | `ci.yml` (4 places at scan time) | 4 | **Valid (low). Fixed on 22 Nov 2026:** every action is now pinned to a commit SHA (`ci.yml:43,44,54,71,72,80`). |
+| WARNING | `detect-non-literal-regexp` | `admin.controller.ts:184`, `category.repository.ts:48` | 2 | **False positive.** The input goes through `escapeRegex` first, and a test covers this. |
 | WARNING | `express-data-exfiltration` (`Object.assign` with user data) | `bidder-profile.controller.ts:202,250,294,372` | 4 | **False positive.** The data is Zod-parsed with a fixed set of fields before `Object.assign`. |
 | INFO | `unsafe-formatstring` (string concat in `console.log`) | workers, ingestion, notification, qualification (13 places) | 13 | **Valid (low).** Log injection or format confusion. Fix by moving to a structured logger. |
 
@@ -904,9 +904,9 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 | ID | Priority | Threat | Mitigation implemented | Status | Evidence / remaining work |
 |---|:-:|---|---|:-:|---|
 | T3 | P1 | IDOR | Every user query scoped by `req.user._id`. Sub-documents looked up inside the caller's profile. | ✅ | `bidder-profile.controller.ts:287-292`, `user.repository.ts` |
-| T4 | P1 | Privilege escalation | `requireAdmin`, Zod strip / `.strict()`, separate role endpoint, last-admin and self guards, transactions | ✅ | `admin.routes.ts:32`, `admin.controller.ts:340-362`, tests |
-| T7 | P1 | Secrets leakage | Env vars, gitignore and dockerignore, startup validation | ✅ | `auth.config.ts:28-43`. Remaining: move the CI secret into GitHub Secrets. |
-| T8 | P1 | Malicious ZIP/PDF | Size, entry, total and ratio limits; zip-slip guard; `%PDF-` magic bytes; temp directory cleanup | ✅ | `central-egp.adapters.ts:62-66,891,899-911` |
+| T4 | P1 | Privilege escalation | `requireAdmin`, Zod strip / `.strict()`, separate role endpoint, last-admin and self guards, transactions | ✅ | `admin.routes.ts:34`, `admin.controller.ts:348-420`, tests |
+| T7 | P1 | Secrets leakage | Env vars, gitignore and dockerignore, startup validation | ✅ | `config/secrets.ts`, `auth.config.ts:52-56`. Remaining: move the CI secret into GitHub Secrets. |
+| T8 | P1 | Malicious ZIP/PDF | Size, entry, total and ratio limits; zip-slip guard; `%PDF-` magic bytes; temp directory cleanup | ✅ | `central-egp.adapters.ts:64-68,893,901-912` |
 | T17 | P1 | AI cost exhaustion | Every AI call logged; daily rolling quota system-wide and per user; 429 or cached result | ✅ | `qualification-match.controller.ts:127-151`, `qualification-precompute.service.ts:131-170`; test "repeated runs on the same TOR count against the per-user limit" |
 | T6 | P1 | Session hijack / fixation | httpOnly, SameSite, server-side store, regenerate at login, destroy at logout, 30-min idle and 7-day absolute timeout, sessions deleted on suspension, `__Host-` + `Secure` in the production compose | ✅ | §6.3, §5.10 |
 | T5 | P1 | NoSQL / regex injection | Simple query parser, Zod allow-list validation with length limits, ObjectId checks (bookmarks included), `escapeRegex`; ZAP 0 injection alerts | ✅ | §5.5. `sanitizeFilter` deliberately not enabled. |
@@ -929,7 +929,7 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 
 | OWASP Top 10 2021 | TORPulse controls | Status | ASVS v5 | Gaps |
 |---|---|:-:|---|---|
-| **A01 Broken Access Control** | `requireAdmin` + per-route `requireScope`; router-level `requireAuth` on `/user`; per-user data scoping; last-admin and self guards; single-origin CORS; Origin check against CSRF | ✅ | V8.2.1, V8.2.2, V8.3.1, V3.4.2, V3.5.1 | Protect `/ingestion/report` |
+| **A01 Broken Access Control** | `requireAdmin` + per-route `requireScope`; router-level `requireAuth` on `/user`; per-user data scoping; last-admin and self guards; single-origin CORS; Origin check against CSRF | ✅ | V8.2.1, V8.2.2, V8.3.1, V3.4.2, V3.5.1 | — |
 | **A02 Cryptographic Failures** | Sessions signed with a ≥ 32-char secret; CSPRNG session ids; no passwords stored; Caddy TLS 1.2/1.3 with Let's Encrypt; HSTS; `__Host-` Secure cookie; MongoDB and SMTP over TLS; TLS to Google, e-GP and Gemini | ✅ | V11.1.1, V11.5.1, V12.1.1, V12.1.2, V12.2.1, V12.2.2, V12.3.1, V12.3.2, V3.3.1 | — |
 | **A03 Injection** | Mongoose object queries; Express 5 simple parser; Zod allow-list validation; `escapeRegex`; ObjectId checks; React escaping and nonce CSP; email output encoding; no `eval`; ZAP found 0 injection issues | ✅ | V1.2.4, V1.2.9, V1.3.2, V1.3.3, V1.3.11, V2.2.1 | `sanitizeFilter` deliberately not enabled (§5.5) |
 | **A04 Insecure Design** | Threat model (§3); SSO-only design; documented business limits and data classification (§11); transactional admin changes; AI quota per call, system-wide and per user; rate limits | ✅ | V2.1.3, V2.3.2, V2.3.3, V14.1.1, V15.1.3 | — |
@@ -938,7 +938,7 @@ We ran these on the same isolated pentest stack, as admin, user A, user B and gu
 | **A07 Identification and Authentication Failures** | Google OIDC with state, PKCE and nonce; emailed second factor; re-authentication for sensitive changes; new-device alerts; session regenerated at login and after MFA; 30-min idle / 7-day absolute timeout; sessions bound to the device; login rate limit | ✅ | V6.3.1, V6.3.3, V6.3.5, V6.8.4, V7.2.4, V7.3.1, V7.3.2, V7.4.1, V7.4.2, V7.5.1, V10.1.2 | — |
 | **A08 Software and Data Integrity Failures** | Lockfiles; CI with least-privilege token; GitHub Actions pinned to commit SHAs; SBOM; upstream files checked (magic bytes, limits) | ✅ | V15.1.2, V15.2.4, V5.2.3 | — |
 | **A09 Security Logging and Monitoring Failures** | Structured JSON logs with request ids; authentication, authorization, CSRF, rate-limit and validation events; separate Loki store; transactional audit log | ✅ | V16.1.1, V16.2.1–V16.2.5, V16.3.1–V16.3.4, V16.4.1–V16.4.3 | — |
-| **A10 Server-Side Request Forgery** | Fixed upstream hosts; no user URL fetched; timeouts | ✅ | V1.3.6, V15.3.2 | Explicit allowlist check |
+| **A10 Server-Side Request Forgery** | Outbound allowlist in code (`lib/outbound.ts`: HTTPS only, listed hosts only, redirects checked, blocks logged); network-level egress proxy; no user URL fetched; timeouts | ✅ | V1.3.6, V13.2.4, V13.2.5, V15.3.2 | — |
 
 ---
 
@@ -954,7 +954,7 @@ Ordered by threat priority. Each item names the threat it closes.
 | ~~R4~~ | P1 | ✅ **Done (21 Nov 2026).** `express-rate-limit`: `/auth/google*` 10 per 15 min per IP; `/api/v1/*` 300 per 15 min per user or IP (§6.2) | T2 (advanced features) | S |
 | ~~R5~~ | P1 | ✅ **Done (21 Nov 2026).** `torId` validated; profile strings have length and format rules (§5.5). `sanitizeFilter` deliberately not enabled. | T5 | S |
 | ~~R6~~ | P1 | ✅ **Done (21 Nov 2026).** `docker-compose.prod.yml` with `NODE_ENV=production`: `Secure` `__Host-` cookie | T6 | S |
-| ~~R7~~ | P2 | ✅ **Done (21 Nov 2026), except a frontend `script-src`.** `helmet()` in Express; `headers()` + `poweredByHeader: false` in Next.js (§5.10) | T10, T16 | M |
+| ~~R7~~ | P2 | ✅ **Done (21 Nov 2026).** `helmet()` in Express; nonce-based `script-src` with `strict-dynamic` in `proxy.ts`; `headers()` + `poweredByHeader: false` in Next.js (§5.10) | T10, T16 | M |
 | ~~R8~~ | P2 | ✅ **Done (21 Nov 2026).** Generic 500 with request id | T11 | S |
 | ~~R9~~ | P2 | ✅ **Done (21 Nov 2026).** pino with redaction, security events, Loki | T14 | M |
 | ~~R10~~ | P2 | ✅ **Done (21 Nov 2026).** Idle session timeout (`rolling: true`, 30 min) on top of the 7-day absolute lifetime (§6.3) | T6 (advanced features) | S |
@@ -1271,9 +1271,9 @@ Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASV
 | V1.2.1 | Output encoding for an HTTP response, HTML document, or XML document is relevant for the context required, such as encoding… | 1 | ✅ | — | — |
 | V1.2.2 | When dynamically building URLs, untrusted data is encoded according to its context (e.g., URL encoding or base64url encoding… | 1 | ✅ | Frontend encodes path ids with `encodeURIComponent` (`app/frontend/src/api/*.ts`); external links pass `safeExternalUrl` (http/https only, `app/frontend/src/lib/safe-url.ts`); the API stores only http(s) profile URLs (`user.validation.ts`) | CSV: In progress. Implemented 21 Nov 2026 |
 | V1.2.3 | Output encoding or escaping is used when dynamically building JavaScript content (including JSON), to avoid changing the… | 1 | ✅ | — | — |
-| V1.2.4 | Data selection or database queries (e.g., SQL, HQL, NoSQL, Cypher) use parameterized queries, ORMs, entity frameworks, or… | 1 | ✅ | Mongoose queries with typed values; ObjectId checks (`app/backend/src/modules/tor/tor.controller.ts:398`) | — |
+| V1.2.4 | Data selection or database queries (e.g., SQL, HQL, NoSQL, Cypher) use parameterized queries, ORMs, entity frameworks, or… | 1 | ✅ | Mongoose queries with typed values; ObjectId checks (`app/backend/src/modules/tor/tor.controller.ts:397`) | — |
 | V1.2.5 | The application protects against OS command injection and that operating system calls use parameterized OS queries or use… | 1 | ✅ | No shell exec of user input; PDF extraction runs on files the server downloads itself | — |
-| V1.2.9 | The application escapes special characters in regular expressions (typically using a backslash) to prevent them from being… | 2 | ✅ | `escapeRegex` in `app/backend/src/modules/tor/tor.controller.ts:277`, `admin.controller.ts:60`, `category.repository.ts:8` | — |
+| V1.2.9 | The application escapes special characters in regular expressions (typically using a backslash) to prevent them from being… | 2 | ✅ | `escapeRegex` in `app/backend/src/modules/tor/tor.controller.ts:276`, `admin.controller.ts:63`, `category.repository.ts:8` | — |
 | V1.3.2 | The application avoids the use of eval() or other dynamic code execution features such as Spring Expression Language (SpEL).… | 1 | ✅ | No `eval`/`new Function`; Semgrep found none | — |
 | V1.3.3 | Data being passed to a potentially dangerous context is sanitized beforehand to enforce safety measures, such as only… | 2 | ✅ | Untrusted text is encoded for each context: HTML email bodies (`escapeHtml`), email headers (`headerSafe`), regex (`escapeRegex`); lengths capped by Zod (`lib/html.ts`) | CSV: In progress. §11.10 |
 | V1.3.6 | The application protects against Server-side Request Forgery (SSRF) attacks, by validating untrusted data against an… | 2 | ✅ | All e-GP requests go through `allowlistedFetch`: https, port 443, allowlisted hosts, no URL credentials; users never supply URLs (`lib/outbound.ts`) | CSV: In progress. §11.6 |
@@ -1317,7 +1317,7 @@ Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASV
 | V2.2.3 | The application ensures that combinations of related data items are reasonable according to the pre-defined rules. | 2 | ✅ | Zod refinements: budget min ≤ max, end ≥ start, expiry ≥ issue, no future dates (`bidder-profile.validation.ts`) | CSV: In progress. Tested in `user.validation.test.ts` |
 | V2.3.1 | The application will only process business logic flows for the same user in the expected sequential step order and without… | 1 | ✅ | — | — |
 | V2.3.2 | Business logic limits are implemented per the application's documentation to avoid business logic flaws being exploited. | 2 | ✅ | Limits in §11.4 enforced in code (rate limits, MFA attempts, AI quota, list sizes) | CSV: In progress. |
-| V2.3.3 | Transactions are being used at the business logic level such that either a business logic operation succeeds in its entirety… | 2 | ✅ | Mongo transactions for role/status changes (`app/backend/src/modules/admin/admin.controller.ts:340`) | — |
+| V2.3.3 | Transactions are being used at the business logic level such that either a business logic operation succeeds in its entirety… | 2 | ✅ | Mongo transactions for role/status changes (`app/backend/src/modules/admin/admin.controller.ts:348`) | — |
 | V2.4.1 | Anti-automation controls are in place to protect against excessive calls to application functions that could lead to data… | 2 | ✅ | Per-user `/api/v1` limiter, per-IP login limiter (`app/backend/src/middleware/rate-limit.middleware.ts`), daily AI quota | CSV: To do. Implemented 21 Nov 2026 (§6.2) |
 
 <details>
@@ -1338,12 +1338,12 @@ Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASV
 | V3.2.1 | Security controls are in place to prevent browsers from rendering content or functionality in HTTP responses in an incorrect… | 1 | ✅ | API CSP `default-src 'none'; sandbox` + `nosniff` on every response (`app/backend/src/middleware/security.middleware.ts`); JSON-only API | CSV: In progress. Implemented 21 Nov 2026 |
 | V3.2.2 | Content intended to be displayed as text, rather than rendered as HTML, is handled using safe rendering functions (such as… | 1 | ✅ | React escapes output; no `dangerouslySetInnerHTML` in frontend | — |
 | V3.3.1 | Cookies have the 'Secure' attribute set, and if the '\__Host-' prefix is not used for the cookie name, the '__Secure-'… | 1 | ✅ | Production cookie `__Host-torpulse.sid` with `Secure` (`app/backend/src/modules/auth/auth.config.ts`); `docker-compose.prod.yml` runs `NODE_ENV=production` behind HTTPS | CSV: In progress. Plain-HTTP local dev keeps the bare name |
-| V3.3.2 | Each cookie's 'SameSite' attribute value is set according to the purpose of the cookie, to limit exposure to user interface… | 2 | ✅ | `sameSite: lax` (`app/backend/src/apps/api/app.ts:59`) | — |
+| V3.3.2 | Each cookie's 'SameSite' attribute value is set according to the purpose of the cookie, to limit exposure to user interface… | 2 | ✅ | `sameSite: lax` (`app/backend/src/apps/api/app.ts:95`) | — |
 | V3.3.3 | Cookies have the '__Host-' prefix for the cookie name unless they are explicitly designed to be shared with other hosts. | 2 | ✅ | Production cookie `__Host-torpulse.sid` (not shared with other hosts) | CSV: To do. Plain-HTTP local dev keeps the bare name |
-| V3.3.4 | If the value of a cookie is not meant to be accessible to client-side scripts (such as a session token), the cookie must… | 2 | ✅ | `httpOnly: true` (`app/backend/src/apps/api/app.ts:58`) | — |
+| V3.3.4 | If the value of a cookie is not meant to be accessible to client-side scripts (such as a session token), the cookie must… | 2 | ✅ | `httpOnly: true` (`app/backend/src/apps/api/app.ts:94`) | — |
 | V3.3.5 | When the application writes a cookie, the cookie name and value length combined are not over 4096 bytes. Overly large… | 3 | ✅ | — | — |
 | V3.4.1 | A Strict-Transport-Security header field is included on all responses to enforce an HTTP Strict Transport Security (HSTS)… | 1 | ✅ | HSTS `max-age=31536000; includeSubDomains` on API (production) and frontend (`security.middleware.ts`, `app/frontend/next.config.ts`) | CSV: To do. Implemented 21 Nov 2026 |
-| V3.4.2 | The Cross-Origin Resource Sharing (CORS) Access-Control-Allow-Origin header field is a fixed value by the application, or if… | 1 | ✅ | Single-origin CORS callback (`app/backend/src/apps/api/app.ts:40-47`) | — |
+| V3.4.2 | The Cross-Origin Resource Sharing (CORS) Access-Control-Allow-Origin header field is a fixed value by the application, or if… | 1 | ✅ | Single-origin CORS callback (`app/backend/src/apps/api/app.ts:81-88`) | — |
 | V3.4.3 | HTTP responses include a Content-Security-Policy response header field which defines directives to ensure the browser only… | 2 | ✅ | Frontend: per-request nonce CSP with `strict-dynamic`, `object-src 'none'`, `base-uri 'none'` (`app/frontend/src/proxy.ts`); API: `default-src 'none'; sandbox` | CSV: To do. Styles allow `'unsafe-inline'` (React style attributes); scripts are nonce-only |
 | V3.4.4 | All HTTP responses contain an 'X-Content-Type-Options: nosniff' header field. This instructs browsers not to use content… | 2 | ✅ | `X-Content-Type-Options: nosniff` on API and frontend | CSV: To do. Implemented 21 Nov 2026 |
 | V3.4.5 | The application sets a referrer policy to prevent leakage of technically sensitive data to third-party services via the… | 2 | ✅ | `Referrer-Policy: no-referrer` (API) and `strict-origin-when-cross-origin` (frontend) | CSV: In progress. |
@@ -1411,10 +1411,10 @@ Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASV
 | V5.1.1 | The documentation defines the permitted file types, expected file extensions, and maximum size (including unpacked size) for… | 2 | ✅ | Accepted files (e-GP ZIP/PDF only), extensions, sizes and unpacked limits documented in §11.5 | CSV: To do. No user upload feature exists |
 | V5.2.1 | The application will only accept files of a size which it can process without causing a loss of performance or a denial of… | 1 | ✅ | Only files the server downloads itself: e-GP ZIP ≤ 100 MB, ≤ 500 entries, ≤ 500 MB expanded, ratio ≤ 500 (`central-egp.adapters.ts`); JSON bodies ≤ 1 MB | CSV: In progress. No user upload endpoint exists (the profile certificate uploader posts to an endpoint that is not implemented) |
 | V5.2.2 | When the application accepts a file, either on its own or within an archive such as a zip file, it checks if the file… | 1 | ✅ | Only `.pdf` entries with known TOR name prefixes are extracted, then checked for the `%PDF-` magic bytes (`extractTorPdfs`) | CSV: In progress. |
-| V5.2.3 | The application checks compressed files (e.g., zip, gz, docx, odt) against maximum allowed uncompressed size and against… | 2 | ✅ | ZIP limits: size, entries, ratio (`app/backend/src/modules/ingestion/adapters/central-egp.adapters.ts:62-66`) | — |
+| V5.2.3 | The application checks compressed files (e.g., zip, gz, docx, odt) against maximum allowed uncompressed size and against… | 2 | ✅ | ZIP limits: size, entries, ratio (`app/backend/src/modules/ingestion/adapters/central-egp.adapters.ts:64-68`) | — |
 | V5.2.5 | The application does not allow uploading compressed files containing symlinks unless this is specifically required (in which… | 3 | ✅ | — | — |
 | V5.3.1 | Files uploaded or generated by untrusted input and stored in a public folder, are not executed as server-side program code… | 1 | ✅ | — | — |
-| V5.3.2 | When the application creates file paths for file operations, instead of user-submitted filenames, it uses internally… | 1 | ✅ | Zip-slip guard + `basename` (`app/backend/src/modules/ingestion/adapters/central-egp.adapters.ts:899-911`) | — |
+| V5.3.2 | When the application creates file paths for file operations, instead of user-submitted filenames, it uses internally… | 1 | ✅ | Zip-slip guard + `basename` (`app/backend/src/modules/ingestion/adapters/central-egp.adapters.ts:901-917`) | — |
 | V5.3.3 | Server-side file processing, such as file decompression, ignores user-provided path information to prevent vulnerabilities… | 3 | ✅ | — | — |
 
 <details>
@@ -1496,7 +1496,7 @@ Generated from [`[SOFTWARE SEC] ASVS - ASVS (1).csv`](<[SOFTWARE SEC] ASVS - ASV
 |---|---|:-:|---|---|---|
 | V7.1.1 | The user's session inactivity timeout and absolute maximum session lifetime are documented, are appropriate in combination… | 2 | ✅ | 30-min idle and 7-day absolute lifetime documented in §6.3 | CSV: To do. Documented 21 Nov 2026 |
 | V7.1.3 | All systems that create and manage user sessions as part of a federated identity management ecosystem (such as SSO systems)… | 2 | ✅ | — | — |
-| V7.2.1 | The application performs all session token verification using a trusted, backend service. | 1 | ✅ | Server-side session store, MongoDB `sessions` (`app/backend/src/apps/api/app.ts:25-32`) | — |
+| V7.2.1 | The application performs all session token verification using a trusted, backend service. | 1 | ✅ | Server-side session store, MongoDB `sessions` (`app/backend/src/apps/api/app.ts:61-69`) | — |
 | V7.2.2 | The application uses either self-contained or reference tokens that are dynamically generated for session management, i.e.… | 1 | ✅ | — | — |
 | V7.2.3 | If reference tokens are used to represent user sessions, they are unique and generated using a cryptographically secure… | 1 | ✅ | — | — |
 | V7.2.4 | The application generates a new session token on user authentication, including re-authentication, and terminates the… | 1 | ✅ | Passport 0.7 calls `session.regenerate()` on login; logout destroys the session | CSV: To do. Library behaviour, verified in the session flow |
