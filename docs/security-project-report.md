@@ -662,7 +662,7 @@ With `APP_DOMAIN=localhost`, Caddy uses its own local CA instead of Let's Encryp
 
 ## 6. Advanced security features · Criterion 18
 
-All backend paths are relative to `app/backend/src/`. Five features are implemented, one more than the four required. Each has unit tests in `npm run test:auth` (48 tests passing on 22 Nov 2026) and was checked end to end against a running API.
+All backend paths are relative to `app/backend/src/`. Five features are implemented, one more than the four required. Each has unit tests in `npm run test:auth` (52 tests passing on 22 Nov 2026) and was checked end to end against a running API.
 
 | Feature | Status | Details |
 |---|---|---|
@@ -748,9 +748,17 @@ flowchart LR
 | `scripts/dev-session-token.test.ts` | Dev token tool refuses to run when `NODE_ENV=production` |
 | `modules/admin/admin.routes.test.ts` | `requireAdmin` (401/403/suspended admin). Every admin route group rejects regular users. Invalid ids give 400. Regex text in search is treated as plain text. Email/role/status mass assignment refused. Self role change blocked. Last-admin guard. Concurrent demotions. Audit log written. |
 | `modules/user/user.routes.test.ts`, `bidder-profile.routes.test.ts` | Input validation rejects bad payloads. Company-only routes are refused for personal accounts. Unknown team members are rejected. |
-| `modules/qualification/qualification-match.routes.test.ts` | Login required. Daily AI limit behaviour. |
+| `modules/auth/auth.flow.test.ts` | OIDC sign-in: a forged `state` is refused. A valid callback is MFA-pending until the emailed code is entered. Wrong codes are counted and five lock the sign-in and alert the owner. `returnTo` cannot redirect off-site. The same cookie from another browser family ends the session. |
+| `modules/auth/scopes.test.ts` | Scope table per role. Suspended accounts and guests hold no scopes. `requireScope` gives 401 to guests and 403 naming the missing scope. `requireAuth` refuses suspended accounts. |
+| `middleware/rate-limit.test.ts` | Login limiter redirects after the limit. API limiter answers 429 with rate-limit headers. Each logged-in user has a separate bucket. |
+| `middleware/session-timeout.test.ts` | Idle sessions are logged out and the cookie cleared. Active sessions still end at the absolute limit. |
+| `middleware/security.test.ts` | Security headers on API responses. HSTS only in production. The Origin check refuses cross-origin state-changing requests. Responses are not cacheable. TRACE/TRACK get 405. |
+| `lib/outbound.test.ts` | Hosts outside the allowlist are refused before any network call. Redirects are followed only to allowlisted hosts, at most three times. |
+| `modules/ingestion/ingestion-report.test.ts` | `/ingestion/report` gives 401 to guests and 403 to regular users. |
+| `modules/user/user.validation.test.ts` | Profile fields refuse script and data URLs, malformed formats and oversized text. Interests are limited in count and length. |
+| `modules/qualification/qualification-match.routes.test.ts` | Login required. Daily AI limits: every call is counted, including repeated runs on the same TOR and failed calls; the per-user and system-wide limits each stop further calls. |
 
-**Local run (16 Nov 2026), auth suite:** `npx tsx --test src/modules/auth/auth.routes.test.ts src/modules/auth/auth.config.test.ts src/scripts/dev-session-token.test.ts` gave **10 tests, 10 passed, 0 failed**. The full suite needs MongoDB and runs in CI.
+**Local run (22 Nov 2026), every backend suite against a throwaway MongoDB 7:** auth 52/52, tor 82/82, user 51/51, admin 79/79, qualification 39/39, homepage 43/43, report 20/20, category 12/12, notification 19/19, central-egp 17/17, producer 26/27. The one failure, `listAnnouncements maps eGP announcements to discovered projects`, fails because the e-GP announcement adapter now returns an extra `announcements: null` field that the test does not expect. It is not a security test, and it also fails on the code before 22 Nov. The full suite also runs in CI.
 
 ### 7.2 SAST (Semgrep + npm audit) · Criterion 14
 
@@ -1062,7 +1070,7 @@ Format rules per field are in §5.5. Rules about **combinations** of values, all
 | AI qualification calls | global | 200 / rolling 24 h (`QUALIFICATION_DAILY_CALL_LIMIT`), one `qualification_ai_calls` row per call | `qualification-match.controller.ts`, worker |
 | AI qualification calls (on demand) | user | 20 / rolling 24 h (`QUALIFICATION_USER_DAILY_CALL_LIMIT`) | `qualification-match.controller.ts` |
 | Interests | per user | 50 | `user.validation.ts` |
-| Team, education, certifications, projects | per profile | 10 education, 30 certifications, 100 members per project | `bidder-profile.validation.ts` |
+| Team, education, certifications, projects | per profile | 100 team members, 100 projects; 10 education and 30 certifications per person | `bidder-profile.constants.ts`, `bidder-profile.validation.ts` |
 | List page size | per request | 100 | `admin.validation.ts`, `tor.controller.ts` |
 | Request body | per request | 1 MB | `apps/api/app.ts` |
 
