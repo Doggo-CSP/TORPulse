@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSimilarProjects } from "@/hooks/use-tors";
-import { formatBahtCurrency, formatThaiDate, formatThaiMonth } from "@/api/reports.api";
+import { formatBahtCurrency, formatThaiDate, formatThaiMonth } from "@/lib/format";
 import { QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
 import { SimilarProjectsTourProvider, useSimilarProjectsTour } from "./similar-projects-tour";
 

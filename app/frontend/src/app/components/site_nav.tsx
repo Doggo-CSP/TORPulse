@@ -45,7 +45,6 @@ export function SiteNav() {
       <NavbarSection className="max-lg:hidden">
         <NavbarItem href="/">หน้าแรก</NavbarItem>
         <NavbarItem href="/saved">TOR ที่บันทึกไว้</NavbarItem>
-        <NavbarItem href="/reports">รายงาน</NavbarItem>
         {isAdmin && <NavbarItem href="/admin">ผู้ดูแลระบบ</NavbarItem>}
       </NavbarSection>
 

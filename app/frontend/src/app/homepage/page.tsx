@@ -17,7 +17,7 @@ import { useBidderProfile } from "@/hooks/use-bidder-profile";
 import { useRouter } from "next/navigation";
 import { useCategories } from "@/hooks/use-categories";
 import { DeadlineBadge } from "@/app/components/deadline_badge";
-import { formatThaiDate } from "@/api/reports.api";
+import { formatThaiDate } from "@/lib/format";
 import { HomepageTourProvider } from "./homepage-tour";
 import { useTour } from "@/hooks/use-tour";
 
@@ -1117,13 +1117,6 @@ export default function HomePage() {
                 </span>
               ))}
             </div>
-
-            <Link
-              href="/reports"
-              className="mt-5 inline-flex w-fit items-center gap-2 rounded-full border border-border bg-surface px-4 py-2 text-sm font-medium transition-colors hover:bg-surface-2"
-            >
-              ดูรายงานเชิงลึก →
-            </Link>
           </div>
 
           <div className="panel p-6">

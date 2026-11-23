@@ -43,7 +43,6 @@ flowchart LR
     p1["/homepage"]
     p2["/tor/[id]"]
     p3["/saved"]
-    p4["/reports"]
     p5["/admin"]
   end
 
@@ -60,8 +59,8 @@ flowchart LR
   merge -->|upsertTor| tors
 
   tors --> a1 & a2 & a3 & a4 & a5
-  a1 & a2 & a3 & a4 --> hooks
-  hooks --> p1 & p2 & p3 & p4
+  a1 & a2 & a3 --> hooks
+  hooks --> p1 & p2 & p3
   a5 --> p5
 ```
 

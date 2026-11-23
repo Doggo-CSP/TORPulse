@@ -71,7 +71,7 @@ Two phases, separated by `rect` blocks:
 - → `tors`, with field groups shown as notes (LLM / source / eligibility / audit).
 - → API `/api/v1/tors`, `/tors/:id/similar`, `/homepage`, `/reports`, `/admin/tors`.
 - → hooks `use-tors.ts`.
-- → pages `/homepage`, `/tor/[id]`, `/saved`, `/reports`, `/admin`.
+- → pages `/homepage`, `/tor/[id]`, `/saved`, `/admin`.
 
 **4b. AI recommend / qualification workflow (TD)**
 - Three entry points:
