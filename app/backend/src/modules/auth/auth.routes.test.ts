@@ -9,7 +9,7 @@ import { Types } from 'mongoose'
 
 import { createApiApp } from '../../apps/api/app.js'
 import type { ApiAuthConfig } from './auth.config.js'
-import { createAuthRouter } from './auth.routes.js'
+import { createAuthRouter, safeReturnTo } from './auth.routes.js'
 import { createPassport } from './passport.js'
 import { User } from './user.model.js'
 
@@ -178,4 +178,98 @@ test('Google login rejects a suspended account', async (t) => {
   })
 
   assert.equal(user, false)
+})
+
+test('safeReturnTo keeps paths on this site and rejects anything that could leave it', () => {
+  assert.equal(safeReturnTo('/tor/6adf12a387f73f72d242088a'), '/tor/6adf12a387f73f72d242088a')
+  assert.equal(safeReturnTo('/homepage?tour=1'), '/homepage?tour=1')
+  for (const unsafe of [
+    undefined,
+    '',
+    'tor/abc',
+    '//evil.example.com',
+    '/\\evil.example.com',
+    'https://evil.example.com',
+    '/tor/abc\r\nSet-Cookie: x=1',
+    `/${'a'.repeat(600)}`,
+    ['/tor/abc'],
+  ]) {
+    assert.equal(safeReturnTo(unsafe), null, `should reject ${JSON.stringify(unsafe)}`)
+  }
+})
+
+// Stands in for the Google strategy: no code -> redirect to Google, code=ok -> success,
+// anything else -> failure
+const createFakeGooglePassport = () => {
+  const authPassport = new passport.Passport()
+  authPassport.use('google', {
+    name: 'google',
+    authenticate(
+      this: { success(u: unknown): void; fail(): void; redirect(url: string): void },
+      req: express.Request,
+    ) {
+      if (req.query.code === 'ok') this.success({ id: 'user-1' })
+      else if (req.query.code) this.fail()
+      else this.redirect('https://accounts.google.com/o/oauth2/v2/auth')
+    },
+  } as unknown as passport.Strategy)
+  authPassport.serializeUser((user, done) => done(null, (user as unknown as { id: string }).id))
+  authPassport.deserializeUser((id, done) => done(null, { id } as unknown as Express.User))
+  return authPassport
+}
+
+const createLoginApp = () => {
+  const authPassport = createFakeGooglePassport()
+  const app = express()
+  app.use(
+    session({
+      secret: config.sessionSecret,
+      resave: false,
+      saveUninitialized: false,
+      store: new session.MemoryStore(),
+    }),
+  )
+  app.use(authPassport.initialize())
+  app.use(authPassport.session())
+  app.use('/auth', createAuthRouter(authPassport, config))
+  return app
+}
+
+test('Google login returns to the page given in returnTo', async () => {
+  const agent = request.agent(createLoginApp())
+
+  const start = await agent.get(`/auth/google?returnTo=${encodeURIComponent('/tor/abc?x=1')}`)
+  assert.equal(start.status, 302)
+  assert.match(start.headers.location ?? '', /^https:\/\/accounts\.google\.com\//)
+
+  const callback = await agent.get('/auth/google/callback?code=ok')
+  assert.equal(callback.status, 302)
+  assert.equal(callback.headers.location, 'http://localhost:3000/tor/abc?x=1')
+
+  // The next login without returnTo must not reuse the old page
+  await agent.get('/auth/google')
+  const second = await agent.get('/auth/google/callback?code=ok')
+  assert.equal(second.headers.location, 'http://localhost:3000/homepage')
+})
+
+test('Google login ignores an off-site returnTo and goes to the homepage', async () => {
+  const agent = request.agent(createLoginApp())
+
+  await agent.get(`/auth/google?returnTo=${encodeURIComponent('//evil.example.com/phish')}`)
+  const callback = await agent.get('/auth/google/callback?code=ok')
+
+  assert.equal(callback.headers.location, 'http://localhost:3000/homepage')
+})
+
+test('Google login with no returnTo goes to the homepage, and a failed login to the login page', async () => {
+  const agent = request.agent(createLoginApp())
+
+  await agent.get('/auth/google')
+  const ok = await agent.get('/auth/google/callback?code=ok')
+  assert.equal(ok.headers.location, 'http://localhost:3000/homepage')
+
+  const failedAgent = request.agent(createLoginApp())
+  await failedAgent.get(`/auth/google?returnTo=${encodeURIComponent('/tor/abc')}`)
+  const failed = await failedAgent.get('/auth/google/callback?code=denied')
+  assert.equal(failed.headers.location, 'http://localhost:3000/auth?error=google')
 })

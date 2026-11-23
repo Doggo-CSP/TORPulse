@@ -1,14 +1,22 @@
 import Link from "next/link";
 
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
-const googleLoginUrl = `${apiUrl}/auth/google`;
+
+// Only a page on this site (the API checks this again before redirecting)
+const isSafeNext = (next: unknown): next is string =>
+  typeof next === "string" && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\");
 
 interface LoginPageProps {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const authenticationFailed = (await searchParams).error === "google";
+  const params = await searchParams;
+  const authenticationFailed = params.error === "google";
+  // ?next=/tor/<id> brings the user back to that page after Google login
+  const googleLoginUrl = isSafeNext(params.next)
+    ? `${apiUrl}/auth/google?returnTo=${encodeURIComponent(params.next)}`
+    : `${apiUrl}/auth/google`;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f5f0e8] px-4">

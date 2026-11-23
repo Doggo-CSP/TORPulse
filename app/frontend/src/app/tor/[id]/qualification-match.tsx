@@ -167,7 +167,8 @@ export function QualificationMatchCard({
   isLoggedIn,
   autoStartTour = false,
 }: QualificationMatchCardProps) {
-  const { result, reevaluate } = useQualificationMatch(tor?.id ?? torId, isLoggedIn);
+  const currentTorId = tor?.id ?? torId;
+  const { result, reevaluate } = useQualificationMatch(currentTorId, isLoggedIn);
   const [filter, setFilter] = useState<"all" | RequirementStatus>("all");
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -188,7 +189,7 @@ export function QualificationMatchCard({
             ระบบจะวิเคราะห์เงื่อนไข TOR เทียบกับข้อมูลและผลงานบริษัทของคุณโดยอัตโนมัติ
           </p>
           <Link
-            href="/auth/signin"
+            href={currentTorId ? `/auth?next=${encodeURIComponent(`/tor/${currentTorId}`)}` : "/auth"}
             className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-colors"
           >
             เข้าสู่ระบบเพื่อดูคะแนน
