@@ -103,28 +103,14 @@ const asPositiveNumber = (value: unknown): number | null =>
 const asDate = (value: unknown): Date | null =>
   value instanceof Date && !Number.isNaN(value.getTime()) ? value : null
 
-// A TOR becomes a FinishedTor when it has a mid price and either a real awarded price or a
-// closed, not-cancelled bidding (mock awarded price). Everything else returns null.
-export function toFinishedTor(doc: Record<string, unknown>, now: Date): FinishedTor | null {
+// Any public TOR with a mid price, open for bids or not. "Similar projects" (UC-05) compares mid
+// prices only, so it does not need an awarded price.
+export type PricedTor = Omit<FinishedTor, 'awardedPriceBaht' | 'awardedIsMock'>
+
+export function toPricedTor(doc: Record<string, unknown>): PricedTor | null {
   const midPriceBaht = asPositiveNumber(doc.midPriceBaht)
   const externalId = asString(doc.externalId)
   if (midPriceBaht === null || externalId === null) return null
-
-  const submissionDeadlineAt = asDate(doc.submissionDeadlineAt)
-  const realAwarded = asPositiveNumber(doc.awardedPriceBaht)
-  let awardedPriceBaht: number
-  let awardedIsMock: boolean
-  if (realAwarded !== null) {
-    awardedPriceBaht = realAwarded
-    awardedIsMock = false
-  } else {
-    const cancelled = CANCELLED_CONTRACT_STATUS_CODES.includes(
-      asString(doc.contractStatusCode) ?? '',
-    )
-    if (cancelled || !isBiddingClosed(submissionDeadlineAt, now)) return null
-    awardedPriceBaht = mockAwardedPrice(externalId, midPriceBaht)
-    awardedIsMock = true
-  }
 
   const technologies = asStringArray(doc.technologies)
   const category = resolveTorCategory({ category: asString(doc.category), technologies })
@@ -143,13 +129,35 @@ export function toFinishedTor(doc: Record<string, unknown>, now: Date): Finished
     summary: asString(doc.summary),
     budgetBaht: asPositiveNumber(doc.budgetBaht),
     midPriceBaht,
-    awardedPriceBaht,
-    awardedIsMock,
     announceDate: asDate(doc.announceDate),
-    submissionDeadlineAt,
+    submissionDeadlineAt: asDate(doc.submissionDeadlineAt),
     analyzedAt: asDate(doc.analyzedAt),
     detailUrl: asString(doc.detailUrl),
   }
+}
+
+// A TOR becomes a FinishedTor when it has a mid price and either a real awarded price or a
+// closed, not-cancelled bidding (mock awarded price). Everything else returns null.
+export function toFinishedTor(doc: Record<string, unknown>, now: Date): FinishedTor | null {
+  const priced = toPricedTor(doc)
+  if (priced === null) return null
+
+  const realAwarded = asPositiveNumber(doc.awardedPriceBaht)
+  let awardedPriceBaht: number
+  let awardedIsMock: boolean
+  if (realAwarded !== null) {
+    awardedPriceBaht = realAwarded
+    awardedIsMock = false
+  } else {
+    const cancelled = CANCELLED_CONTRACT_STATUS_CODES.includes(
+      asString(doc.contractStatusCode) ?? '',
+    )
+    if (cancelled || !isBiddingClosed(priced.submissionDeadlineAt, now)) return null
+    awardedPriceBaht = mockAwardedPrice(priced.externalId, priced.midPriceBaht)
+    awardedIsMock = true
+  }
+
+  return { ...priced, awardedPriceBaht, awardedIsMock }
 }
 
 const PROJECTION = {
@@ -172,26 +180,35 @@ const PROJECTION = {
   detailUrl: 1,
 } as const
 
-let cache: { set: FinishedTorSet; expiresAt: number } | null = null
-let pending: Promise<FinishedTorSet> | null = null
-
-async function loadFinishedTors(): Promise<FinishedTorSet> {
-  const now = new Date()
-  const docs = await TorModel.find(
-    { ...PUBLIC_TOR_FILTER, midPriceBaht: { $gt: 0 } },
-    PROJECTION,
-  ).lean()
-  const items = docs
-    .map((doc) => toFinishedTor(doc as unknown as Record<string, unknown>, now))
-    .filter((item): item is FinishedTor => item !== null)
-  return { asOf: now, items }
+interface PricedTorSet {
+  asOf: Date
+  finished: FinishedTor[]
+  priced: PricedTor[]
 }
 
-// TORs with a mid and an awarded price (real or mock), read from `tors`.
-export async function getFinishedTors(): Promise<FinishedTorSet> {
+let cache: { set: PricedTorSet; expiresAt: number } | null = null
+let pending: Promise<PricedTorSet> | null = null
+
+// One read of `tors` serves both sets: every TOR with a mid price, and the finished ones.
+async function loadPricedTors(): Promise<PricedTorSet> {
+  const now = new Date()
+  const docs = (await TorModel.find(
+    { ...PUBLIC_TOR_FILTER, midPriceBaht: { $gt: 0 } },
+    PROJECTION,
+  ).lean()) as unknown as Record<string, unknown>[]
+  return {
+    asOf: now,
+    finished: docs
+      .map((doc) => toFinishedTor(doc, now))
+      .filter((item): item is FinishedTor => item !== null),
+    priced: docs.map((doc) => toPricedTor(doc)).filter((item): item is PricedTor => item !== null),
+  }
+}
+
+async function getPricedTorSet(): Promise<PricedTorSet> {
   if (cache && cache.expiresAt > Date.now()) return cache.set
   if (!pending) {
-    pending = loadFinishedTors()
+    pending = loadPricedTors()
       .then((set) => {
         cache = { set, expiresAt: Date.now() + CACHE_TTL_MS }
         return set
@@ -201,6 +218,18 @@ export async function getFinishedTors(): Promise<FinishedTorSet> {
       })
   }
   return pending
+}
+
+// TORs with a mid and an awarded price (real or mock), read from `tors`.
+export async function getFinishedTors(): Promise<FinishedTorSet> {
+  const set = await getPricedTorSet()
+  return { asOf: set.asOf, items: set.finished }
+}
+
+// Every public TOR with a mid price, open for bids or not (UC-05 similar projects).
+export async function getPricedTors(): Promise<{ asOf: Date; items: PricedTor[] }> {
+  const set = await getPricedTorSet()
+  return { asOf: set.asOf, items: set.priced }
 }
 
 export function clearFinishedTorCache(): void {

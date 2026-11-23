@@ -4,19 +4,23 @@ import { isObjectIdOrHexString } from 'mongoose'
 import { getVisibleCategoryNameMap, listCategories } from '../category/category.repository.js'
 import { resolveTorCategory } from '../tor/tor.controller.js'
 import { HIDDEN_TOR_REVIEW_STATUSES, TorModel } from '../tor/tor.model.js'
-import { getFinishedTors, reportSource, type FinishedTor } from './finished-tors.js'
+import {
+  getFinishedTors,
+  getPricedTors,
+  isBiddingClosed,
+  reportSource,
+  type FinishedTor,
+} from './finished-tors.js'
 import {
   categoryComparison,
   filterFinishedTors,
   findSimilarProjects,
+  midPriceDiffPct,
   monthlyTimeline,
   priceOverview,
   procurementList,
   reportDateOf,
-  round1,
-  savingsBaht,
   savingsDistribution,
-  savingsPct,
   summarizeSimilar,
   withVisibleCategories,
   type FinishedTorFilters,
@@ -196,10 +200,9 @@ export async function departmentsFilterHandler(_req: Request, res: Response): Pr
 // GET /api/v1/tors/:id/similar (UC-05)
 // ---------------------------------------------------------------------------
 
-// TORs whose bidding has closed and that are similar to this TOR (shared categories and
-// technologies), with their mid and awarded prices, so the user can judge whether this TOR's
-// budget is reasonable. Awarded prices may be mock (awarded_is_mock).
-export async function similarFinishedTorsHandler(req: Request, res: Response): Promise<void> {
+// TORs similar to this TOR (shared categories and technologies), open for bids or not, with
+// their mid prices compared with this TOR's mid price. No awarded prices: they would be mock.
+export async function similarTorsHandler(req: Request, res: Response): Promise<void> {
   const { id } = req.params
   if (!isObjectIdOrHexString(id)) {
     res.status(400).json({ success: false, message: 'รหัส TOR ไม่ถูกต้อง' })
@@ -217,6 +220,7 @@ export async function similarFinishedTorsHandler(req: Request, res: Response): P
     categories: 1,
     technologies: 1,
     budgetBaht: 1,
+    midPriceBaht: 1,
     reviewStatus: 1,
   }).lean()
   if (!tor || (tor.reviewStatus && HIDDEN_TOR_REVIEW_STATUSES.includes(tor.reviewStatus))) {
@@ -224,36 +228,36 @@ export async function similarFinishedTorsHandler(req: Request, res: Response): P
     return
   }
 
-  const [finished, categoryNames] = await Promise.all([
-    getFinishedTors(),
-    getVisibleCategoryNameMap(),
-  ])
+  const [priced, categoryNames] = await Promise.all([getPricedTors(), getVisibleCategoryNameMap()])
   // Hidden categories are never matched on or shown (soft delete)
   const visible = new Set(categoryNames.keys())
   const category = resolveTorCategory(tor)
   const targetCategories = (tor.categories?.length ? tor.categories : [category]).filter((key) =>
     visible.has(key),
   )
+  const targetMidPriceBaht = tor.midPriceBaht && tor.midPriceBaht > 0 ? tor.midPriceBaht : null
   const target = {
     externalId: tor.externalId,
     category: visible.has(category) ? category : null,
     categories: targetCategories,
     technologies: tor.technologies ?? [],
+    midPriceBaht: targetMidPriceBaht,
     budgetBaht: tor.budgetBaht ?? null,
   }
 
   const matches = findSimilarProjects(
     target,
-    finished.items.map((item) => withVisibleCategories(item, visible)),
+    priced.items.map((item) => withVisibleCategories(item, visible)),
     parsed.data.limit,
   )
+  const now = new Date()
 
   res.json({
     success: true,
     data: {
       summary: summarizeSimilar(
         matches.map((match) => match.tor),
-        tor.budgetBaht ?? null,
+        targetMidPriceBaht,
       ),
       items: matches.map(({ tor: project, match }) => ({
         tor_id: project.id,
@@ -270,16 +274,20 @@ export async function similarFinishedTorsHandler(req: Request, res: Response): P
         matched_technologies: match.matchedTechnologies,
         score: match.score,
         announce_date: reportDateOf(project)?.toISOString() ?? null,
+        submission_deadline_at: project.submissionDeadlineAt?.toISOString() ?? null,
+        bidding_closed: isBiddingClosed(project.submissionDeadlineAt, now),
         budget_baht: project.budgetBaht,
         mid_price_baht: project.midPriceBaht,
-        awarded_price_baht: project.awardedPriceBaht,
-        awarded_is_mock: project.awardedIsMock,
-        savings_amount_baht: Math.round(savingsBaht(project)),
-        savings_pct: round1(savingsPct(project)),
+        // Negative: lower than this TOR's mid price; null when this TOR has no mid price
+        mid_price_diff_pct: midPriceDiffPct(project.midPriceBaht, targetMidPriceBaht),
         requirements: project.requirements.slice(0, 5),
         detail_url: project.detailUrl,
       })),
     },
-    source: reportSource(finished),
+    source: {
+      collection: 'tors',
+      as_of: priced.asOf.toISOString(),
+      project_count: priced.items.length,
+    },
   })
 }

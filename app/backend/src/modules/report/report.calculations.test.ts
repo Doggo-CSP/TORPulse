@@ -6,6 +6,7 @@ import {
   mockAwardedPrice,
   mockSavingsPct,
   toFinishedTor,
+  toPricedTor,
   type FinishedTor,
 } from './finished-tors.js'
 import {
@@ -13,6 +14,7 @@ import {
   filterFinishedTors,
   findSimilarProjects,
   median,
+  midPriceDiffPct,
   monthlyTimeline,
   priceOverview,
   procurementList,
@@ -304,26 +306,80 @@ test('findSimilarProjects scores shared categories and technologies', () => {
     findSimilarProjects({ ...target, budgetBaht: 1_100_000 }, [A, B]).map((m) => m.tor.externalId),
     ['A', 'B'],
   )
+  // The TOR's mid price wins over its budget for the size: mid 1,900,000 is nearest to B
+  assert.deepEqual(
+    findSimilarProjects({ ...target, midPriceBaht: 1_900_000, budgetBaht: 1_100_000 }, [A, B]).map(
+      (m) => m.tor.externalId,
+    ),
+    ['B', 'A'],
+  )
 })
 
-test('summarizeSimilar compares the TOR budget with similar awarded prices', () => {
-  // medians of A and B: mid 1,500,000 · awarded 1,300,000
-  // budget 1,800,000 is (1,800,000 - 1,300,000) / 1,300,000 = 38.46% above
+test('findSimilarProjects also matches TORs still open for bids (mid price only)', () => {
+  const now = new Date('2026-11-23T05:00:00Z')
+  const openDoc = {
+    _id: 'open-1',
+    externalId: 'OPEN',
+    projectTitle: 'Open web project',
+    category: 'web_application',
+    categories: ['web_application'],
+    technologies: ['React'],
+    midPriceBaht: 1_200_000,
+    submissionDeadlineAt: new Date('2026-12-31T00:00:00Z'),
+  }
+  // Not finished (no awarded price, bidding open), but priced
+  assert.equal(toFinishedTor(openDoc, now), null)
+  const open = toPricedTor(openDoc)
+  assert.ok(open)
+  assert.equal(toPricedTor({ ...openDoc, midPriceBaht: null }), null)
+
+  const target = { externalId: 'X', category: 'web_application', categories: [], technologies: [] }
+  assert.deepEqual(
+    findSimilarProjects(target, [open]).map((m) => m.tor.externalId),
+    ['OPEN'],
+  )
+})
+
+test('midPriceDiffPct compares a similar mid price with this TOR mid price', () => {
+  // (1,000,000 - 1,250,000) / 1,250,000 = -20% · (2,000,000 - 1,250,000) / 1,250,000 = +60%
+  assert.equal(midPriceDiffPct(1_000_000, 1_250_000), -20)
+  assert.equal(midPriceDiffPct(2_000_000, 1_250_000), 60)
+  assert.equal(midPriceDiffPct(1_250_000, 1_250_000), 0)
+  assert.equal(midPriceDiffPct(1_000_000, 3_000_000), -66.7)
+  // This TOR has no mid price: nothing to compare with
+  assert.equal(midPriceDiffPct(1_000_000, null), null)
+})
+
+test('summarizeSimilar compares this TOR mid price with similar mid prices', () => {
+  // A and B mid prices: 1,000,000 and 2,000,000 → median 1,500,000
+  // this TOR's mid 1,800,000 is (1,800,000 - 1,500,000) / 1,500,000 = 20% above
   assert.deepEqual(summarizeSimilar([A, B], 1_800_000), {
     project_count: 2,
+    target_mid_price_baht: 1_800_000,
     median_mid_price_baht: 1_500_000,
-    median_awarded_price_baht: 1_300_000,
-    avg_savings_pct: 12.5,
-    budget_vs_median_awarded_pct: 38.5,
+    min_mid_price_baht: 1_000_000,
+    max_mid_price_baht: 2_000_000,
+    target_vs_median_mid_pct: 20,
   })
+  // Below the median: negative
+  assert.equal(summarizeSimilar([A, B], 1_200_000).target_vs_median_mid_pct, -20)
   assert.deepEqual(summarizeSimilar([], 1_000_000), {
     project_count: 0,
+    target_mid_price_baht: 1_000_000,
     median_mid_price_baht: null,
-    median_awarded_price_baht: null,
-    avg_savings_pct: null,
-    budget_vs_median_awarded_pct: null,
+    min_mid_price_baht: null,
+    max_mid_price_baht: null,
+    target_vs_median_mid_pct: null,
   })
-  assert.equal(summarizeSimilar([A], null).budget_vs_median_awarded_pct, null)
+  // This TOR has no mid price: the similar prices are still summarised, without a %
+  assert.deepEqual(summarizeSimilar([A], null), {
+    project_count: 1,
+    target_mid_price_baht: null,
+    median_mid_price_baht: 1_000_000,
+    min_mid_price_baht: 1_000_000,
+    max_mid_price_baht: 1_000_000,
+    target_vs_median_mid_pct: null,
+  })
 })
 
 test('median of odd and even lists', () => {

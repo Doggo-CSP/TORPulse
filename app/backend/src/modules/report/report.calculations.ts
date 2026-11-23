@@ -52,7 +52,10 @@ const sum = (values: number[]) => values.reduce((total, value) => total + value,
 // A hidden category is a soft delete for users: it is never shown, filtered on or matched,
 // and comes back as soon as an admin shows it again. The TOR keeps its stored category; only
 // what users see changes. `visible` is the set of active category keys.
-export function withVisibleCategories(tor: FinishedTor, visible: ReadonlySet<string>): FinishedTor {
+export function withVisibleCategories<T extends Pick<FinishedTor, 'category' | 'categories'>>(
+  tor: T,
+  visible: ReadonlySet<string>,
+): T {
   return {
     ...tor,
     category: tor.category !== null && visible.has(tor.category) ? tor.category : null,
@@ -322,9 +325,22 @@ const MAX_TECHNOLOGY_SCORE = 3
 
 const normalizeTech = (tech: string) => tech.trim().toLowerCase()
 
+// What a candidate needs to be compared: any TOR with a mid price, open for bids or not.
+export type SimilarCandidate = Pick<
+  FinishedTor,
+  | 'externalId'
+  | 'category'
+  | 'categories'
+  | 'technologies'
+  | 'midPriceBaht'
+  | 'announceDate'
+  | 'analyzedAt'
+  | 'submissionDeadlineAt'
+>
+
 // Score = 3 for the same primary category, +1 per other shared category, +1 per shared
 // technology (at most 3). A project must share at least one category to count as similar.
-export function scoreSimilarity(target: SimilarityTarget, candidate: FinishedTor) {
+export function scoreSimilarity(target: SimilarityTarget, candidate: SimilarCandidate) {
   const targetCategories = new Set(
     target.categories.length ? target.categories : target.category ? [target.category] : [],
   )
@@ -346,50 +362,62 @@ export function scoreSimilarity(target: SimilarityTarget, candidate: FinishedTor
   return { score, matchedCategories, matchedTechnologies }
 }
 
-// How far a project's reference price is from the TOR's budget, as a ratio on a log scale
+// How far a project's mid price is from the TOR's size, as a ratio on a log scale
 // (0 = same size; 2x bigger and 2x smaller count the same).
-const budgetDistance = (tor: FinishedTor, budgetBaht: number | null | undefined) =>
-  budgetBaht ? Math.abs(Math.log(tor.midPriceBaht / budgetBaht)) : 0
+const sizeDistance = (tor: SimilarCandidate, sizeBaht: number | null | undefined) =>
+  sizeBaht ? Math.abs(Math.log(tor.midPriceBaht / sizeBaht)) : 0
 
-// The most similar finished projects, best first; the TOR itself is never its own match.
-// Equal scores go to the project closest in size to the TOR's budget, then the newest.
-export function findSimilarProjects(
-  target: SimilarityTarget & { budgetBaht?: number | null },
-  items: FinishedTor[],
+// The most similar projects, best first; the TOR itself is never its own match. Equal scores go
+// to the project closest in size to the TOR (its mid price, else its budget), then the newest.
+export function findSimilarProjects<T extends SimilarCandidate>(
+  target: SimilarityTarget & { midPriceBaht?: number | null; budgetBaht?: number | null },
+  items: T[],
   limit = 5,
 ) {
+  const sizeBaht = target.midPriceBaht ?? target.budgetBaht
   return items
     .filter((tor) => tor.externalId !== target.externalId)
     .map((tor) => ({ tor, match: scoreSimilarity(target, tor) }))
     .filter(
-      (
-        entry,
-      ): entry is { tor: FinishedTor; match: NonNullable<ReturnType<typeof scoreSimilarity>> } =>
+      (entry): entry is { tor: T; match: NonNullable<ReturnType<typeof scoreSimilarity>> } =>
         entry.match !== null,
     )
     .sort(
       (a, b) =>
         b.match.score - a.match.score ||
-        budgetDistance(a.tor, target.budgetBaht) - budgetDistance(b.tor, target.budgetBaht) ||
+        sizeDistance(a.tor, sizeBaht) - sizeDistance(b.tor, sizeBaht) ||
         (reportDateOf(b.tor)?.getTime() ?? 0) - (reportDateOf(a.tor)?.getTime() ?? 0),
     )
     .slice(0, limit)
 }
 
-// How the TOR's budget compares with what similar projects were priced and won at.
-export function summarizeSimilar(projects: FinishedTor[], targetBudgetBaht: number | null) {
-  const medianMid = median(projects.map((t) => t.midPriceBaht))
-  const medianAwarded = median(projects.map((t) => t.awardedPriceBaht))
+// A similar project's mid price against this TOR's mid price, in % of this TOR's.
+// Negative: the similar project's mid price is lower. null when this TOR has no mid price.
+export function midPriceDiffPct(
+  projectMidPriceBaht: number,
+  targetMidPriceBaht: number | null,
+): number | null {
+  if (!targetMidPriceBaht) return null
+  return round1(((projectMidPriceBaht - targetMidPriceBaht) / targetMidPriceBaht) * 100)
+}
+
+// How this TOR's mid price compares with the mid prices of similar projects.
+export function summarizeSimilar(
+  projects: Pick<SimilarCandidate, 'midPriceBaht'>[],
+  targetMidPriceBaht: number | null,
+) {
+  const mids = projects.map((t) => t.midPriceBaht)
+  const medianMid = median(mids)
   return {
     project_count: projects.length,
+    target_mid_price_baht: targetMidPriceBaht === null ? null : roundBaht(targetMidPriceBaht),
     median_mid_price_baht: medianMid === null ? null : roundBaht(medianMid),
-    median_awarded_price_baht: medianAwarded === null ? null : roundBaht(medianAwarded),
-    avg_savings_pct:
-      projects.length === 0 ? null : round1(sum(projects.map(savingsPct)) / projects.length),
-    // Positive: this TOR's budget is above the median awarded price of similar projects
-    budget_vs_median_awarded_pct:
-      targetBudgetBaht === null || !medianAwarded
+    min_mid_price_baht: mids.length === 0 ? null : roundBaht(Math.min(...mids)),
+    max_mid_price_baht: mids.length === 0 ? null : roundBaht(Math.max(...mids)),
+    // Positive: this TOR's mid price is above the median mid price of similar projects
+    target_vs_median_mid_pct:
+      targetMidPriceBaht === null || !medianMid
         ? null
-        : round1(((targetBudgetBaht - medianAwarded) / medianAwarded) * 100),
+        : round1(((targetMidPriceBaht - medianMid) / medianMid) * 100),
   }
 }
