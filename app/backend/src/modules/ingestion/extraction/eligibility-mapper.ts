@@ -119,14 +119,18 @@ export function parseEligibility(content: string): TorEligibility {
 
   const result = eligibilitySchema.safeParse(parsed)
   if (!result.success) {
-    throw new Error(`Eligibility mapping returned an invalid shape: ${z.prettifyError(result.error)}`)
+    throw new Error(
+      `Eligibility mapping returned an invalid shape: ${z.prettifyError(result.error)}`,
+    )
   }
 
   return result.data
 }
 
 function buildUserMessage(qualifications: string[]): string {
-  return ['<qualifications>', ...qualifications.map((q) => `- ${q}`), '</qualifications>'].join('\n')
+  return ['<qualifications>', ...qualifications.map((q) => `- ${q}`), '</qualifications>'].join(
+    '\n',
+  )
 }
 
 async function callGemini(

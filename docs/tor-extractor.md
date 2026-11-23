@@ -49,6 +49,9 @@ Two processes share MongoDB:
 | `submissionDeadline` (raw text), `submissionDeadlineAt` (Date) | LLM text, parsed by `parseThaiDate` (`modules/ingestion/thai-date.ts`). The date is null when no exact day is stated, for example "มกราคม 2569". The API returns `submissionDeadline` as `YYYY-MM-DD` or null, and the raw text as `submissionDeadlineText`. |
 | `category`, `categories[]` | LLM, limited to active keys in `categories` |
 | `documents[]` | Names and URLs of the PDFs that were extracted |
+| `confidence` | Computed in `parseTorAnalysis` (`modules/ingestion/extraction/tor-analysis.ts`), see below |
+
+Since analysis `v5`, `confidence` is a computed score, not a value the LLM reports. The LLM scores two judgment parts from a rubric in the prompt: `classificationConfidence` (how clearly the document supports `isSoftwareRelated`) and `readabilityConfidence` (text quality: OCR errors, missing pages, partial TOR). Code computes `coverage`, the share of six core fields the LLM extracted: `projectTitle`, `agencyName`, `budgetBaht`, `submissionDeadline`, at least one requirement, and at least one bidder qualification. Coverage is measured before the BMA fallbacks fill in missing values. The stored score is `0.4 × classification + 0.4 × coverage + 0.2 × readability`, rounded to 2 decimals. TORs extracted before `v5` keep their old self-reported value until they are re-ingested.
 
 Source values that are null never overwrite a value already stored on a TOR. Central eGP's token and project-detail endpoints are not called during ingestion. `getProjectDetails` is kept only for `npm run backfill:egp-details`.
 

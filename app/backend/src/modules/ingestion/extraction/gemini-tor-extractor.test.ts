@@ -35,7 +35,8 @@ test('sends Gemini a JSON request and parses its response', async () => {
               budgetBaht: null,
               submissionDeadline: null,
               contactInformation: [],
-              confidence: 0.9,
+              classificationConfidence: 1,
+              readabilityConfidence: 1,
             }),
           }
         },

@@ -19,7 +19,8 @@ test('parses bidder qualifications and defaults missing lists to empty arrays', 
       budgetBaht: null,
       submissionDeadline: null,
       contactInformation: null,
-      confidence: 0.9,
+      classificationConfidence: 1,
+      readabilityConfidence: 1,
     }),
   )
 
@@ -46,7 +47,8 @@ test('defaults a null bidder qualification list to empty', () => {
       budgetBaht: null,
       submissionDeadline: null,
       contactInformation: [],
-      confidence: 0.8,
+      classificationConfidence: 1,
+      readabilityConfidence: 1,
     }),
   )
 
@@ -68,7 +70,8 @@ test('defaults missing category fields to null and an empty list', () => {
       budgetBaht: null,
       submissionDeadline: null,
       contactInformation: [],
-      confidence: 0.8,
+      classificationConfidence: 1,
+      readabilityConfidence: 1,
     }),
   )
 
@@ -87,4 +90,73 @@ test('lists every category from the database in the system prompt', () => {
   }
   assert.match(prompt, /"gov_cloud": Gov Cloud \(คลาวด์ภาครัฐ\)\./)
   assert.match(prompt, /"primaryCategory"/)
+})
+
+function rawAnalysis(overrides: Record<string, unknown>): string {
+  return JSON.stringify({
+    isSoftwareRelated: true,
+    classificationReason: 'Requires software development.',
+    projectTitle: null,
+    agencyName: null,
+    summary: null,
+    objectives: [],
+    requirements: [],
+    bidderQualifications: [],
+    technologies: [],
+    budgetBaht: null,
+    submissionDeadline: null,
+    contactInformation: [],
+    classificationConfidence: 1,
+    readabilityConfidence: 1,
+    ...overrides,
+  })
+}
+
+test('computes confidence from model judgment and extracted field coverage', () => {
+  const full = parseTorAnalysis(
+    rawAnalysis({
+      projectTitle: 'จ้างพัฒนาระบบ',
+      agencyName: 'กรมตัวอย่าง',
+      budgetBaht: 1_000_000,
+      submissionDeadline: '2026-12-01',
+      requirements: ['พัฒนาระบบ'],
+      bidderQualifications: ['เป็นนิติบุคคล'],
+    }),
+  )
+  assert.equal(full.confidence, 1)
+
+  // 3 of 6 fields: 0.4 × 0.7 + 0.4 × 0.5 + 0.2 × 0.4 = 0.56
+  const partial = parseTorAnalysis(
+    rawAnalysis({
+      projectTitle: 'จ้างพัฒนาระบบ',
+      budgetBaht: 500_000,
+      requirements: ['พัฒนาระบบ'],
+      classificationConfidence: 0.7,
+      readabilityConfidence: 0.4,
+    }),
+  )
+  assert.equal(partial.confidence, 0.56)
+})
+
+test('ignores a self-reported confidence and does not count blank titles', () => {
+  const analysis = parseTorAnalysis(rawAnalysis({ confidence: 0.99, projectTitle: '   ' }))
+
+  // No fields found: 0.4 × 1 + 0.4 × 0 + 0.2 × 1
+  assert.equal(analysis.confidence, 0.6)
+})
+
+test('rejects analysis without the confidence judgment parts', () => {
+  assert.throws(
+    () => parseTorAnalysis(rawAnalysis({ classificationConfidence: undefined })),
+    /invalid shape/,
+  )
+})
+
+test('asks for rubric judgment scores instead of a placeholder confidence', () => {
+  const prompt = buildSystemPrompt(CATEGORY_SEED)
+
+  assert.doesNotMatch(prompt, /"confidence"/)
+  assert.match(prompt, /"classificationConfidence"/)
+  assert.match(prompt, /"readabilityConfidence"/)
+  assert.match(prompt, /Never copy an example value/)
 })

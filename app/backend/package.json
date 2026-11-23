@@ -41,6 +41,7 @@
     "backfill:egp-details": "tsx src/scripts/backfill-central-egp-details.ts",
     "backfill:eligibility": "tsx src/scripts/backfill-eligibility.ts",
     "seed:notify-user": "tsx src/scripts/seed-notification-user.ts",
+    "email:sample": "tsx src/scripts/send-sample-email.ts",
     "backfill:bma-details": "tsx src/scripts/backfill-bma-details.ts",
     "set-admin": "tsx src/scripts/set-admin.ts",
     "sandbox:egp": "tsx src/scripts/sandbox-egp-announcements.ts",

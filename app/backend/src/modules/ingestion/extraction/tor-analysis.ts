@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import type { CategoryItem } from '../../category/category.repository.js'
 
-export const TOR_ANALYSIS_VERSION = 'v4'
+export const TOR_ANALYSIS_VERSION = 'v5'
 const stringArraySchema = z.preprocess(
   (value) => (value === null || value === undefined ? [] : value),
   z.array(z.string()),
@@ -26,10 +26,13 @@ const torAnalysisSchema = z.object({
   budgetBaht: z.number().nonnegative().nullable(),
   submissionDeadline: z.string().nullable(),
   contactInformation: stringArraySchema,
-  confidence: z.number().min(0).max(1),
+  classificationConfidence: z.number().min(0).max(1),
+  readabilityConfidence: z.number().min(0).max(1),
 })
 
-export type TorAnalysis = z.infer<typeof torAnalysisSchema>
+type RawTorAnalysis = z.infer<typeof torAnalysisSchema>
+
+export type TorAnalysis = RawTorAnalysis & { confidence: number }
 
 export type ClassifierCategory = Pick<CategoryItem, 'key' | 'name' | 'description' | 'aiHint'>
 
@@ -46,7 +49,31 @@ export function parseTorAnalysis(content: string): TorAnalysis {
     throw new Error(`TOR analysis returned an invalid shape: ${z.prettifyError(result.error)}`)
   }
 
-  return result.data
+  return { ...result.data, confidence: computeConfidence(result.data) }
+}
+
+// Share of the six core fields the model extracted. Checked in code, so the score reflects
+// what was actually found rather than what the model says it found.
+export function fieldCoverage(analysis: RawTorAnalysis): number {
+  const found = [
+    Boolean(analysis.projectTitle?.trim()),
+    Boolean(analysis.agencyName?.trim()),
+    analysis.budgetBaht !== null,
+    analysis.submissionDeadline !== null,
+    analysis.requirements.length > 0,
+    analysis.bidderQualifications.length > 0,
+  ].filter(Boolean).length
+  return found / 6
+}
+
+// The model judges only what needs reading the document (classification clarity and text
+// quality); coverage and the weighting are computed here.
+export function computeConfidence(analysis: RawTorAnalysis): number {
+  const score =
+    0.4 * analysis.classificationConfidence +
+    0.4 * fieldCoverage(analysis) +
+    0.2 * analysis.readabilityConfidence
+  return Math.round(score * 100) / 100
 }
 
 function formatCategoryList(categories: ClassifierCategory[]): string {
@@ -81,7 +108,8 @@ Return one JSON object with exactly this shape:
   "budgetBaht": null,
   "submissionDeadline": "YYYY-MM-DD or null",
   "contactInformation": ["string"],
-  "confidence": 0.0
+  "classificationConfidence": "number from 0 to 1, see the rubric below",
+  "readabilityConfidence": "number from 0 to 1, see the rubric below"
 }
 
 For "submissionDeadline", return the bid/proposal submission deadline (วันยื่นข้อเสนอ / ปิดรับข้อเสนอ) as YYYY-MM-DD in the Gregorian calendar. Convert Buddhist-era years by subtracting 543 (2569 -> 2026). Return null when the document does not state an exact day, and never use the document's own issue or approval date.
@@ -92,6 +120,22 @@ Project categories. Use only these keys:
 ${formatCategoryList(categories)}
 
 For "primaryCategory", choose the single key that best describes the main deliverable. For "categories", list every key that is a material part of the work, with the primary key first. Use null and [] when the TOR is not software-related or no category fits.
+
+Score these two values from the document itself. Never copy an example value.
+
+"classificationConfidence": how clearly the document supports "isSoftwareRelated".
+- 1.0: the main deliverable is stated explicitly (clearly software, or clearly not software).
+- 0.7: software is one material part of a mixed scope (for example hardware plus a system).
+- 0.4: the scope is vague or the decision depends on interpretation.
+- 0.1: the document says almost nothing about the deliverable.
+
+"readabilityConfidence": how usable the source text is.
+- 1.0: complete, clean text.
+- 0.7: minor OCR errors, broken tables or missing pages, but the key sections are readable.
+- 0.4: heavy OCR errors, or only part of the TOR (for example an announcement page without the specification).
+- 0.1: mostly unreadable.
+
+Values between the levels are allowed. Use 0 only when the document is empty or unreadable.
 
 The response must be valid JSON. Use null for unknown scalar values and [] for unknown lists.`
 }
