@@ -21,6 +21,13 @@ export const qualificationSchema = z.object({
     .transform((keys) => [...new Set(keys)]),
 })
 
+export const primaryContactSchema = z.object({
+  name: z.string().trim().optional().default(''),
+  position: z.string().trim().optional().default(''),
+  education: z.string().trim().optional().default(''),
+  startDate: z.string().trim().optional().default(''),
+})
+
 export const updateProfileSchema = z.object({
   accountType: z.enum(['personal', 'company']).optional(),
   displayName: z.string().trim().optional(),
@@ -38,6 +45,7 @@ export const updateProfileSchema = z.object({
   website: z.string().trim().optional(),
   qualification: qualificationSchema.optional(),
   notificationPrefs: z.object({ emailEnabled: z.boolean() }).optional(),
+  primaryContact: primaryContactSchema.optional(),
 })
 
 // TODO(LEGACY-INTEREST-IDS): also accepts the profile page's old ids ("web", "ai", ...) and

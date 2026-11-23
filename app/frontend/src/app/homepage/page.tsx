@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -18,6 +18,8 @@ import { useRouter } from "next/navigation";
 import { useCategories } from "@/hooks/use-categories";
 import { DeadlineBadge } from "@/app/components/deadline_badge";
 import { formatThaiDate } from "@/api/reports.api";
+import { HomepageTourProvider } from "./homepage-tour";
+import { useTour } from "@/hooks/use-tour";
 
 // Category labels on the price chart's y axis
 const CATEGORY_AXIS_WIDTH = 150;
@@ -268,6 +270,9 @@ export default function HomePage() {
   // Profile completeness for qualification scores, and the onboarding wizard for new users
   const { profile: bidderProfile } = useBidderProfile(!!user);
   const router = useRouter();
+  // Guide tour: show once per email on first login
+  const { shouldShow: tourOpen, markSeen: markTourSeen } = useTour(user?.email);
+
   const shouldOnboard =
     !!profile &&
     !!bidderProfile &&
@@ -370,6 +375,10 @@ export default function HomePage() {
   const hasActiveFilters = activeFilters.length > 0;
 
   return (
+    <HomepageTourProvider
+      isOpen={tourOpen && !!profile && !!bidderProfile && !shouldOnboard}
+      onClose={() => { if (user?.email) markTourSeen(user.email); }}
+    >
     <div className="min-h-screen">
       <SiteNav />
 
@@ -896,6 +905,7 @@ export default function HomePage() {
               </h2>
             </div>
             <Link
+              id="tour-profile-link"
               href="/profile"
               className="rounded-full border border-border px-4 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
@@ -1195,5 +1205,6 @@ export default function HomePage() {
         </p>
       </footer>
     </div>
+    </HomepageTourProvider>
   );
 }

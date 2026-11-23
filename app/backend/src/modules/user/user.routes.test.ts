@@ -80,12 +80,87 @@ test('user routes: profile, interests, and bookmark flow', async (t) => {
   await t.test('PUT /user/profile updates allowed fields, including the new org fields', async () => {
     const response = await request(app)
       .put('/user/profile')
-      .send({ displayName: 'Updated Name', website: 'https://example.com', companyName: 'Acme' })
+      .send({
+        displayName: 'Updated Name',
+        website: 'https://example.com',
+        companyName: 'Acme',
+        primaryContact: {
+          name: 'Somchai Jaidee',
+          position: 'Project Manager',
+          education: 'ปริญญาโท',
+          startDate: '2022-05-15',
+        },
+      })
 
     assert.equal(response.status, 200)
     assert.equal(response.body.user.displayName, 'Updated Name')
     assert.equal(response.body.user.website, 'https://example.com')
     assert.equal(response.body.user.companyName, 'Acme')
+    assert.deepEqual(response.body.user.primaryContact, {
+      name: 'Somchai Jaidee',
+      position: 'Project Manager',
+      education: 'ปริญญาโท',
+      startDate: '2022-05-15',
+    })
+  })
+
+  await t.test('PUT /user/profile saves qualification and notification preferences', async () => {
+    const qualification = {
+      registeredCapitalBaht: 5_000_000,
+      yearsInBusiness: 4,
+      maxPastContractValueBaht: 2_000_000,
+      certifications: ['iso27001', 'iso27001'],
+      isThaiJuristicPerson: true,
+      isSme: false,
+    }
+    const response = await request(app)
+      .put('/user/profile')
+      .send({ qualification, notificationPrefs: { emailEnabled: false } })
+
+    assert.equal(response.status, 200)
+    assert.deepEqual(response.body.user.qualification, {
+      ...qualification,
+      certifications: ['iso27001'],
+      hasPositiveNetWorth: null,
+      pastContractAgeYears: null,
+      hasBangkokOffice: null,
+      staffRoles: [],
+    })
+    assert.deepEqual(response.body.user.notificationPrefs, { emailEnabled: false })
+    // No bidder profile yet, so the past projects the AI score needs are missing
+    assert.ok(response.body.user.notificationMissingFields.includes('projects'))
+  })
+
+  await t.test('PUT /user/profile rejects an unknown certification', async () => {
+    const response = await request(app)
+      .put('/user/profile')
+      .send({
+        qualification: {
+          registeredCapitalBaht: null,
+          yearsInBusiness: null,
+          maxPastContractValueBaht: null,
+          certifications: ['made_up'],
+          isThaiJuristicPerson: null,
+          isSme: null,
+        },
+      })
+
+    assert.equal(response.status, 400)
+  })
+
+  await t.test('PUT /user/onboarding records that the wizard was skipped or finished', async () => {
+    const before = await request(app).get('/user/profile')
+    assert.equal(before.body.user.onboardingStatus, null)
+
+    const skipped = await request(app).put('/user/onboarding').send({ status: 'dismissed' })
+    assert.equal(skipped.status, 200)
+    assert.equal(skipped.body.onboardingStatus, 'dismissed')
+
+    const after = await request(app).get('/user/profile')
+    assert.equal(after.body.user.onboardingStatus, 'dismissed')
+
+    const invalid = await request(app).put('/user/onboarding').send({ status: 'later' })
+    assert.equal(invalid.status, 400)
   })
 
   await t.test('PUT /user/profile saves qualification and notification preferences', async () => {

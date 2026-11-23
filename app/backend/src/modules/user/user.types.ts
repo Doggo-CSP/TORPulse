@@ -1,5 +1,12 @@
 import type { CompanyQualification } from '../notification/qualification.js'
 
+export interface PrimaryContactInput {
+  name?: string
+  position?: string
+  education?: string
+  startDate?: string
+}
+
 export interface UpdateProfileInput {
   accountType?: 'personal' | 'company'
   displayName?: string
@@ -18,6 +25,7 @@ export interface UpdateProfileInput {
   qualification?: CompanyQualification
   notificationPrefs?: { emailEnabled: boolean }
   onboardingStatus?: 'completed' | 'dismissed'
+  primaryContact?: PrimaryContactInput
 }
 
 export interface UpdateInterestsInput {
