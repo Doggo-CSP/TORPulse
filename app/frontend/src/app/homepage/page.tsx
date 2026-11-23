@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useDebounce } from "use-debounce";
 import { SiteNav } from "@/app/components/site_nav";
@@ -17,176 +16,14 @@ import { useBidderProfile } from "@/hooks/use-bidder-profile";
 import { useRouter } from "next/navigation";
 import { useCategories } from "@/hooks/use-categories";
 import { DeadlineBadge } from "@/app/components/deadline_badge";
-import { formatThaiDate } from "@/lib/format";
 import { HomepageTourProvider } from "./homepage-tour";
 import { useTour } from "@/hooks/use-tour";
-
-// Category labels on the price chart's y axis
-const CATEGORY_AXIS_WIDTH = 150;
-// Counts characters including Thai vowel and tone marks, which take no width of their own
-const CATEGORY_LABEL_MAX_CHARS = 20;
-
-// Splits a Thai label into lines of at most maxChars, breaking between words (Thai has no
-// spaces, so Intl.Segmenter finds the word boundaries). A single word longer than maxChars
-// stays on its own line.
-function wrapLabel(label: string, maxChars: number): string[] {
-  const words =
-    typeof Intl !== "undefined" && "Segmenter" in Intl
-      ? Array.from(new Intl.Segmenter("th", { granularity: "word" }).segment(label), (s) => s.segment)
-      : label.split(/(\s+)/);
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    if (current && (current + word).length > maxChars) {
-      lines.push(current.trim());
-      current = word.trimStart();
-    } else {
-      current += word;
-    }
-  }
-  if (current.trim()) lines.push(current.trim());
-  return lines;
-}
-
-// Right-aligned, vertically centred multi-line tick so long category names are not cut off
-function WrappedCategoryTick({ x, y, label }: { x: number; y: number; label: string }) {
-  const lines = wrapLabel(label, CATEGORY_LABEL_MAX_CHARS);
-  return (
-    <text x={x - 4} y={y} textAnchor="end" fontSize={11} fill="var(--muted-foreground)">
-      {lines.map((line, index) => (
-        <tspan
-          key={index}
-          x={x - 4}
-          dy={index === 0 ? `${0.35 - (lines.length - 1) * 0.6}em` : "1.2em"}
-        >
-          {line}
-        </tspan>
-      ))}
-      <title>{label}</title>
-    </text>
-  );
-}
-
-const PriceComparisonChart = dynamic(
-  () =>
-    import("recharts").then((recharts) => {
-      const {
-        BarChart,
-        Bar,
-        XAxis,
-        YAxis,
-        Tooltip,
-        ResponsiveContainer,
-        CartesianGrid,
-      } = recharts;
-      return function ChartComponent({
-        data,
-        series,
-      }: {
-        data: Array<{
-          category: string;
-          projectCount: number;
-          [key: string]: string | number | null;
-        }>;
-        series: Array<{ key: string; label: string; color: string }>;
-      }) {
-        // Horizontal bars: the eight Thai category names are too long for an x axis
-        return (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={data}
-              layout="vertical"
-              margin={{ top: 5, right: 16, left: 0, bottom: 0 }}
-              barGap={2}
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                horizontal={false}
-                stroke="var(--border)"
-                opacity={0.3}
-              />
-              <XAxis
-                type="number"
-                tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(v: number) => `฿${v}M`}
-              />
-              <YAxis
-                type="category"
-                dataKey="category"
-                width={CATEGORY_AXIS_WIDTH}
-                tick={(props) => (
-                  <WrappedCategoryTick
-                    x={Number(props.x)}
-                    y={Number(props.y)}
-                    label={String(props.payload?.value ?? "")}
-                  />
-                )}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (!active || !payload || !payload.length) return null;
-                  const row = payload[0]?.payload as { projectCount?: number } | undefined;
-                  return (
-                    <div className="rounded-xl border border-border bg-background px-4 py-3 shadow-lg">
-                      <p className="text-sm font-medium">{label}</p>
-                      {!row?.projectCount ? (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          ยังไม่มี TOR ที่ปิดรับแล้วในหมวดนี้
-                        </p>
-                      ) : (
-                        <div className="mt-1.5 space-y-0.5">
-                          <p className="text-xs text-muted-foreground">
-                            เฉลี่ยจาก {row.projectCount} โครงการ
-                          </p>
-                          {payload.map((entry, i) => (
-                            <p
-                              key={entry.name ?? i}
-                              className="text-xs font-medium"
-                              style={{ color: entry.color }}
-                            >
-                              {entry.name} : ฿{Number(entry.value).toFixed(2)} ล้านบาท
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                }}
-              />
-              {series.map((s) => (
-                <Bar
-                  key={s.key}
-                  dataKey={s.key}
-                  name={s.label}
-                  fill={s.color}
-                  radius={[0, 4, 4, 0]}
-                />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        );
-      };
-    }),
-  { ssr: false },
-);
 
 /* ---------------------------------------------------------------------- */
 
 const baht = (n: number) => "฿" + (n / 1_000_000).toFixed(1) + " ล้าน";
-const toMillion = (n: number) => (n / 1_000_000).toFixed(1);
-const toMillionOrNull = (n: number | null) =>
-  n === null ? null : Math.round((n / 1_000_000) * 100) / 100;
 
 const ITEMS_PER_PAGE = 4;
-
-const priceChartSeries = [
-  { key: "midPrice", label: "ราคากลาง", color: "#d18f5dff" },
-  { key: "awardedPrice", label: "ราคาที่ชนะ", color: "#4a7c59" },
-];
 
 // Maps category keys to accent colors for the left-side result bar and category badge
 const CATEGORY_COLORS: Record<string, string> = {
@@ -207,7 +44,7 @@ function getCategoryColor(category: string | null | undefined): string {
 export default function HomePage() {
   const { user, loading: authLoading } = useAuth();
   const { profile, loading: profileLoading } = useUserProfile(!!user);
-  const { summary, analytics, loadingSummary } = useHomepage();
+  const { summary, loadingSummary } = useHomepage();
 
   // filter options (fiscal years, departments, statuses) come from the TORs in the database
   const { data: filterOptions } = useTorFilterOptions();
@@ -227,33 +64,6 @@ export default function HomePage() {
     [filterOptions],
   );
   const categoryOptions = activeCategories ?? [];
-
-  // Share of open TORs (`tors`) per category
-  const displayedCategorySplit = useMemo(
-    () =>
-      (analytics?.categoryDistribution ?? []).map((item) => ({
-        label: item.label,
-        pct: item.percentage,
-      })),
-    [analytics],
-  );
-
-  // Average mid vs awarded price per category, over TORs whose bidding has closed (mock awarded).
-  // Every active category is listed; a category with no finished project has no bars.
-  const displayedPriceComparison = useMemo(
-    () =>
-      (analytics?.priceComparison ?? []).map((p) => ({
-        category: p.label,
-        projectCount: p.projectCount,
-        midPrice: toMillionOrNull(p.avgMidPriceBaht),
-        awardedPrice: toMillionOrNull(p.avgAwardedPriceBaht),
-      })),
-    [analytics],
-  );
-
-  // Overall averages over the same finished projects
-  const priceSummary = analytics?.priceSummary;
-  const priceSource = analytics?.priceSource ?? null;
 
   const currentUser = user || (profile ? {
     id: profile.id,
@@ -1033,154 +843,6 @@ export default function HomePage() {
               </div>
             </div>
           )}
-        </section>
-
-        {/* Charts */}
-        <section className="mt-8 grid gap-6 lg:grid-cols-3">
-          <div className="panel flex flex-col p-6 lg:col-span-2">
-            <p className="label-eyebrow">สถิติภาพรวมของ TOR</p>
-            <h2 className="mt-2 text-lg font-semibold">
-              ข้อมูลสำหรับวิเคราะห์ราคาย้อนหลัง
-            </h2>
-            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-              ราคากลางเทียบกับราคาที่ชนะของ TOR ที่ผ่านวันปิดรับข้อเสนอแล้ว
-              เพื่อช่วยประเมินราคาและเปรียบเทียบกับโครงการปัจจุบัน
-            </p>
-            {priceSource && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                จาก {priceSource.project_count.toLocaleString("th-TH")} โครงการ · ข้อมูล ณ{" "}
-                {formatThaiDate(priceSource.as_of)}
-              </p>
-            )}
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl bg-surface-2 p-4">
-                <p className="text-xs text-muted-foreground">ราคากลางเฉลี่ย</p>
-                <p className="mt-1 font-display text-xl font-semibold">
-                  {priceSummary?.avgMidPriceBaht != null
-                    ? `฿${toMillion(priceSummary.avgMidPriceBaht)} ล้าน`
-                    : "—"}
-                </p>
-              </div>
-              <div className="rounded-xl bg-surface-2 p-4">
-                <p className="text-xs text-muted-foreground">
-                  ราคาที่ชนะเฉลี่ย
-                </p>
-                <p className="mt-1 font-display text-xl font-semibold">
-                  {priceSummary?.avgAwardedPriceBaht != null
-                    ? `฿${toMillion(priceSummary.avgAwardedPriceBaht)} ล้าน`
-                    : "—"}
-                </p>
-              </div>
-              <div className="rounded-xl bg-surface-2 p-4">
-                <p className="text-xs text-muted-foreground">ส่วนต่างรวม</p>
-                <p className="mt-1 font-display text-xl font-semibold text-primary">
-                  {priceSummary?.avgDiscountPct != null
-                    ? `${priceSummary.avgDiscountPct.toFixed(1)}%`
-                    : "—"}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5" style={{ height: 360 }}>
-              {displayedPriceComparison.length > 0 ? (
-                <PriceComparisonChart
-                  data={displayedPriceComparison}
-                  series={priceChartSeries}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  {analytics ? "ยังไม่มี TOR ที่มีทั้งราคากลางและราคาที่ชนะ" : "กำลังโหลด..."}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-3 flex items-center justify-center gap-6">
-              {priceChartSeries.map((s) => (
-                <span
-                  key={s.label}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground"
-                >
-                  <span
-                    className="h-2.5 w-2.5 rounded-sm"
-                    style={{ backgroundColor: s.color }}
-                  />
-                  {s.label}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="panel p-6">
-            <p className="label-eyebrow">สัดส่วนตามหมวดงาน</p>
-            <ul className="mt-5 space-y-3.5">
-              {displayedCategorySplit.map((c) => (
-                <li key={c.label}>
-                  <div className="flex justify-between text-xs">
-                    <span>{c.label}</span>
-                    <span className="font-mono text-muted-foreground">
-                      {c.pct}%
-                    </span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 rounded-full bg-surface-2">
-                    <div
-                      className="h-full rounded-full bg-accent"
-                      style={{ width: `${Math.min(100, c.pct * 2.6)}%` }}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-6 space-y-3 border-t border-border pt-5">
-              <div className="overflow-hidden rounded-xl border border-border">
-                <div className="bg-primary px-4 py-2.5">
-                  <p className="text-xs font-medium text-primary-foreground">
-                    งบประมาณในการจัดซื้อจัดจ้างรวม
-                  </p>
-                </div>
-                <div className="px-4 py-4">
-                  <p className="font-display text-2xl font-semibold text-primary">
-                    {summary
-                      ? summary.total_budget.toLocaleString("th-TH", { maximumFractionDigits: 0 })
-                      : "—"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">บาท</p>
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-xl border border-border">
-                <div className="bg-primary px-4 py-2.5">
-                  <p className="text-xs font-medium text-primary-foreground">
-                    วงเงินเฉลี่ยต่อโครงการ
-                  </p>
-                </div>
-                <div className="px-4 py-4">
-                  <p className="font-display text-2xl font-semibold text-primary">
-                    {summary?.avg_budget != null
-                      ? summary.avg_budget.toLocaleString("th-TH", { maximumFractionDigits: 0 })
-                      : "—"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">บาท</p>
-                </div>
-              </div>
-
-              <div className="overflow-hidden rounded-xl border border-border">
-                <div className="bg-primary px-4 py-2.5">
-                  <p className="text-xs font-medium text-primary-foreground">
-                    จำนวนโครงการทั้งหมด
-                  </p>
-                </div>
-                <div className="px-4 py-4">
-                  <p className="font-display text-2xl font-semibold text-primary">
-                    {summary ? summary.total_tors.toLocaleString("th-TH") : "—"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    โครงการ
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
         </section>
       </main>
 
