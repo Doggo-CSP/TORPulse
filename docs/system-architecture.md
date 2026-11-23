@@ -57,10 +57,10 @@ Every source ends up as an 11-digit Central e-GP project id. That's why one work
 
 | Prefix | Endpoints | Used by |
 |---|---|---|
-| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar`, `GET/POST /:id/qualification` | TOR list and detail pages (`/recommendations` = top 5 for the logged-in user, ranked by 0.7 × qualification match % + 0.3 × interest category, open TORs first: `modules/tor/tor-recommendation.ts`; `/:id/similar` = similar TORs whose bidding has closed, UC-05; `/:id/qualification` = AI qualification match for the logged-in user, UC-08, see §10) |
+| `/tors` | `GET /`, `GET /:id`, `GET /filter-options`, `GET /recommendations`, `GET /:id/similar`, `GET/POST /:id/qualification` | TOR list and detail pages (`/recommendations` = top 5 for the logged-in user, ranked by 0.7 × qualification match % + 0.3 × interest category, open TORs first: `modules/tor/tor-recommendation.ts`; `/:id/similar` = similar TORs, open or closed, whose mid prices are compared with this TOR's mid price, UC-05; `/:id/qualification` = AI qualification match for the logged-in user, UC-08, see §10) |
 | `/homepage` | `GET /summary`, `GET /analytics` | Homepage dashboard |
 | `/user` | `GET/PUT /profile`, `PUT /interests`, `PUT /onboarding` (`{ status: 'completed' | 'dismissed' }`, so the wizard is not offered again), `GET /bookmarks`, `POST /bookmarks/:torId` · `GET /qualification-matches?torIds=` (precomputed scores for TOR cards, §11) · `GET /bidder-profile`, `GET /bidder-profile/options`, `PUT /bidder-profile/organization`, `PUT /bidder-profile/self`, `PUT /bidder-profile/preferences`, `POST /bidder-profile/team`, `PATCH/DELETE /bidder-profile/team/:memberId`, `POST /bidder-profile/projects`, `PATCH/DELETE /bidder-profile/projects/:projectId` | Profile and saved pages (bidder profile not called by the frontend yet, see §9) |
-| `/reports` | `GET /price-overview`, `/savings-distribution`, `/category-comparison`, `/timeline`, `/procurement-list`, `/filters/departments` | No frontend page since the reports page was removed; the homepage and similar projects use `modules/report` directly (mock awarded price, see §8) |
+| `/reports` | `GET /price-overview`, `/savings-distribution`, `/category-comparison`, `/timeline`, `/procurement-list`, `/filters/departments` | No frontend page since the reports page was removed; the homepage uses `modules/report` directly (mock awarded price, see §8); similar projects use it for mid prices only |
 | `/admin` | `GET /stats` · `GET /users`, `GET/PATCH /users/:userId`, `PATCH /users/:userId/role`, `PATCH /users/:userId/status` · `GET /activity` · `GET/PATCH /settings` · `GET /tors`, `GET/PATCH/DELETE /tors/:torId`, `POST /tors/:torId/verify`, `POST /tors/:torId/archive` · `GET /ingestion/status`, `POST /ingestion/sync` · `GET/POST /categories`, `PATCH/DELETE /categories/:categoryId`, `PATCH /categories/:categoryId/status` | Admin page (admin role only) |
 | `/ingestion` | `GET /report` | Not called by the frontend yet (ops, job status report) |
 | `/categories` | `GET /` | Not called by the frontend yet (active category list) |
@@ -69,7 +69,7 @@ Auth lives outside `/api/v1`: `GET /auth/google`, `GET /auth/google/callback`, `
 
 ## 8. Price reports and the mock awarded price
 
-Every page reads `tors`. Price reports (`/reports/*`, the homepage price chart and cards, and `/tors/:id/similar` for UC-05) need a mid price and an awarded (winning) price. BMA ingestion stores the mid price, but **not the awarded price yet**, so `modules/report/finished-tors.ts` fills in a **mock** awarded price at read time:
+Every page reads `tors`. Price reports (`/reports/*` and the homepage price chart and cards) need a mid price and an awarded (winning) price. `/tors/:id/similar` (UC-05) needs only mid prices, so it also lists TORs still open for bids and never shows an awarded price. BMA ingestion stores the mid price, but **not the awarded price yet**, so `modules/report/finished-tors.ts` fills in a **mock** awarded price at read time:
 
 | TOR | Awarded price in reports |
 |---|---|
