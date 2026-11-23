@@ -572,13 +572,6 @@ export default function SavedTorPage() {
                   <span>สำรวจ TOR ล่าสุด</span>
                   <ArrowRightIcon className="size-4" />
                 </Link>
-                <Link
-                  href="/search"
-                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-5 py-2.5 text-sm font-semibold text-foreground hover:bg-surface-2"
-                >
-                  <MagnifyingGlassIcon className="size-4 text-muted-foreground" />
-                  <span>ค้นหาตามเงื่อนไข</span>
-                </Link>
               </div>
             </div>
           )}

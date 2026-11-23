@@ -20,7 +20,6 @@ import {
 import {
   ArrowRightStartOnRectangleIcon,
   ChevronDownIcon,
-  Cog8ToothIcon,
   UserIcon,
 } from "@heroicons/react/16/solid";
 import { useAuth } from "@/hooks/use-auth";
@@ -69,12 +68,9 @@ export function SiteNav() {
                 <UserIcon className="size-4" />
                 <DropdownLabel>โปรไฟล์ของฉัน</DropdownLabel>
               </DropdownItem>
-              <DropdownItem href="/settings">
-                <Cog8ToothIcon className="size-4" />
-                <DropdownLabel>ตั้งค่า</DropdownLabel>
-              </DropdownItem>
               <DropdownDivider />
-              <DropdownItem onClick={() => void signOut()}>
+              {/* A <button> item centres its text by default; keep it aligned with the links */}
+              <DropdownItem onClick={() => void signOut()} className="text-left">
                 <ArrowRightStartOnRectangleIcon className="size-4" />
                 <DropdownLabel>ออกจากระบบ</DropdownLabel>
               </DropdownItem>
