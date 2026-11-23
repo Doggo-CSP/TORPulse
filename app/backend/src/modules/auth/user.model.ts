@@ -2,6 +2,13 @@ import mongoose, { Schema, model, type HydratedDocument, type Model } from 'mong
 
 import type { CompanyQualification } from '../notification/qualification.js'
 
+export interface PrimaryContactRecord {
+  name: string
+  position: string
+  education: string
+  startDate: string
+}
+
 export interface UserRecord {
   googleId: string
   name: string
@@ -21,6 +28,7 @@ export interface UserRecord {
   companyName?: string
   registrationNumber?: string
   businessType?: string
+  primaryContact?: PrimaryContactRecord
   role?: 'admin' | 'user'
   status?: 'active' | 'suspended'
   qualification?: CompanyQualification
@@ -30,6 +38,16 @@ export interface UserRecord {
   createdAt: Date
   updatedAt: Date
 }
+
+const primaryContactSchema = new Schema<PrimaryContactRecord>(
+  {
+    name: { type: String, default: '', trim: true },
+    position: { type: String, default: '', trim: true },
+    education: { type: String, default: '', trim: true },
+    startDate: { type: String, default: '', trim: true },
+  },
+  { _id: false },
+)
 
 const qualificationSchema = new Schema<CompanyQualification>(
   {
@@ -70,6 +88,10 @@ const userSchema = new Schema<UserRecord>(
     companyName: { type: String, default: '' },
     registrationNumber: { type: String, default: '' },
     businessType: { type: String, default: '' },
+    primaryContact: {
+      type: primaryContactSchema,
+      default: () => ({ name: '', position: '', education: '', startDate: '' }),
+    },
     // Matched against TOR eligibility for qualifying-TOR email notifications
     qualification: { type: qualificationSchema, default: () => ({}) },
     onboardingStatus: { type: String, enum: ['completed', 'dismissed', null], default: null },

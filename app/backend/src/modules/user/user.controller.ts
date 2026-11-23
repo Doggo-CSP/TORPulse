@@ -59,6 +59,12 @@ const toProfileResponse = async (user: any, bookmarkedCount: number) => ({
   companyName: user.companyName || '',
   registrationNumber: user.registrationNumber || '',
   businessType: user.businessType || '',
+  primaryContact: {
+    name: user.primaryContact?.name || '',
+    position: user.primaryContact?.position || '',
+    education: user.primaryContact?.education || '',
+    startDate: user.primaryContact?.startDate || '',
+  },
   qualification: {
     ...EMPTY_QUALIFICATION,
     ...(user.qualification?.toObject?.() ?? user.qualification),

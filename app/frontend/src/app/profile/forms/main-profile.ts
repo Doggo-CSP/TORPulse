@@ -39,6 +39,12 @@ export function toMainProfileForm(profile: UserProfile, bidder: BidderProfile | 
     budgetMin: bidder?.preferences.budgetMinBaht ?? null,
     budgetMax: bidder?.preferences.budgetMaxBaht ?? null,
     businessObjectives: bidder?.preferences.businessObjectives ?? "",
+    primaryContact: profile.primaryContact ?? {
+      name: "",
+      position: "",
+      education: "",
+      startDate: "",
+    },
   };
 }
 
@@ -110,6 +116,12 @@ export function useSaveMainProfile() {
         companyName: form.companyName,
         registrationNumber: form.registrationNumber,
         businessType: form.businessType,
+        primaryContact: form.primaryContact ?? {
+          name: "",
+          position: "",
+          education: "",
+          startDate: "",
+        },
       }),
     });
 

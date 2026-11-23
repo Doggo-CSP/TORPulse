@@ -53,6 +53,7 @@ import {
   TagIcon,
   PlusIcon,
   TrashIcon,
+  BookmarkIcon,
 } from "@heroicons/react/24/outline";
 
 type AdminMenuTab =
@@ -127,6 +128,15 @@ export default function AdminPage() {
   // Dashboard numbers
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
+
+  const collectedCount = stats?.ingestionJobs
+    ? (stats.ingestionJobs.queued ?? 0) +
+      (stats.ingestionJobs.processing ?? 0) +
+      (stats.ingestionJobs.completed ?? 0) +
+      (stats.ingestionJobs.failed ?? 0) +
+      (stats.ingestionJobs.rejected ?? 0) +
+      (stats.ingestionJobs.reviewRequired ?? 0)
+    : undefined;
 
   // Users
   const [users, setUsers] = useState<AdminUserItem[]>([]);
@@ -727,8 +737,8 @@ export default function AdminPage() {
                   </div>
                 )}
 
-                {/* 4 Stats Cards */}
-                <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                {/* 5 Stats Cards */}
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
                   <div className="rounded-3xl border border-[#e8e0d0] bg-white p-5 shadow-sm transition hover:shadow-md">
                     <div className="text-3xl font-extrabold tabular-nums text-[#4a7c59]">
                       {formatCount(stats?.tors.total)}
@@ -753,8 +763,18 @@ export default function AdminPage() {
                       {formatCount(stats?.users.byStatus.active)}
                     </div>
                     <div className="mt-1 flex items-center justify-between text-xs font-medium text-[#7a8b6f]">
-                      <span>ผู้ใช้งานที่ใช้งานอยู่</span>
+                      <span>User ที่ใช้งานอยู่</span>
                       <span className="text-[11px] text-[#4a7c59] underline">จัดการสิทธิ์</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-[#e8e0d0] bg-white p-5 shadow-sm transition hover:shadow-md">
+                    <div className="text-3xl font-extrabold tabular-nums text-[#4a7c59]">
+                      {formatCount(stats?.savedTors.total)}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs font-medium text-[#7a8b6f]">
+                      <span>TOR ที่ถูกบันทึกไว้</span>
+                      <BookmarkIcon className="size-3.5 text-[#4a7c59]" />
                     </div>
                   </div>
 
@@ -765,6 +785,110 @@ export default function AdminPage() {
                     <div className="mt-1 text-xs font-medium text-[#7a8b6f]">
                       โครงการที่ประกาศผลแล้ว
                     </div>
+                  </div>
+                </div>
+
+                {/* System Analytics: Document Processing & Health (UC-17) */}
+                <div className="rounded-3xl border border-[#e8e0d0] bg-white p-6 shadow-sm">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-base font-bold text-[#2d2d2d]">
+                        การรวบรวมและประมวลผลเอกสาร TOR (System Analytics)
+                      </h2>
+                      <p className="text-xs text-[#7a8b6f]">
+                        ติดตามจำนวนเอกสารที่รวบรวมได้ (Collected), ประมวลผลสำเร็จ (Processed) และล้มเหลว (Failed)
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab("tor_management")}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-[#4a7c59] hover:underline"
+                    >
+                      จัดการประกาศ TOR ทั้งหมด →
+                    </button>
+                  </div>
+
+                  {/* 4 Analytics Metrics */}
+                  <div className="mt-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                    {/* Collected */}
+                    <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-stone-700">รวบรวมทั้งหมด (Collected)</span>
+                        <span className="rounded-full bg-stone-200/80 px-2 py-0.5 text-[10px] font-semibold text-stone-700">
+                          ทั้งหมด
+                        </span>
+                      </div>
+                      <div className="mt-2 text-2xl font-extrabold tabular-nums text-stone-900">
+                        {formatCount(collectedCount)}
+                      </div>
+                      <p className="mt-1 text-[11px] text-stone-500">เอกสารตรวจพบจากแหล่งข้อมูล</p>
+                    </div>
+
+                    {/* Processed (Completed) */}
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-emerald-800">ประมวลผลสำเร็จ (Processed)</span>
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                          สมบูรณ์
+                        </span>
+                      </div>
+                      <div className="mt-2 text-2xl font-extrabold tabular-nums text-emerald-700">
+                        {formatCount(stats?.ingestionJobs.completed)}
+                      </div>
+                      <p className="mt-1 text-[11px] text-emerald-600">สกัดข้อมูลและจัดหมวดหมู่สำเร็จ</p>
+                    </div>
+
+                    {/* Failed */}
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-rose-800">ล้มเหลว (Failed)</span>
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-800">
+                          ข้อผิดพลาด
+                        </span>
+                      </div>
+                      <div className="mt-2 text-2xl font-extrabold tabular-nums text-rose-700">
+                        {formatCount(stats?.ingestionJobs.failed)}
+                      </div>
+                      <p className="mt-1 text-[11px] text-rose-600">สกัดหรือดาวน์โหลดไม่สำเร็จ</p>
+                    </div>
+
+                    {/* In Progress / Queued */}
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-amber-800">รอดำเนินการ / กำลังทำ</span>
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                          ในกระบวนการ
+                        </span>
+                      </div>
+                      <div className="mt-2 text-2xl font-extrabold tabular-nums text-amber-800">
+                        {formatCount(
+                          (stats?.ingestionJobs.queued ?? 0) + (stats?.ingestionJobs.processing ?? 0),
+                        )}
+                      </div>
+                      <p className="mt-1 text-[11px] text-amber-600">รอคิวและกำลังทำงานในระบบ</p>
+                    </div>
+                  </div>
+
+                  {/* Status Breakdown Pills */}
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#f0e8dc] pt-3 text-xs">
+                    <span className="font-medium text-[#8a8070]">สถานะงานละเอียด:</span>
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800">
+                      ✓ สำเร็จ {formatCount(stats?.ingestionJobs.completed)}
+                    </span>
+                    <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 font-medium text-blue-800">
+                      ⟳ กำลังทำ {formatCount(stats?.ingestionJobs.processing)}
+                    </span>
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 font-medium text-amber-800">
+                      ⏳ รอคิว {formatCount(stats?.ingestionJobs.queued)}
+                    </span>
+                    <span className="rounded-full border border-stone-200 bg-[#f5f0e8] px-2.5 py-1 font-medium text-[#5c5446]">
+                      👁 ต้องตรวจเอง {formatCount(stats?.ingestionJobs.reviewRequired)}
+                    </span>
+                    <span className="rounded-full border border-stone-200 bg-[#f5f0e8] px-2.5 py-1 font-medium text-[#5c5446]">
+                      ✕ ไม่ใช่งานซอฟต์แวร์ {formatCount(stats?.ingestionJobs.rejected)}
+                    </span>
+                    <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 font-medium text-rose-800">
+                      ⚠ ล้มเหลว {formatCount(stats?.ingestionJobs.failed)}
+                    </span>
                   </div>
                 </div>
 

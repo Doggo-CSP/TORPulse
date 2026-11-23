@@ -25,12 +25,15 @@ import {
   ArrowPathIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
+import { QualificationTourProvider, useQualificationTour } from "./qualification-tour";
 
 export interface QualificationMatchCardProps {
   torId?: string;
   tor?: TorDetail;
   profile?: UserProfile | null;
   isLoggedIn: boolean;
+  /** start the detailed card tour automatically (once) when the card is ready */
+  autoStartTour?: boolean;
 }
 
 const STATUS_CONFIG: Record<
@@ -94,16 +97,36 @@ const formatThaiDateTime = (iso: string) =>
   new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
 
 // Shared wrapper; defined outside the component so React keeps its children mounted
-function Shell({ children, showEditLink }: { children: React.ReactNode; showEditLink: boolean }) {
+function Shell({
+  children,
+  showEditLink,
+  onHelp,
+}: {
+  children: React.ReactNode;
+  showEditLink: boolean;
+  onHelp?: () => void;
+}) {
   return (
-    <div className="panel p-5 transition-shadow hover:shadow-md">
+    <div id="tour-qualification" className="panel p-5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-1.5">
           <SparklesIcon className="size-4 text-primary" />
           <p className="label-eyebrow">ความเหมาะสมของบริษัท</p>
+          {onHelp && (
+            <button
+              type="button"
+              onClick={onHelp}
+              className="text-muted-foreground transition-colors hover:text-primary"
+              title="วิธีอ่านผลการประเมิน"
+              aria-label="ดูทัวร์อธิบายผลการประเมิน"
+            >
+              <QuestionMarkCircleIcon className="size-4" />
+            </button>
+          )}
         </div>
         {showEditLink && (
           <Link
+            id="tour-qm-edit"
             href="/profile"
             className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
             title="อัปเดตข้อมูลบริษัทในหน้าโปรไฟล์"
@@ -142,11 +165,14 @@ export function QualificationMatchCard({
   tor,
   profile,
   isLoggedIn,
+  autoStartTour = false,
 }: QualificationMatchCardProps) {
   const { result, reevaluate } = useQualificationMatch(tor?.id ?? torId, isLoggedIn);
   const [filter, setFilter] = useState<"all" | RequirementStatus>("all");
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // Detailed card tour: auto-starts once the score is shown and the page tour is done
+  const qmTour = useQualificationTour(autoStartTour && result.state === "ready");
 
   const companyName =
     profile?.companyName || profile?.displayName || profile?.name || "บริษัทของคุณ";
@@ -239,10 +265,20 @@ export function QualificationMatchCard({
   const filteredItems = filter === "all" ? items : items.filter((item) => item.status === filter);
 
   return (
-    <>
-      <Shell showEditLink>
+    <QualificationTourProvider
+      isOpen={qmTour.isOpen}
+      onClose={qmTour.onClose}
+      controls={{
+        expandFirst: (open) => setExpandedIndex(open ? (items[0]?.index ?? null) : null),
+        resetFilter: () => setFilter("all"),
+      }}
+    >
+      <Shell showEditLink onHelp={qmTour.restart}>
         {/* Company Name Badge */}
-        <div className="mb-3 flex items-center justify-between text-xs text-muted-foreground border-b border-border pb-2.5">
+        <div
+          id="tour-qm-company"
+          className="mb-3 flex items-center justify-between text-xs text-muted-foreground border-b border-border pb-2.5"
+        >
           <div className="flex items-center gap-1.5 truncate">
             <BuildingOffice2Icon className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate font-medium text-foreground">{companyName}</span>
@@ -250,39 +286,42 @@ export function QualificationMatchCard({
           <span className="shrink-0 text-[10px] text-muted-foreground">{items.length} เงื่อนไข</span>
         </div>
 
-        {/* Score & Verdict */}
-        <div className="flex items-baseline justify-between gap-2">
-          <div className="flex items-baseline gap-1">
-            <span className="font-display text-3xl font-extrabold tracking-tight text-foreground">
-              {match.percentage ?? "-"}
+        {/* Score, verdict, progress bar and summary (tour target) */}
+        <div id="tour-qualification-score">
+          <div className="flex items-baseline justify-between gap-2">
+            <div id="tour-qm-percent" className="flex items-baseline gap-1">
+              <span className="font-display text-3xl font-extrabold tracking-tight text-foreground">
+                {match.percentage ?? "-"}
+              </span>
+              <span className="text-sm font-semibold text-muted-foreground">%</span>
+            </div>
+            <span
+              id="tour-qm-verdict"
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border ${verdict.badgeCls}`}
+            >
+              {verdict.label}
             </span>
-            <span className="text-sm font-semibold text-muted-foreground">%</span>
           </div>
-          <span
-            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border ${verdict.badgeCls}`}
-          >
-            {verdict.label}
-          </span>
-        </div>
 
-        {/* Visual Progress Bar */}
-        <div
-          className="mt-2.5 h-2.5 overflow-hidden rounded-full bg-surface-2"
-          role="progressbar"
-          aria-valuenow={score}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label="คะแนนความเหมาะสมของบริษัท"
-        >
+          {/* Visual Progress Bar */}
           <div
-            className={`h-full transition-all duration-700 ease-out ${verdict.barCls}`}
-            style={{ width: `${score}%` }}
-          />
-        </div>
+            className="mt-2.5 h-2.5 overflow-hidden rounded-full bg-surface-2"
+            role="progressbar"
+            aria-valuenow={score}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="คะแนนความเหมาะสมของบริษัท"
+          >
+            <div
+              className={`h-full transition-all duration-700 ease-out ${verdict.barCls}`}
+              style={{ width: `${score}%` }}
+            />
+          </div>
 
-        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-          {match.summary || verdict.description}
-        </p>
+          <p id="tour-qm-summary" className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+            {match.summary || verdict.description}
+          </p>
+        </div>
 
         {result.limitReached ? (
           // Re-evaluating would not run today, so do not ask the user to press it
@@ -291,14 +330,17 @@ export function QualificationMatchCard({
           </p>
         ) : (
           result.isStale && (
-            <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200/70 px-2 py-1.5 text-[11px] text-amber-800">
+            <p
+              id="tour-qm-stale"
+              className="mt-2 rounded-lg bg-amber-50 border border-amber-200/70 px-2 py-1.5 text-[11px] text-amber-800"
+            >
               ข้อมูลโปรไฟล์หรือ TOR เปลี่ยนไปหลังการประเมินครั้งนี้ กด &quot;ประเมินใหม่&quot; เพื่ออัปเดต
             </p>
           )
         )}
 
         {/* Metric Badges (Clickable Filters) */}
-        <div className="mt-3.5 grid grid-cols-4 gap-1.5">
+        <div id="tour-qualification-tiles" className="mt-3.5 grid grid-cols-4 gap-1.5">
           {STATUS_ORDER.map((status) => {
             const meta = STATUS_CONFIG[status];
             return (
@@ -334,11 +376,14 @@ export function QualificationMatchCard({
         </div>
 
         {/* Requirement Item List */}
-        <div className="mt-2.5 space-y-2 max-h-[380px] overflow-y-auto pr-0.5 custom-scrollbar">
+        <div
+          id="tour-qualification-list"
+          className="mt-2.5 space-y-2 max-h-[380px] overflow-y-auto pr-0.5 custom-scrollbar"
+        >
           {filteredItems.length === 0 ? (
             <p className="py-4 text-center text-xs text-muted-foreground">ไม่มีเงื่อนไขในหมวดหมู่นี้</p>
           ) : (
-            filteredItems.map((item) => {
+            filteredItems.map((item, itemPos) => {
               const meta = STATUS_CONFIG[item.status];
               const Icon = meta.icon;
               const isExpanded = expandedIndex === item.index;
@@ -346,11 +391,13 @@ export function QualificationMatchCard({
               return (
                 <div
                   key={item.index}
+                  id={itemPos === 0 ? "tour-qm-item" : undefined}
                   className={`rounded-xl border p-2.5 transition-colors ${
                     isExpanded ? "border-primary/40 bg-surface-2/30" : "border-border/80 bg-surface"
                   }`}
                 >
                   <button
+                    id={itemPos === 0 ? "tour-qm-item-head" : undefined}
                     type="button"
                     onClick={() => setExpandedIndex(isExpanded ? null : item.index)}
                     aria-expanded={isExpanded}
@@ -413,7 +460,10 @@ export function QualificationMatchCard({
         </div>
 
         {/* Evaluated at + re-run */}
-        <div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground">
+        <div
+          id="tour-qm-footer"
+          className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground"
+        >
           <span>ประเมินโดย AI เมื่อ {formatThaiDateTime(match.evaluatedAt)}</span>
           <button
             type="button"
@@ -427,6 +477,7 @@ export function QualificationMatchCard({
 
         {/* Open Full Comparison Modal Button */}
         <button
+          id="tour-qualification-detail"
           type="button"
           onClick={() => setIsModalOpen(true)}
           className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-2 transition-colors"
@@ -577,6 +628,6 @@ export function QualificationMatchCard({
           </div>
         </div>
       )}
-    </>
+    </QualificationTourProvider>
   );
 }
