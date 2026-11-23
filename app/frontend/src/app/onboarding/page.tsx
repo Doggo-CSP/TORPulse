@@ -408,7 +408,7 @@ export default function OnboardingPage() {
   return (
     <div className="grid min-h-screen bg-[#f5f0e8] md:grid-cols-[300px_1fr]">
       {/* ── Steps and progress ── */}
-      <aside className="border-b border-[#e8e0d0] bg-white px-7 py-8 md:border-b-0 md:border-r">
+      <aside className="border-b border-[#e8e0d0] bg-white px-7 py-8 md:sticky md:top-0 md:h-screen md:self-start md:overflow-y-auto md:border-b-0 md:border-r">
         <Link href="/homepage" className="font-display text-xl font-bold text-[#4a7c59]">
           TORPulse
         </Link>
