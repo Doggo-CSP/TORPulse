@@ -212,8 +212,8 @@ export async function fetchTorRecommendations(): Promise<RecommendedTorItem[]> {
   return data.items || [];
 }
 
-// UC-05: TORs whose bidding has closed and that are similar to a TOR by shared categories and
-// technologies. The awarded price may be a mock (awarded_is_mock). Money is in baht.
+// UC-05: TORs similar to a TOR by shared categories and technologies, open for bids or not.
+// Their mid prices are compared with this TOR's mid price. Money is in baht.
 export interface SimilarProject {
   tor_id: string;
   external_id: string;
@@ -226,12 +226,12 @@ export interface SimilarProject {
   matched_technologies: string[];
   score: number;
   announce_date: string | null;
+  submission_deadline_at: string | null;
+  bidding_closed: boolean;
   budget_baht: number | null;
   mid_price_baht: number;
-  awarded_price_baht: number;
-  awarded_is_mock: boolean;
-  savings_amount_baht: number;
-  savings_pct: number;
+  // Negative: lower than this TOR's mid price; null when this TOR has no mid price
+  mid_price_diff_pct: number | null;
   requirements: string[];
   detail_url: string | null;
 }
@@ -239,18 +239,18 @@ export interface SimilarProject {
 export interface SimilarProjectsResult {
   summary: {
     project_count: number;
+    target_mid_price_baht: number | null;
     median_mid_price_baht: number | null;
-    median_awarded_price_baht: number | null;
-    avg_savings_pct: number | null;
-    // Positive: this TOR's budget is above the median awarded price of the similar projects
-    budget_vs_median_awarded_pct: number | null;
+    min_mid_price_baht: number | null;
+    max_mid_price_baht: number | null;
+    // Positive: this TOR's mid price is above the median mid price of the similar projects
+    target_vs_median_mid_pct: number | null;
   };
   items: SimilarProject[];
   source: {
     collection: string;
     as_of: string;
     project_count: number;
-    mock_awarded_count: number;
   } | null;
 }
 

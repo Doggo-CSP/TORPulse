@@ -314,7 +314,6 @@ export default function TorDetailPage({
 
                             <SimilarProjects
                                 torId={tor.id}
-                                budgetBaht={tor.budgetBaht}
                                 userEmail={user?.email}
                                 autoStartTour={tour.finished}
                             />
