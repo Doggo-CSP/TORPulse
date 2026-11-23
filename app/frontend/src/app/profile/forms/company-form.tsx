@@ -5,7 +5,6 @@ import { useState, type ReactNode, type ComponentType } from "react";
 import {
   BuildingOffice2Icon,
   BanknotesIcon,
-  ShieldCheckIcon,
   PhoneIcon,
   ChevronDownIcon,
   AcademicCapIcon,
@@ -15,9 +14,7 @@ import { OrganizationFlagFields } from "./form-ui";
 import {
   PrimaryContactFields,
   primaryContactProgress,
-  CertificateUploader,
   type PrimaryContact,
-  type CertificateFile,
 } from "./company-extras";
 
 /* ───────────── Types ───────────── */
@@ -40,8 +37,8 @@ export interface CompanyFormData {
   hasPositiveNetWorth: boolean | null;
   hasBangkokOffice: boolean | null;
   certifications: CertificationInput[]; // saved with the organization; not edited in this form
-  certificateFiles: CertificateFile[]; // ไฟล์ใบรับรอง (PDF/รูป)
   primaryContact: PrimaryContact; // ผู้รับผิดชอบหลัก
+  // No longer shown in the form; kept so a value saved earlier is written back unchanged
   isEgpRegistered: boolean;
   contactEmail: string;
   phone: string;
@@ -49,7 +46,10 @@ export interface CompanyFormData {
   about: string;
 }
 
-/** The e-GP checkbox is stored as a certification with this name, so the AI matcher sees it. */
+/**
+ * e-GP registration is stored as an organization certification with this name. The AI matcher
+ * skips e-GP as a standard requirement every bidder meets, so it does not change the score.
+ */
 export const EGP_CERTIFICATION_NAME = "ลงทะเบียนผู้ค้าในระบบ e-GP";
 
 interface Props {
@@ -84,7 +84,7 @@ const star = (
 
 /* ───────────── Helpers ───────────── */
 
-type SectionKey = "entity" | "contactPerson" | "size" | "certs" | "contact";
+type SectionKey = "entity" | "contactPerson" | "size" | "contact";
 
 type BadgeTone = "done" | "partial" | "empty" | "error";
 
@@ -196,8 +196,6 @@ function yearsSince(isoDate?: string): number | null {
 /* ───────────── Main component ───────────── */
 
 export function CompanyForm({ value, onChange, teamCount = 0, defaultOpen = false }: Props) {
-  const certificateFiles = value.certificateFiles ?? [];
-
   const regNo = value.registrationNumber ?? "";
   const regNoInvalid = regNo.length > 0 && !/^\d{13}$/.test(regNo);
 
@@ -211,7 +209,6 @@ export function CompanyForm({ value, onChange, teamCount = 0, defaultOpen = fals
     entity: true,
     contactPerson: defaultOpen,
     size: defaultOpen,
-    certs: defaultOpen,
     contact: defaultOpen,
   });
   const toggle = (k: SectionKey) => setOpen((o) => ({ ...o, [k]: !o[k] }));
@@ -220,7 +217,6 @@ export function CompanyForm({ value, onChange, teamCount = 0, defaultOpen = fals
       entity: v,
       contactPerson: v,
       size: v,
-      certs: v,
       contact: v,
     });
   const allOpen = Object.values(open).every(Boolean);
@@ -256,10 +252,6 @@ export function CompanyForm({ value, onChange, teamCount = 0, defaultOpen = fals
         2,
       );
 
-  const certsStatus = progress(
-    [certificateFiles.length > 0, !!value.isEgpRegistered].filter(Boolean).length,
-    2,
-  );
 
   const contactStatus = progress(
     [
@@ -466,41 +458,7 @@ export function CompanyForm({ value, onChange, teamCount = 0, defaultOpen = fals
         </div>
       </Section>
 
-      {/* ── 4. ใบรับรองและมาตรฐาน ── */}
-      <Section
-        icon={ShieldCheckIcon}
-        title="ใบรับรองและมาตรฐาน"
-        subtitle="อัปโหลดไฟล์ใบรับรอง (PDF หรือรูปภาพ) และสถานะ e-GP"
-        open={open.certs}
-        onToggle={() => toggle("certs")}
-        badge={certsStatus.badge}
-        tone={certsStatus.tone}
-      >
-        <div>
-          <p className={labelCls}>ไฟล์ Certificate / ใบรับรอง</p>
-          <CertificateUploader
-            files={certificateFiles}
-            onChange={(files) => onChange({ certificateFiles: files })}
-          />
-        </div>
-
-        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-[#e8e0d0] bg-[#faf7f2] p-4">
-          <input
-            type="checkbox"
-            checked={!!value.isEgpRegistered}
-            onChange={(e) => onChange({ isEgpRegistered: e.target.checked })}
-            className="mt-0.5 size-4 accent-[#4a7c59]"
-          />
-          <span className="text-sm text-[#2d2d2d]">
-            ลงทะเบียนในระบบ e-GP แล้ว
-            <span className="block text-xs text-[#7a8b6f]">
-              จำเป็นสำหรับการยื่นข้อเสนอผ่านระบบจัดซื้อจัดจ้างภาครัฐ
-            </span>
-          </span>
-        </label>
-      </Section>
-
-      {/* ── 5. ข้อมูลติดต่อ ── */}
+      {/* ── 4. ข้อมูลติดต่อ ── */}
       <Section
         icon={PhoneIcon}
         title="ข้อมูลติดต่อ"
